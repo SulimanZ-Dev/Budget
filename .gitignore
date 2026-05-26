@@ -2,6 +2,7 @@ node_modules
 out
 release
 dist
+BudgetApp
 *.log
 .DS_Store
 Thumbs.db
