@@ -8,7 +8,7 @@ export function useAppInit(): void {
     async function init(): Promise<void> {
       try {
         const profile = await window.api.settings.getProfile()
-        if (profile) setProfile(profile)
+        if (profile && typeof profile === 'object') setProfile(profile)
 
         const onboarding = await window.api.settings.get('onboardingComplete')
         setOnboardingComplete(!!onboarding)

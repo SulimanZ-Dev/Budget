@@ -16,14 +16,16 @@ const steps = [
 interface IncomeSource {
   name: string
   amount: string
-  isGross: boolean
+  grossOrNet: 'gross' | 'net'
+  isRecurring: boolean
+  frequency: 'weekly' | 'fortnightly' | 'monthly' | 'yearly'
 }
 
 export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.Element {
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([
-    { name: 'Salary', amount: '', isGross: false }
+    { name: 'Salary', amount: '', grossOrNet: 'net', isRecurring: true, frequency: 'monthly' }
   ])
   const [categories, setCategories] = useState('Food, Transport, Housing, Entertainment')
   const [goalName, setGoalName] = useState('Emergency fund')
@@ -31,7 +33,10 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
   const { setProfile } = useAppStore()
 
   function addIncomeSource(): void {
-    setIncomeSources([...incomeSources, { name: '', amount: '', isGross: false }])
+    setIncomeSources([
+      ...incomeSources,
+      { name: '', amount: '', grossOrNet: 'net', isRecurring: true, frequency: 'monthly' }
+    ])
   }
 
   function removeIncomeSource(index: number): void {
@@ -60,7 +65,10 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
         const created = await window.api.income.createSource({
           name: src.name,
           amount: parseFloat(src.amount),
-          isGross: src.isGross ? 1 : 0
+          isGross: src.grossOrNet === 'gross' ? 1 : 0,
+          grossOrNet: src.grossOrNet,
+          isRecurring: src.isRecurring,
+          frequency: src.frequency
         })
         await window.api.income.setEntry({
           sourceId: created.id,
@@ -147,17 +155,59 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
                         />
                       </div>
                       <div className="flex items-center gap-2">
+                        <Label className="text-sm">Is this gross or net salary?</Label>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant={src.grossOrNet === 'gross' ? 'default' : 'outline'}
+                          onClick={() => updateIncomeSource(index, 'grossOrNet', 'gross')}
+                        >
+                          Gross
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={src.grossOrNet === 'net' ? 'default' : 'outline'}
+                          onClick={() => updateIncomeSource(index, 'grossOrNet', 'net')}
+                        >
+                          Net
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          id={`gross-${index}`}
-                          checked={src.isGross}
-                          onChange={(e) => updateIncomeSource(index, 'isGross', e.target.checked)}
+                          id={`recurring-${index}`}
+                          checked={src.isRecurring}
+                          onChange={(e) => updateIncomeSource(index, 'isRecurring', e.target.checked)}
                           className="h-4 w-4"
                         />
-                        <Label htmlFor={`gross-${index}`} className="text-sm">
-                          This is gross income (before tax)
+                        <Label htmlFor={`recurring-${index}`} className="text-sm">
+                          Is this salary recurring?
                         </Label>
                       </div>
+                      {src.isRecurring && (
+                        <div className="grid gap-2">
+                          <Label className="text-sm">Frequency</Label>
+                          <div className="flex flex-wrap gap-2">
+                            {(['weekly', 'fortnightly', 'monthly', 'yearly'] as const).map((frequency) => (
+                              <Button
+                                key={frequency}
+                                type="button"
+                                size="sm"
+                                variant={src.frequency === frequency ? 'default' : 'outline'}
+                                onClick={() => updateIncomeSource(index, 'frequency', frequency)}
+                              >
+                                {frequency[0].toUpperCase() + frequency.slice(1)}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {!src.isRecurring && (
+                        <p className="text-xs text-muted-foreground">
+                          Non-recurring income is saved but does not count toward monthly baseline.
+                        </p>
+                      )}
                     </div>
                   ))}
                   <Button variant="outline" onClick={addIncomeSource} className="w-full">

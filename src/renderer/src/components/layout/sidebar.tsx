@@ -13,7 +13,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Heart,
-  Banknote
+  Banknote,
+  PiggyBank
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
@@ -28,6 +29,7 @@ const navItems = [
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
   { to: '/subscriptions', icon: CreditCard, label: 'Subscriptions' },
   { to: '/income', icon: Banknote, label: 'Income' },
+  { to: '/savings', icon: PiggyBank, label: 'Savings' },
   { to: '/habits', icon: Heart, label: 'Habits' },
   { to: '/ai', icon: Sparkles, label: 'AI Assistant' },
   { to: '/settings', icon: Settings, label: 'Settings' }

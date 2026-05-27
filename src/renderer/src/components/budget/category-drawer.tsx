@@ -9,10 +9,12 @@ import {
 } from 'recharts'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { formatMoney, formatPercent, MONTH_NAMES } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Trash2, Pencil } from 'lucide-react'
 
 interface CategoryDrawerProps {
   categoryId: number
@@ -21,6 +23,7 @@ interface CategoryDrawerProps {
   budgetAmount: number
   spent: number
   cpi: number
+  onRefresh: () => void
 }
 
 export function CategoryDrawerContent({
@@ -29,9 +32,10 @@ export function CategoryDrawerContent({
   color,
   budgetAmount,
   spent,
-  cpi
+  cpi,
+  onRefresh
 }: CategoryDrawerProps): JSX.Element {
-  const { profile, selectedMonth, rates } = useAppStore()
+  const { profile, selectedMonth, rates, closeDrawer } = useAppStore()
   const [loading, setLoading] = useState(true)
   const [detail, setDetail] = useState<{
     history: { month: number; spent: number }[]
@@ -40,8 +44,11 @@ export function CategoryDrawerContent({
     prevYearTotal: number
     transactions: { id: number; description: string; amount: number; date: string }[]
     notes: string
+    category?: { id: number; name: string; icon: string; color: string; is_fixed: number }
   } | null>(null)
   const [notes, setNotes] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [editAmount, setEditAmount] = useState('')
 
   useEffect(() => {
     setLoading(true)
@@ -64,6 +71,25 @@ export function CategoryDrawerContent({
     })
   }
 
+  async function deleteCategory(): Promise<void> {
+    if (!confirm(`Delete category "${categoryName}"? This will also remove all budget entries for this category.`)) return
+    await window.api.categories.delete(categoryId)
+    closeDrawer()
+    onRefresh()
+  }
+
+  async function saveBudgetAmount(): Promise<void> {
+    await window.api.budget.setEntry({
+      categoryId,
+      year: profile.year,
+      month: selectedMonth,
+      amount: parseFloat(editAmount) || 0,
+      notes
+    })
+    setIsEditing(false)
+    onRefresh()
+  }
+
   if (loading || !detail) {
     return (
       <div className="space-y-4">
@@ -75,6 +101,7 @@ export function CategoryDrawerContent({
   }
 
   const budget = budgetAmount * cpi
+  const category = detail?.category
   const remaining = budget - spent
   const chartData = detail.history.map((h) => ({
     month: MONTH_NAMES[h.month - 1]?.slice(0, 3) ?? String(h.month),
@@ -83,13 +110,41 @@ export function CategoryDrawerContent({
 
   return (
     <div className="space-y-5">
-      <h2 className="text-xl font-bold" style={{ color }}>
-        {categoryName}
-      </h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold" style={{ color }}>
+          {categoryName}
+        </h2>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => {
+            setIsEditing(true)
+            setEditAmount(String(budgetAmount))
+          }}>
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={deleteCategory} className="text-destructive hover:text-destructive">
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
           <p className="text-muted-foreground">Budgeted</p>
-          <p className="font-semibold">{formatMoney(budget, profile.displayCurrency, rates)}</p>
+          {isEditing ? (
+            <Input
+              type="number"
+              value={editAmount}
+              onChange={(e) => setEditAmount(e.target.value)}
+              onBlur={saveBudgetAmount}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') saveBudgetAmount()
+                if (e.key === 'Escape') setIsEditing(false)
+              }}
+              className="h-8"
+              autoFocus
+            />
+          ) : (
+            <p className="font-semibold">{formatMoney(budget, profile.displayCurrency, rates)}</p>
+          )}
         </div>
         <div>
           <p className="text-muted-foreground">Spent</p>

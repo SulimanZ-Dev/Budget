@@ -129,7 +129,10 @@ export function SettingsPage(): JSX.Element {
             <Input
               type="number"
               value={profile.cpiPercent}
-              onChange={(e) => setProfile({ cpiPercent: parseFloat(e.target.value) })}
+              onChange={(e) => {
+                const next = Number.parseFloat(e.target.value)
+                setProfile({ cpiPercent: Number.isFinite(next) ? next : 0 })
+              }}
               onBlur={saveProfile}
             />
           </div>
@@ -138,7 +141,10 @@ export function SettingsPage(): JSX.Element {
             <Input
               type="number"
               value={profile.taxWithheldPercent}
-              onChange={(e) => setProfile({ taxWithheldPercent: parseFloat(e.target.value) })}
+              onChange={(e) => {
+                const next = Number.parseFloat(e.target.value)
+                setProfile({ taxWithheldPercent: Number.isFinite(next) ? next : 0 })
+              }}
               onBlur={saveProfile}
             />
           </div>

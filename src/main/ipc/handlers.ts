@@ -28,7 +28,12 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const row = db().prepare('SELECT value FROM settings WHERE key = ?').get(key) as
       | { value: string }
       | undefined
-    return row ? JSON.parse(row.value) : null
+    if (!row) return null
+    try {
+      return JSON.parse(row.value)
+    } catch {
+      return null
+    }
   })
 
   ipcMain.handle('settings:set', (_, key: string, value: unknown) => {
@@ -42,7 +47,12 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const row = db().prepare("SELECT value FROM settings WHERE key = 'profile'").get() as
       | { value: string }
       | undefined
-    return row ? JSON.parse(row.value) : {}
+    if (!row) return {}
+    try {
+      return JSON.parse(row.value)
+    } catch {
+      return {}
+    }
   })
 
   ipcMain.handle('settings:setProfile', (_, profile: Record<string, unknown>) => {
@@ -356,52 +366,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       target_amount: number
     }>
 
-    return goals.map((g) => {
-      // Track from specific category transactions
-      if (g.type === 'savings') {
-        const category = db().prepare("SELECT id FROM categories WHERE goal_type='savings'").get() as { id: number } | undefined
-        if (category) {
-          const total = db()
-            .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE category_id=? AND type='savings'`)
-            .get(category.id) as { v: number }
-          return { ...g, current_amount: total.v }
-        }
-      }
-      if (g.type === 'emergency') {
-        const category = db().prepare("SELECT id FROM categories WHERE goal_type='emergency'").get() as { id: number } | undefined
-        if (category) {
-          const total = db()
-            .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE category_id=? AND type='savings'`)
-            .get(category.id) as { v: number }
-          return { ...g, current_amount: total.v }
-        }
-      }
-      if (g.type === 'fire') {
-        const category = db().prepare("SELECT id FROM categories WHERE goal_type='fire'").get() as { id: number } | undefined
-        if (category) {
-          const total = db()
-            .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE category_id=? AND type='savings'`)
-            .get(category.id) as { v: number }
-          return { ...g, current_amount: total.v }
-        }
-      }
-      if (g.type === 'investment') {
-        const total = db()
-          .prepare('SELECT COALESCE(SUM(current_value), 0) as v FROM investment_holdings')
-          .get() as { v: number }
-        return { ...g, current_amount: total.v }
-      }
-      if (g.type === 'debt') {
-        const category = db().prepare("SELECT id FROM categories WHERE goal_type='debt'").get() as { id: number } | undefined
-        if (category) {
-          const total = db()
-            .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE category_id=? AND type='transfer'`)
-            .get(category.id) as { v: number }
-          return { ...g, current_amount: total.v }
-        }
-      }
-      return g
-    })
+    return goals.map((g) => ({ ...g, current_amount: getGoalCurrentAmount(db(), g.type) }))
   })
 
   ipcMain.handle('goals:autoCreateFromCategories', () => {
@@ -619,10 +584,57 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Income
   ipcMain.handle('income:sources', () => db().prepare('SELECT * FROM income_sources').all())
   ipcMain.handle('income:createSource', (_, src) => {
+    const grossOrNet = src.grossOrNet === 'gross' ? 'gross' : src.isGross ? 'gross' : 'net'
+    const frequency =
+      src.frequency === 'weekly' ||
+      src.frequency === 'fortnightly' ||
+      src.frequency === 'yearly' ||
+      src.frequency === 'monthly'
+        ? src.frequency
+        : 'monthly'
     const r = db()
-      .prepare('INSERT INTO income_sources (name, amount, is_gross, color) VALUES (?, ?, ?, ?)')
-      .run(src.name, src.amount, src.isGross ? 1 : 0, src.color ?? '#22c55e')
+      .prepare(
+        'INSERT INTO income_sources (name, amount, is_gross, gross_or_net, is_recurring, frequency, color) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      .run(
+        src.name,
+        src.amount,
+        grossOrNet === 'gross' ? 1 : 0,
+        grossOrNet,
+        src.isRecurring !== false ? 1 : 0,
+        frequency,
+        src.color ?? '#22c55e'
+      )
     return { id: Number(r.lastInsertRowid) }
+  })
+  ipcMain.handle('income:updateSource', (_, src) => {
+    const grossOrNet = src.grossOrNet === 'gross' ? 'gross' : src.isGross ? 'gross' : 'net'
+    const frequency =
+      src.frequency === 'weekly' ||
+      src.frequency === 'fortnightly' ||
+      src.frequency === 'yearly' ||
+      src.frequency === 'monthly'
+        ? src.frequency
+        : 'monthly'
+    db()
+      .prepare(
+        'UPDATE income_sources SET name = ?, amount = ?, is_gross = ?, gross_or_net = ?, is_recurring = ?, frequency = ?, color = ? WHERE id = ?'
+      )
+      .run(
+        src.name,
+        src.amount,
+        grossOrNet === 'gross' ? 1 : 0,
+        grossOrNet,
+        src.isRecurring !== false ? 1 : 0,
+        frequency,
+        src.color ?? '#22c55e',
+        src.id
+      )
+    return true
+  })
+  ipcMain.handle('income:deleteSource', (_, id: number) => {
+    db().prepare('DELETE FROM income_sources WHERE id = ?').run(id)
+    return true
   })
   ipcMain.handle('income:entries', (_, year: number) => {
     return db()
@@ -854,52 +866,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       target_amount: number
     }>
 
-    const goals = rawGoals.map((g) => {
-      // Track from specific category transactions
-      if (g.type === 'savings') {
-        const category = db().prepare("SELECT id FROM categories WHERE goal_type='savings'").get() as { id: number } | undefined
-        if (category) {
-          const total = db()
-            .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE category_id=? AND type='savings'`)
-            .get(category.id) as { v: number }
-          return { ...g, current_amount: total.v }
-        }
-      }
-      if (g.type === 'emergency') {
-        const category = db().prepare("SELECT id FROM categories WHERE goal_type='emergency'").get() as { id: number } | undefined
-        if (category) {
-          const total = db()
-            .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE category_id=? AND type='savings'`)
-            .get(category.id) as { v: number }
-          return { ...g, current_amount: total.v }
-        }
-      }
-      if (g.type === 'fire') {
-        const category = db().prepare("SELECT id FROM categories WHERE goal_type='fire'").get() as { id: number } | undefined
-        if (category) {
-          const total = db()
-            .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE category_id=? AND type='savings'`)
-            .get(category.id) as { v: number }
-          return { ...g, current_amount: total.v }
-        }
-      }
-      if (g.type === 'investment') {
-        const total = db()
-          .prepare('SELECT COALESCE(SUM(current_value), 0) as v FROM investment_holdings')
-          .get() as { v: number }
-        return { ...g, current_amount: total.v }
-      }
-      if (g.type === 'debt') {
-        const category = db().prepare("SELECT id FROM categories WHERE goal_type='debt'").get() as { id: number } | undefined
-        if (category) {
-          const total = db()
-            .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE category_id=? AND type='transfer'`)
-            .get(category.id) as { v: number }
-          return { ...g, current_amount: total.v }
-        }
-      }
-      return g
-    })
+    const goals = rawGoals.map((g) => ({ ...g, current_amount: getGoalCurrentAmount(db(), g.type) }))
 
     const budgetTotal = db()
       .prepare('SELECT COALESCE(SUM(amount),0) as v FROM budget_entries WHERE year=? AND month=?')
@@ -995,6 +962,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     for (const t of tables) db().prepare(`DELETE FROM ${t}`).run()
     // Reset onboarding
     db().prepare("DELETE FROM settings WHERE key = 'onboardingComplete'").run()
+    db()
+      .prepare(
+        `INSERT OR REPLACE INTO settings (key, value) VALUES
+        ('profile', '{"name":"","currency":"SEK","displayCurrency":"SEK","cpiPercent":2.5,"taxWithheldPercent":30,"theme":"system","year":${new Date().getFullYear()},"autoHideZeroCategories":false,"notificationsEnabled":true,"grossIncomeToggle":false}'),
+        ('spendingStreak', '{"current":0,"longest":0,"lastDate":null}')`
+      )
+      .run()
     return true
   })
 
@@ -1144,6 +1118,36 @@ function calculateBudgetHealth(
   }
 
   return Math.max(0, Math.min(100, Math.round(score)))
+}
+
+function getGoalCurrentAmount(database: ReturnType<typeof getDatabase>, goalType: string): number {
+  if (goalType === 'investment') {
+    const total = database
+      .prepare('SELECT COALESCE(SUM(current_value), 0) as v FROM investment_holdings')
+      .get() as { v: number }
+    return total.v
+  }
+
+  if (goalType === 'debt') {
+    const category = database.prepare("SELECT id FROM categories WHERE goal_type='debt'").get() as
+      | { id: number }
+      | undefined
+    if (category) {
+      const total = database
+        .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE category_id=? AND type='transfer'`)
+        .get(category.id) as { v: number }
+      return total.v
+    }
+  }
+
+  if (goalType === 'savings' || goalType === 'emergency' || goalType === 'fire') {
+    const totalSaved = database
+      .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE type='savings'`)
+      .get() as { v: number }
+    return totalSaved.v
+  }
+
+  return 0
 }
 
 function exportAllTables(): Record<string, unknown[]> {

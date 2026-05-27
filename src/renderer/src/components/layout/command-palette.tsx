@@ -10,7 +10,8 @@ import {
   Settings,
   Sparkles,
   Plus,
-  Receipt
+  Receipt,
+  PiggyBank
 } from 'lucide-react'
 import { formatMoney } from '@/lib/utils'
 
@@ -59,6 +60,7 @@ export function CommandPalette(): JSX.Element | null {
     { label: 'Budget', icon: Wallet, path: '/budget' },
     { label: 'Transactions', icon: ArrowLeftRight, path: '/transactions' },
     { label: 'Goals', icon: Target, path: '/goals' },
+    { label: 'Savings', icon: PiggyBank, path: '/savings' },
     { label: 'AI Assistant', icon: Sparkles, path: '/ai' },
     { label: 'Settings', icon: Settings, path: '/settings' }
   ]

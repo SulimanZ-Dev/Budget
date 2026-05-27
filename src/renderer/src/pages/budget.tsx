@@ -11,6 +11,7 @@ import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { CategoryModal } from '@/components/budget/category-modal'
 import { CategoryDrawerContent } from '@/components/budget/category-drawer'
 import { formatMoney, MONTH_NAMES } from '@/lib/utils'
+import { frequencyToMonthly, monthlySubscriptionCost, netFromGross, type IncomeSourceRow } from '@/lib/finance'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Wallet } from 'lucide-react'
@@ -38,6 +39,9 @@ export function BudgetPage(): JSX.Element {
   const [spending, setSpending] = useState<Record<number, number>>({})
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
+  const [monthlyIncome, setMonthlyIncome] = useState(0)
+  const [subscriptionMonthly, setSubscriptionMonthly] = useState(0)
+  const [savingsAndTransfersOutflow, setSavingsAndTransfersOutflow] = useState(0)
 
   useEffect(() => {
     load()
@@ -45,16 +49,48 @@ export function BudgetPage(): JSX.Element {
 
   async function load(): Promise<void> {
     setLoading(true)
-    const [budget, txs] = await Promise.all([
+    const [budget, txs, incomeEntries, incomeSources, subscriptions] = await Promise.all([
       window.api.budget.getMonth(profile.year, selectedMonth),
-      window.api.transactions.list({ year: profile.year, month: selectedMonth, type: 'expense' })
+      window.api.transactions.list({ year: profile.year, month: selectedMonth }),
+      window.api.income.entries(profile.year),
+      window.api.income.sources(),
+      window.api.subscriptions.list()
     ])
     setEntries(budget as BudgetRow[])
     const map: Record<number, number> = {}
-    for (const t of txs as { category_id: number; amount: number }[]) {
-      if (t.category_id) map[t.category_id] = (map[t.category_id] || 0) + t.amount
+    for (const t of txs as { category_id: number; amount: number; type: string }[]) {
+      if (t.type === 'expense' && t.category_id) {
+        map[t.category_id] = (map[t.category_id] || 0) + t.amount
+      }
     }
     setSpending(map)
+    const outflow = (txs as { amount: number; type: string }[]).reduce((sum, t) => {
+      if (t.type === 'savings' || t.type === 'transfer') return sum + t.amount
+      return sum
+    }, 0)
+    setSavingsAndTransfersOutflow(outflow)
+    
+    // Budget always uses net take-home, adjusted to monthly baseline.
+    const sources = incomeSources as IncomeSourceRow[]
+    const monthEntries = incomeEntries as { source_id: number; month: number; amount: number }[]
+    const monthIncome = sources.reduce((sum, src) => {
+      const entry = monthEntries.find((e) => e.source_id === src.id && e.month === selectedMonth)
+      const rawAmount =
+        entry?.amount ??
+        (src.is_recurring === 1 ? src.amount : 0)
+      const normalized = frequencyToMonthly(rawAmount, src.frequency ?? 'monthly')
+      if ((src.gross_or_net ?? (src.is_gross ? 'gross' : 'net')) === 'gross') {
+        return sum + netFromGross(normalized, profile.taxWithheldPercent)
+      }
+      return sum + normalized
+    }, 0)
+    setMonthlyIncome(monthIncome)
+    const monthlySubs = (subscriptions as { amount: number; frequency: string }[]).reduce(
+      (sum, sub) => sum + monthlySubscriptionCost(sub.amount, sub.frequency),
+      0
+    )
+    setSubscriptionMonthly(monthlySubs)
+    
     setLoading(false)
   }
 
@@ -64,6 +100,8 @@ export function BudgetPage(): JSX.Element {
     : entries
   const totalBudgeted = visible.reduce((s, e) => s + e.amount * cpi, 0)
   const totalSpent = visible.reduce((s, e) => s + (spending[e.category_id] || 0), 0)
+  const allOutflows = Object.values(spending).reduce((sum, value) => sum + value, 0)
+  const remainingBalance = monthlyIncome - allOutflows - subscriptionMonthly - savingsAndTransfersOutflow
 
   function openCategoryDetail(cat: BudgetRow): void {
     const spent = spending[cat.category_id] || 0
@@ -75,6 +113,7 @@ export function BudgetPage(): JSX.Element {
         budgetAmount={cat.amount}
         spent={spent}
         cpi={cpi}
+        onRefresh={load}
       />
     )
   }
@@ -107,16 +146,18 @@ export function BudgetPage(): JSX.Element {
       <Card>
         <CardContent className="flex items-center justify-between p-4">
           <div>
-            <p className="text-sm text-muted-foreground">Total budget vs spent</p>
+            <p className="text-sm text-muted-foreground">Monthly balance</p>
             <p className="text-xl font-bold">
-              {formatMoney(totalSpent, profile.displayCurrency, rates)} /{' '}
-              {formatMoney(totalBudgeted, profile.displayCurrency, rates)}
+              {formatMoney(remainingBalance, profile.displayCurrency, rates)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Income: {formatMoney(monthlyIncome, profile.displayCurrency, rates)} - Spent: {formatMoney(totalSpent, profile.displayCurrency, rates)} - Saved/Transfers: {formatMoney(savingsAndTransfersOutflow, profile.displayCurrency, rates)} - Subs: {formatMoney(subscriptionMonthly, profile.displayCurrency, rates)}
             </p>
           </div>
           <div
-            className={`text-2xl font-bold ${totalSpent <= totalBudgeted ? 'text-success' : 'text-destructive'}`}
+            className={`text-2xl font-bold ${remainingBalance >= 0 ? 'text-success' : 'text-destructive'}`}
           >
-            {totalBudgeted > 0 ? ((totalSpent / totalBudgeted) * 100).toFixed(0) : 0}%
+            {monthlyIncome > 0 ? ((remainingBalance / monthlyIncome) * 100).toFixed(0) : 0}%
           </div>
         </CardContent>
       </Card>

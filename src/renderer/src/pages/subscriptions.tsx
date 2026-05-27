@@ -10,6 +10,7 @@ import { useAppStore } from '@/store/app-store'
 import { formatMoney } from '@/lib/utils'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { EmptyState } from '@/components/shared/empty-state'
+import { Pencil, Trash2 } from 'lucide-react'
 
 interface Sub {
   id: number
@@ -25,6 +26,7 @@ export function SubscriptionsPage(): JSX.Element {
   const { profile, rates } = useAppStore()
   const [subs, setSubs] = useState<Sub[]>([])
   const [modalOpen, setModalOpen] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState({ name: '', amount: '', url: '' })
 
   useEffect(() => {
@@ -50,13 +52,32 @@ export function SubscriptionsPage(): JSX.Element {
   }
 
   async function save(): Promise<void> {
-    await window.api.subscriptions.create({
-      name: form.name,
-      amount: parseFloat(form.amount),
-      frequency: 'monthly',
-      websiteUrl: form.url
-    })
+    const amount = parseFloat(form.amount)
+    if (!form.name.trim() || !Number.isFinite(amount) || amount <= 0) return
+    if (editingId) {
+      await window.api.subscriptions.update(editingId, {
+        name: form.name,
+        amount,
+        frequency: 'monthly',
+        websiteUrl: form.url
+      })
+    } else {
+      await window.api.subscriptions.create({
+        name: form.name,
+        amount,
+        frequency: 'monthly',
+        websiteUrl: form.url
+      })
+    }
+    setEditingId(null)
+    setForm({ name: '', amount: '', url: '' })
     setModalOpen(false)
+    load()
+  }
+
+  async function remove(id: number): Promise<void> {
+    if (!confirm('Delete this subscription?')) return
+    await window.api.subscriptions.delete(id)
     load()
   }
 
@@ -137,6 +158,24 @@ export function SubscriptionsPage(): JSX.Element {
                       Open website
                     </Button>
                   )}
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEditingId(sub.id)
+                        setForm({ name: sub.name, amount: String(sub.amount), url: sub.website_url ?? '' })
+                        setModalOpen(true)
+                      }}
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Edit
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={() => remove(sub.id)}>
+                      <Trash2 className="h-3 w-3" />
+                      Delete
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </motion.div>
@@ -147,7 +186,7 @@ export function SubscriptionsPage(): JSX.Element {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add subscription</DialogTitle>
+            <DialogTitle>{editingId ? 'Edit subscription' : 'Add subscription'}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4">
             <div className="grid gap-2">

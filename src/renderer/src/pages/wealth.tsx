@@ -18,6 +18,7 @@ import { formatMoney } from '@/lib/utils'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { Landmark } from 'lucide-react'
 import { EmptyState } from '@/components/shared/empty-state'
+import { Pencil, Trash2 } from 'lucide-react'
 
 export function WealthPage(): JSX.Element {
   const { profile, rates } = useAppStore()
@@ -52,6 +53,7 @@ export function WealthPage(): JSX.Element {
     avgCost: '',
     currentPrice: ''
   })
+  const [editingHoldingId, setEditingHoldingId] = useState<number | null>(null)
   const [pension, setPension] = useState({
     current: '100000',
     monthly: '5000',
@@ -91,15 +93,28 @@ export function WealthPage(): JSX.Element {
     const shares = parseFloat(holdingForm.shares)
     const avgCost = parseFloat(holdingForm.avgCost)
     const currentPrice = parseFloat(holdingForm.currentPrice)
-    await window.api.investmentHoldings.create({
+    if (!holdingForm.etfName.trim() || !Number.isFinite(shares) || !Number.isFinite(avgCost) || !Number.isFinite(currentPrice)) return
+    const payload = {
       etfName: holdingForm.etfName,
       ticker: holdingForm.ticker,
       shares,
       avgCost,
       currentPrice,
       currentValue: shares * currentPrice
-    })
+    }
+    if (editingHoldingId) {
+      await window.api.investmentHoldings.update(editingHoldingId, payload)
+    } else {
+      await window.api.investmentHoldings.create(payload)
+    }
+    setEditingHoldingId(null)
     setHoldingForm({ etfName: '', ticker: '', shares: '', avgCost: '', currentPrice: '' })
+    load()
+  }
+
+  async function deleteHolding(id: number): Promise<void> {
+    if (!confirm('Delete this holding?')) return
+    await window.api.investmentHoldings.delete(id)
     load()
   }
 
@@ -231,6 +246,29 @@ export function WealthPage(): JSX.Element {
                       <p className="font-medium">{formatMoney(h.current_value, profile.displayCurrency, rates)}</p>
                     </div>
                   </div>
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingHoldingId(h.id)
+                        setHoldingForm({
+                          etfName: h.etf_name,
+                          ticker: h.ticker ?? '',
+                          shares: String(h.shares),
+                          avgCost: String(h.avg_cost),
+                          currentPrice: String(h.current_price ?? 0)
+                        })
+                      }}
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => deleteHolding(h.id)}>
+                      <Trash2 className="h-3 w-3" />
+                      Delete
+                    </Button>
+                  </div>
                 </div>
               )
             })}
@@ -242,7 +280,7 @@ export function WealthPage(): JSX.Element {
 
         <Card>
           <CardHeader>
-            <CardTitle>Add ETF Holding</CardTitle>
+            <CardTitle>{editingHoldingId ? 'Edit ETF Holding' : 'Add ETF Holding'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-2">

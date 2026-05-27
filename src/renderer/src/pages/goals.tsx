@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Target, Plus, MoreHorizontal, Trash2 } from 'lucide-react'
+import { Target, Plus, MoreHorizontal, Trash2, Pencil } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +41,7 @@ export function GoalsPage(): JSX.Element {
   const { profile, rates } = useAppStore()
   const [goals, setGoals] = useState<Goal[]>([])
   const [modalOpen, setModalOpen] = useState(false)
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
   const [form, setForm] = useState({
     name: '',
     type: 'savings',
@@ -64,6 +65,65 @@ export function GoalsPage(): JSX.Element {
     setGoals(await window.api.goals.list())
   }
 
+  function openEditModal(goal: Goal): void {
+    setEditingGoal(goal)
+    setForm({
+      name: goal.name,
+      type: goal.type,
+      targetAmount: String(goal.target_amount),
+      currentAmount: String(goal.current_amount),
+      interestRate: goal.interest_rate ? String(goal.interest_rate) : '',
+      monthlyPayment: goal.monthly_payment ? String(goal.monthly_payment) : ''
+    })
+    setModalOpen(true)
+  }
+
+  async function save(): Promise<void> {
+    if (editingGoal) {
+      await window.api.goals.update(editingGoal.id, {
+        name: form.name,
+        type: form.type,
+        targetAmount: parseFloat(form.targetAmount),
+        currentAmount: parseFloat(form.currentAmount) || 0,
+        interestRate: form.interestRate ? parseFloat(form.interestRate) : undefined,
+        monthlyPayment: form.monthlyPayment ? parseFloat(form.monthlyPayment) : undefined
+      })
+    } else {
+      await window.api.goals.create({
+        name: form.name,
+        type: form.type,
+        targetAmount: parseFloat(form.targetAmount),
+        currentAmount: parseFloat(form.currentAmount) || 0,
+        interestRate: form.interestRate ? parseFloat(form.interestRate) : undefined,
+        monthlyPayment: form.monthlyPayment ? parseFloat(form.monthlyPayment) : undefined
+      })
+    }
+    setModalOpen(false)
+    setEditingGoal(null)
+    setForm({
+      name: '',
+      type: 'savings',
+      targetAmount: '',
+      currentAmount: '',
+      interestRate: '',
+      monthlyPayment: ''
+    })
+    setGoals(await window.api.goals.list())
+  }
+
+  function closeModal(): void {
+    setModalOpen(false)
+    setEditingGoal(null)
+    setForm({
+      name: '',
+      type: 'savings',
+      targetAmount: '',
+      currentAmount: '',
+      interestRate: '',
+      monthlyPayment: ''
+    })
+  }
+
   function debtPayoffMonths(g: Goal): number | null {
     if (g.type !== 'debt' || !g.monthly_payment || g.monthly_payment <= 0) return null
     const remaining = g.target_amount - g.current_amount
@@ -79,18 +139,6 @@ export function GoalsPage(): JSX.Element {
     return months
   }
 
-  async function save(): Promise<void> {
-    await window.api.goals.create({
-      name: form.name,
-      type: form.type,
-      targetAmount: parseFloat(form.targetAmount),
-      currentAmount: parseFloat(form.currentAmount) || 0,
-      interestRate: form.interestRate ? parseFloat(form.interestRate) : undefined,
-      monthlyPayment: form.monthlyPayment ? parseFloat(form.monthlyPayment) : undefined
-    })
-    setModalOpen(false)
-    setGoals(await window.api.goals.list())
-  }
 
   return (
     <div className="space-y-6 p-6">
@@ -152,6 +200,10 @@ export function GoalsPage(): JSX.Element {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEditModal(g)}>
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Edit goal
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => removeGoal(g.id)} className="text-destructive">
                               <Trash2 className="h-4 w-4 mr-2" />
                               Delete goal
@@ -215,10 +267,10 @@ export function GoalsPage(): JSX.Element {
         </div>
       )}
 
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+      <Dialog open={modalOpen} onOpenChange={closeModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New goal</DialogTitle>
+            <DialogTitle>{editingGoal ? 'Edit goal' : 'New goal'}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4">
             <div className="grid gap-2">
@@ -252,7 +304,7 @@ export function GoalsPage(): JSX.Element {
               {['savings', 'emergency', 'fire'].includes(form.type) ? (
                 <div className="grid gap-2">
                   <Label>Current (SEK)</Label>
-                  <div className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm">
+                  <div className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm" tabIndex={-1}>
                     Auto-calculated from savings transactions
                   </div>
                 </div>
@@ -299,7 +351,7 @@ export function GoalsPage(): JSX.Element {
                 </div>
               </div>
             )}
-            <Button onClick={save}>Create goal</Button>
+            <Button onClick={save}>{editingGoal ? 'Save changes' : 'Create goal'}</Button>
           </div>
         </DialogContent>
       </Dialog>

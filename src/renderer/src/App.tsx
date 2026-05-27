@@ -18,6 +18,7 @@ import { WealthPage } from '@/pages/wealth'
 import { AnalyticsPage } from '@/pages/analytics'
 import { SubscriptionsPage } from '@/pages/subscriptions'
 import { IncomePage } from '@/pages/income'
+import { SavingsPage } from '@/pages/savings'
 import { HabitsPage } from '@/pages/habits'
 import { AiAssistantPage } from '@/pages/ai-assistant'
 import { SettingsPage } from '@/pages/settings'
@@ -134,6 +135,7 @@ function AppShell(): JSX.Element {
                 <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/subscriptions" element={<SubscriptionsPage />} />
                 <Route path="/income" element={<IncomePage />} />
+                <Route path="/savings" element={<SavingsPage />} />
                 <Route path="/habits" element={<HabitsPage />} />
                 <Route path="/ai" element={<AiAssistantPage />} />
                 <Route path="/settings" element={<SettingsPage />} />

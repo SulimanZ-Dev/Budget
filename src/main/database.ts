@@ -145,6 +145,9 @@ function runMigrations(database: Database.Database): void {
       name TEXT NOT NULL,
       amount REAL NOT NULL,
       is_gross INTEGER DEFAULT 0,
+      gross_or_net TEXT DEFAULT 'net',
+      is_recurring INTEGER DEFAULT 1,
+      frequency TEXT DEFAULT 'monthly',
       color TEXT DEFAULT '#22c55e'
     );
 
@@ -235,7 +238,7 @@ function runMigrations(database: Database.Database): void {
     if (!hasGoalType) {
       console.log('Adding goal_type column to categories...')
       database.exec('ALTER TABLE categories ADD COLUMN goal_type TEXT')
-      
+
       // Create default categories with goal types
       const defaultCategories = [
         { name: 'Savings', icon: 'piggy-bank', color: '#22c55e', goal_type: 'savings', sort_order: 100 },
@@ -244,7 +247,7 @@ function runMigrations(database: Database.Database): void {
         { name: 'FIRE Number', icon: 'flame', color: '#f59e0b', goal_type: 'fire', sort_order: 103 },
         { name: 'Investments', icon: 'trending-up', color: '#8b5cf6', goal_type: 'investment', sort_order: 104 }
       ]
-      
+
       const insert = database.prepare('INSERT INTO categories (name, icon, color, goal_type, sort_order) VALUES (?, ?, ?, ?, ?)')
       for (const cat of defaultCategories) {
         insert.run(cat.name, cat.icon, cat.color, cat.goal_type, cat.sort_order)
@@ -253,6 +256,37 @@ function runMigrations(database: Database.Database): void {
     }
   } catch (e) {
     console.log('Category migration skipped:', e)
+  }
+
+  // Migration: Add is_recurring column to income_sources
+  try {
+    const incomeSourceColumns = database.pragma('table_info(income_sources)') as Array<{ name: string }>
+    const hasIsRecurring = incomeSourceColumns.some((c) => c.name === 'is_recurring')
+    if (!hasIsRecurring) {
+      console.log('Adding is_recurring column to income_sources...')
+      database.exec('ALTER TABLE income_sources ADD COLUMN is_recurring INTEGER DEFAULT 1')
+      console.log('is_recurring column added')
+    }
+  } catch (e) {
+    console.log('Income sources migration skipped:', e)
+  }
+
+  try {
+    const incomeSourceColumns = database.pragma('table_info(income_sources)') as Array<{ name: string }>
+    const hasGrossOrNet = incomeSourceColumns.some((c) => c.name === 'gross_or_net')
+    const hasFrequency = incomeSourceColumns.some((c) => c.name === 'frequency')
+    if (!hasGrossOrNet) {
+      database.exec("ALTER TABLE income_sources ADD COLUMN gross_or_net TEXT DEFAULT 'net'")
+      database.exec(
+        "UPDATE income_sources SET gross_or_net = CASE WHEN is_gross = 1 THEN 'gross' ELSE 'net' END WHERE gross_or_net IS NULL"
+      )
+    }
+    if (!hasFrequency) {
+      database.exec("ALTER TABLE income_sources ADD COLUMN frequency TEXT DEFAULT 'monthly'")
+      database.exec("UPDATE income_sources SET frequency = 'monthly' WHERE frequency IS NULL OR frequency = ''")
+    }
+  } catch (e) {
+    console.log('Income source gross/net/frequency migration skipped:', e)
   }
 
   const onboardingDone = database

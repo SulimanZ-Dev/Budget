@@ -10,8 +10,9 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",
-    "dist": "npm run build && electron-builder --win",
-    "dist:dir": "npm run build && electron-builder --win --dir",
+    "dist:prepare": "node scripts/prepare-dist.js",
+    "dist": "npm run dist:prepare && electron-builder --win",
+    "dist:dir": "npm run dist:prepare && electron-builder --win --dir",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {

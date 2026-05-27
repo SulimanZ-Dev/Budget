@@ -10,15 +10,15 @@ export function formatMoney(
   currency: string = 'SEK',
   rates?: Record<string, number>
 ): string {
-  let value = amount
+  let value = Number.isFinite(amount) ? amount : 0
   if (currency !== 'SEK' && rates?.[currency]) {
     value = amount * rates[currency]
   }
   const symbol = currency === 'SEK' ? 'kr' : currency === 'EUR' ? '€' : '$'
   const formatted = new Intl.NumberFormat('sv-SE', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(Math.round(value))
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Math.round(value * 100) / 100)
   return currency === 'SEK' ? `${formatted} ${symbol}` : `${symbol}${formatted}`
 }
 

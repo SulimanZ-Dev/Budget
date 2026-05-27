@@ -22,6 +22,7 @@ import { TransactionRow, type TransactionRowData } from '@/components/transactio
 import { CsvImportModal } from '@/components/transactions/csv-import-modal'
 import { TransactionDetailDrawer } from '@/components/transactions/transaction-detail-drawer'
 import { useNavigate } from 'react-router-dom'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
 
 type RecurringFilter = 'all' | 'recurring' | 'oneoff'
 
@@ -32,6 +33,7 @@ export function TransactionsPage(): JSX.Element {
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
   const [flaggedOnly, setFlaggedOnly] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
@@ -49,14 +51,14 @@ export function TransactionsPage(): JSX.Element {
 
   useEffect(() => {
     load()
-  }, [profile.year, selectedMonth, search, flaggedOnly, categoryFilter, typeFilter, recurringFilter])
+  }, [profile.year, selectedMonth, debouncedSearch, flaggedOnly, categoryFilter, typeFilter, recurringFilter])
 
   async function load(): Promise<void> {
     setLoading(true)
     const filters: Record<string, unknown> = {
       year: profile.year,
       month: selectedMonth,
-      search: search || undefined,
+      search: debouncedSearch || undefined,
       flagged: flaggedOnly || undefined
     }
     if (categoryFilter !== 'all') filters.categoryId = parseInt(categoryFilter)
