@@ -75,8 +75,10 @@ export function CommandPalette(): JSX.Element | null {
         className="w-full max-w-lg overflow-hidden rounded-xl border bg-popover shadow-2xl"
         label="Command palette"
         shouldFilter={false}
+        loop
       >
         <Command.Input
+          data-input="true"
           value={search}
           onValueChange={setSearch}
           placeholder="Search transactions, jump to section..."

@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select'
 import { useAppStore, type DisplayCurrency } from '@/store/app-store'
 import { Download, Upload, Trash2, Key, Printer } from 'lucide-react'
+import { InfoTooltip } from '@/components/shared/info-tooltip'
 
 export function SettingsPage(): JSX.Element {
   const { profile, setProfile } = useAppStore()
@@ -156,6 +157,7 @@ export function SettingsPage(): JSX.Element {
           <CardTitle className="flex items-center gap-2">
             <Key className="h-4 w-4" />
             AI Assistant
+            <InfoTooltip content="Your API key is stored in Windows Credential Manager when available, or encrypted locally. The key is never sent anywhere except to the Claude API when you ask a question." />
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">

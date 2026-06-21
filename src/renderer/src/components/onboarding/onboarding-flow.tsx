@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAppStore } from '@/store/app-store'
-import { Wallet, Target, Banknote, User, Plus, Minus } from 'lucide-react'
+import { Wallet, Target, Banknote, User, Plus, Minus, Sparkles, History, Puzzle, Shield } from 'lucide-react'
 
 const steps = [
   {
@@ -26,6 +26,16 @@ const steps = [
     icon: Target,
     title: 'Set Your First Goal',
     desc: 'What are you saving for? An emergency fund, vacation, or something else? Set a target to stay motivated.'
+  },
+  {
+    icon: Sparkles,
+    title: 'AI & Advanced Features',
+    desc: 'Ask the AI assistant natural-language questions about your finances. Track FIRE goals, enable plugins for extended functionality, and review every change with the event history log.'
+  },
+  {
+    icon: Shield,
+    title: 'Security & Privacy',
+    desc: 'Your data is encrypted with AES-256-GCM using a master password only you know. All data stays on your computer — nothing is sent to the cloud.'
   }
 ]
 

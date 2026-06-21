@@ -20,6 +20,7 @@ import {
 import { MONTH_NAMES } from '@/lib/utils'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { InfoTooltip } from '@/components/shared/info-tooltip'
 
 export function IncomePage(): JSX.Element {
   const { profile, rates, setProfile } = useAppStore()
@@ -178,6 +179,7 @@ export function IncomePage(): JSX.Element {
               }}
             />
             <Label>{shouldShowGross ? 'Gross' : 'Net'} view</Label>
+            <InfoTooltip content="Toggle between gross (pre-tax) and net (after-tax) income display. Your tax withheld % is configured in Settings." />
           </div>
           <Button onClick={() => setModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />

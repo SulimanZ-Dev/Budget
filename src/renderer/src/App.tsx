@@ -10,6 +10,7 @@ import { OnboardingFlow } from '@/components/onboarding/onboarding-flow'
 import { EncryptionSetup } from '@/components/auth/encryption-setup'
 import { UnlockScreen } from '@/components/auth/unlock-screen'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppInit } from '@/hooks/use-init'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard'
 import { useAppStore } from '@/store/app-store'
@@ -242,6 +243,7 @@ function AppContent(): JSX.Element {
           }}
         />
       )}
+      <TooltipProvider>
       <div className="flex h-screen overflow-hidden bg-background">
         <Sidebar />
         <main className="flex flex-1 flex-col overflow-hidden">
@@ -291,6 +293,7 @@ function AppContent(): JSX.Element {
           onOpenChange={setTransactionModalOpen}
         />
       </div>
+      </TooltipProvider>
     </>
   )
 }

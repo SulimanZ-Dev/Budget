@@ -37,6 +37,10 @@ const TIPS: Record<string, { title: string; body: string }> = {
     title: 'Income',
     body: 'Manage multiple income streams and toggle gross vs net display.'
   },
+  '/savings': {
+    title: 'Savings',
+    body: 'Log one-off savings transfers. These are deducted from your budget balance automatically.'
+  },
   '/habits': {
     title: 'Habits',
     body: 'Log monthly mood and keep your transaction tracking streak alive.'
@@ -44,6 +48,10 @@ const TIPS: Record<string, { title: string; body: string }> = {
   '/ai': {
     title: 'AI Assistant',
     body: 'Ask natural language questions about your real numbers. Add API key in Settings.'
+  },
+  '/settings': {
+    title: 'Settings',
+    body: 'Configure your profile, tax, inflation, AI API key, themes, and data import/export.'
   }
 }
 

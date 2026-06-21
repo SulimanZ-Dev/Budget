@@ -42,7 +42,7 @@ export function Sidebar(): JSX.Element {
   return (
     <motion.aside
       animate={{ width: sidebarCollapsed ? 72 : 220 }}
-      className="flex h-full flex-col border-r bg-card/50 pt-10"
+      className="flex h-full flex-col border-r bg-card/80 backdrop-blur-xl pt-10"
     >
       <div className="flex items-center gap-2 px-4 pb-6">
         {!sidebarCollapsed && (

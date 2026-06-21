@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Target, Plus, MoreHorizontal, Trash2, Pencil } from 'lucide-react'
+import { InfoTooltip } from '@/components/shared/info-tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -143,7 +144,10 @@ export function GoalsPage(): JSX.Element {
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Goals</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          Goals
+          <InfoTooltip content="FIRE: Financial Independence, Retire Early — set a target of 25× your annual expenses. Emergency fund targets 3× monthly expenses. Debt goals include interest payoff projection." />
+        </h1>
         <div className="flex gap-2">
           <AskAiButton context="goals" prefill="Am I on track to hit my savings goals?" />
           <Button onClick={() => setModalOpen(true)}>

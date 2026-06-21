@@ -5,29 +5,9 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs))
 }
 
-export function formatMoney(
-  amount: number,
-  currency: string = 'SEK',
-  rates?: Record<string, number>
-): string {
-  let value = Number.isFinite(amount) ? amount : 0
-  if (currency !== 'SEK' && rates?.[currency]) {
-    value = amount * rates[currency]
-  }
-  const symbol = currency === 'SEK' ? 'kr' : currency === 'EUR' ? '€' : '$'
-  // Use en-US locale for comma thousands separator, max 2 decimals
-  const formatted = new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(Math.round(value * 100) / 100)
-  return currency === 'SEK' ? `${formatted} ${symbol}` : `${symbol}${formatted}`
-}
-
 /**
- * Format a number as currency with comma thousands separator and max 2 decimals
- * @param amount - The amount to format
- * @param options - Optional formatting options
- * @returns Formatted currency string (e.g., "1,250,000.50")
+ * Format a number with locale-aware formatting (comma thousands separator, fixed decimals)
+ * Shared across all financial tabs.
  */
 export function formatCurrency(
   amount: number,
@@ -43,10 +23,23 @@ export function formatCurrency(
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals
   }).format(Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals))
-  
   const prefix = options?.prefix ?? ''
   const suffix = options?.suffix ?? ''
   return `${prefix}${formatted}${suffix}`
+}
+
+export function formatMoney(
+  amount: number,
+  currency: string = 'SEK',
+  rates?: Record<string, number>
+): string {
+  let value = Number.isFinite(amount) ? amount : 0
+  if (currency !== 'SEK' && rates?.[currency]) {
+    value = amount * rates[currency]
+  }
+  const formatted = formatCurrency(value)
+  const symbol = currency === 'SEK' ? 'kr' : currency === 'EUR' ? '€' : '$'
+  return currency === 'SEK' ? `${formatted} ${symbol}` : `${symbol}${formatted}`
 }
 
 export function formatPercent(value: number): string {

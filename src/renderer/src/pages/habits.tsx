@@ -20,7 +20,7 @@ export function HabitsPage(): JSX.Element {
   async function rateMonth(rating: number): Promise<void> {
     await window.api.mood.set({
       year: profile.year,
-      month: profile.year === new Date().getFullYear() ? new Date().getMonth() : 12,
+      month: profile.year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12,
       rating,
       emoji: EMOJIS[rating - 1]
     })

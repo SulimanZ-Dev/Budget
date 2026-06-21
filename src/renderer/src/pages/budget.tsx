@@ -1,6 +1,6 @@
-import { useEffect, useState, useRef } from 'react'
-import { motion, useAnimationControls } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Plus, TrendingDown, TrendingUp } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
+import { ChevronLeft, ChevronRight, Plus, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -14,8 +14,7 @@ import { formatMoney, MONTH_NAMES, cn } from '@/lib/utils'
 import { frequencyToMonthly, monthlySubscriptionCost, netFromGross, type IncomeSourceRow } from '@/lib/finance'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
-import { Wallet } from 'lucide-react'
-import { cardHoverVariants, shakeVariants } from '@/lib/motion'
+import { cardHoverVariants } from '@/lib/motion'
 
 interface BudgetRow {
   category_id: number
@@ -39,8 +38,6 @@ export function BudgetPage(): JSX.Element {
   const [entries, setEntries] = useState<BudgetRow[]>([])
   const [spending, setSpending] = useState<Record<number, number>>({})
   const [loading, setLoading] = useState(true)
-  const [previousSpending, setPreviousSpending] = useState<Record<number, number>>({})
-  const shakeControlsRef = useRef<Map<number, ReturnType<typeof useAnimationControls>>>(new Map())
   const [modalOpen, setModalOpen] = useState(false)
   const [monthlyIncome, setMonthlyIncome] = useState(0)
   const [subscriptionMonthly, setSubscriptionMonthly] = useState(0)
@@ -66,23 +63,6 @@ export function BudgetPage(): JSX.Element {
         map[t.category_id] = (map[t.category_id] || 0) + t.amount
       }
     }
-    
-    // Trigger shake animation for newly overspent categories
-    for (const cat of budget as BudgetRow[]) {
-      const spent = map[cat.category_id] || 0
-      const prevSpent = previousSpending[cat.category_id] || 0
-      const wasUnder = prevSpent <= cat.amount
-      const isOver = spent > cat.amount
-      
-      if (wasUnder && isOver && cat.amount > 0) {
-        const controls = shakeControlsRef.current.get(cat.category_id)
-        if (controls) {
-          controls.start('shake')
-        }
-      }
-    }
-    
-    setPreviousSpending(map)
     setSpending(map)
     const outflow = (txs as { amount: number; type: string }[]).reduce((sum, t) => {
       if (t.type === 'savings' || t.type === 'transfer') return sum + t.amount
@@ -204,20 +184,14 @@ export function BudgetPage(): JSX.Element {
             const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0
             const over = budget > 0 && spent > budget
             
-            // Create animation controls for this category if not exists
-            if (!shakeControlsRef.current.has(cat.category_id)) {
-              shakeControlsRef.current.set(cat.category_id, useAnimationControls())
-            }
-            const shakeControls = shakeControlsRef.current.get(cat.category_id)!
-            
             return (
               <motion.button
                 key={cat.category_id}
                 initial={{ opacity: 0, y: 12 }}
-                animate={shakeControls}
+                animate={{ opacity: 1, y: 0 }}
                 whileHover="hover"
                 whileTap="tap"
-                variants={{ ...cardHoverVariants, ...shakeVariants }}
+                variants={cardHoverVariants}
                 transition={{ delay: i * 0.05 }}
                 onClick={() => openCategoryDetail(cat)}
                 className={cn(

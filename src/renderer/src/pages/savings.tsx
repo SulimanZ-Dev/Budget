@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { PiggyBank, Plus, Pencil, Trash2 } from 'lucide-react'
+import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -77,7 +78,10 @@ export function SavingsPage(): JSX.Element {
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Savings</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          Savings
+          <InfoTooltip content="Record money moved to savings accounts here. These are deducted from your available budget balance automatically, and contribute toward your savings goals." />
+        </h1>
       </div>
 
       <Card>

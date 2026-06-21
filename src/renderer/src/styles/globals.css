@@ -12,7 +12,7 @@
     --card-foreground: 240 10% 4%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 4%;
-    
+
     /* Adaptive accent variables */
     --accent-hue: 217;
     --accent-sat: 91%;
@@ -47,7 +47,7 @@
     --card-foreground: 0 0% 98%;
     --popover: 240 6% 7%;
     --popover-foreground: 0 0% 98%;
-    
+
     /* Adaptive accent in dark mode */
     --primary: var(--accent-hue) var(--accent-sat) 60%;
     --primary-foreground: 240 6% 4%;
@@ -63,24 +63,34 @@
     --input: 240 4% 16%;
     --ring: 217 91% 60%;
     --success: 142 70% 45%;
+    --success-foreground: 0 0% 98%;
     --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 98%;
     --info: 217 91% 60%;
+    --info-foreground: 0 0% 98%;
   }
-}
 
-@layer base {
   * {
-    @apply border-border/0;
+    @apply border-border;
   }
+
+  ::selection {
+    background-color: hsl(var(--primary) / 0.3);
+    color: hsl(var(--foreground));
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'rlig' 1, 'calt' 1;
     background: linear-gradient(
-      135deg,
-      hsl(var(--background-gradient-start)) 0%,
-      hsl(var(--background-gradient-end)) 100%
-    );
+        135deg,
+        hsl(var(--background-gradient-start)) 0%,
+        hsl(var(--background-gradient-end)) 100%
+      )
+      fixed;
+    background-color: hsl(var(--background));
   }
+
   :focus-visible {
     @apply outline-none ring-2 ring-ring ring-offset-1 ring-offset-background;
   }
@@ -89,13 +99,13 @@
 /* Glassmorphism utilities */
 @layer utilities {
   .glass {
-    @apply backdrop-blur-xl bg-white/70 dark:bg-black/50 border border-white/30 dark:border-white/10;
+    @apply backdrop-blur-xl bg-white/60 dark:bg-black/40 border border-white/30 dark:border-white/10 shadow-lg shadow-black/5 dark:shadow-black/20;
   }
   .glass-card {
-    @apply glass shadow-xl shadow-black/10 dark:shadow-black/40;
+    @apply glass bg-white/70 dark:bg-black/50 shadow-xl shadow-black/10 dark:shadow-black/40 border border-white/40 dark:border-white/15;
   }
   .glass-strong {
-    @apply backdrop-blur-xl bg-white/90 dark:bg-black/80 border border-white/40 dark:border-white/15;
+    @apply backdrop-blur-xl bg-white/85 dark:bg-black/70 border border-white/40 dark:border-white/20 shadow-lg;
   }
 }
 
@@ -103,6 +113,11 @@
   width: 8px;
   height: 8px;
 }
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
 ::-webkit-scrollbar-thumb {
-  @apply rounded-full bg-muted-foreground/25;
+  @apply rounded-full bg-muted-foreground/20 hover:bg-muted-foreground/40;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }

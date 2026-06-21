@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { CreditCard, Plus, ExternalLink } from 'lucide-react'
+import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -84,7 +85,10 @@ export function SubscriptionsPage(): JSX.Element {
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Subscriptions</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          Subscriptions
+          <InfoTooltip content="Cards are color-coded by cost tier: green (low), amber (medium), red (high). All amounts are converted to a monthly equivalent." />
+        </h1>
         <div className="flex gap-2">
           <AskAiButton
             context="subscriptions"

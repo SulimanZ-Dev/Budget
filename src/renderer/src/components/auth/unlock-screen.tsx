@@ -46,42 +46,44 @@ export function UnlockScreen({ onUnlock }: UnlockScreenProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4"
+      style={{
+        background: 'linear-gradient(135deg, hsl(var(--background-gradient-start)), hsl(var(--background-gradient-end)))'
+      }}
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-md"
       >
-        <Card className="p-8 bg-zinc-900/50 border-zinc-800 backdrop-blur">
+        <Card className="p-8 bg-card/80 backdrop-blur-xl border shadow-xl">
           <div className="text-center mb-8">
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
-              className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-indigo-500/10 mb-4"
+              className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 mb-4"
             >
-              <Lock className="w-10 h-10 text-indigo-400" />
+              <Lock className="w-10 h-10 text-primary" />
             </motion.div>
-            <h1 className="text-3xl font-bold text-zinc-100 mb-2">
+            <h1 className="text-3xl font-bold mb-2">
               Budget
             </h1>
-            <p className="text-zinc-400">
+            <p className="text-muted-foreground">
               Enter your master password to unlock
             </p>
           </div>
 
           <form onSubmit={handleUnlock} className="space-y-4">
             <div>
-              <Label htmlFor="password" className="text-zinc-300">
-                Master Password
-              </Label>
+              <Label htmlFor="password">Master Password</Label>
               <Input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                className="mt-1.5 bg-zinc-800 border-zinc-700 text-zinc-100 text-lg"
+                className="mt-1.5 text-lg"
                 disabled={isLoading}
                 autoFocus
               />
@@ -91,13 +93,13 @@ export function UnlockScreen({ onUnlock }: UnlockScreenProps) {
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-2"
+                className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex items-start gap-2"
               >
-                <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
-                <div className="text-sm text-red-400">
+                <AlertCircle className="w-5 h-5 text-destructive mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-destructive">
                   <p className="font-medium">{error}</p>
                   {attempts > 2 && (
-                    <p className="mt-1 text-red-400/80">
+                    <p className="mt-1 text-destructive/80">
                       {attempts} failed attempts. Make sure you're using the correct password.
                     </p>
                   )}
@@ -108,7 +110,7 @@ export function UnlockScreen({ onUnlock }: UnlockScreenProps) {
             <Button
               type="submit"
               disabled={!password || isLoading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+              className="w-full disabled:opacity-50"
               size="lg"
             >
               {isLoading ? (
@@ -116,7 +118,7 @@ export function UnlockScreen({ onUnlock }: UnlockScreenProps) {
                   <motion.div
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                    className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                    className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full"
                   />
                   Unlocking...
                 </span>
@@ -126,8 +128,8 @@ export function UnlockScreen({ onUnlock }: UnlockScreenProps) {
             </Button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-zinc-800">
-            <p className="text-xs text-zinc-500 text-center">
+          <div className="mt-6 pt-6 border-t border-border">
+            <p className="text-xs text-muted-foreground text-center">
               Your data is encrypted with AES-256-GCM.
               <br />
               Only you have access to your encryption keys.

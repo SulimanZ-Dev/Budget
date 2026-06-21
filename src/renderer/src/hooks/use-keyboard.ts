@@ -2,55 +2,55 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppStore } from '@/store/app-store'
 
+function isInputField(el: EventTarget | null): boolean {
+  if (!el || !(el instanceof HTMLElement)) return false
+  const tag = el.tagName.toLowerCase()
+  return (
+    tag === 'input' ||
+    tag === 'textarea' ||
+    tag === 'select' ||
+    el.isContentEditable ||
+    el.hasAttribute('data-input') ||
+    el.closest('[contenteditable]') !== null ||
+    el.closest('[role="combobox"]') !== null ||
+    el.closest('[role="textbox"]') !== null
+  )
+}
+
 export function useKeyboardShortcuts(): void {
   const navigate = useNavigate()
-  const {
-    setCommandOpen,
-    setTransactionModalOpen,
-    openAI,
-    profile,
-    setProfile
-  } = useAppStore()
+  const { setCommandOpen, setTransactionModalOpen, openAI, profile, setProfile } = useAppStore()
 
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
-      // Don't intercept shortcuts when user is typing in an input/textarea/contenteditable
-      const target = e.target as HTMLElement
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      ) {
-        return
-      }
+      const target = e.target
+
+      // Let all keystrokes through when focus is inside an input-like element
+      if (isInputField(target)) return
 
       const mod = e.ctrlKey || e.metaKey
       if (!mod) return
 
-      if (e.key === 'n') {
-        e.preventDefault()
-        setTransactionModalOpen(true)
-      }
       if (e.key === 'k') {
         e.preventDefault()
+        e.stopPropagation()
         setCommandOpen(true)
-      }
-      if (e.key === ',') {
+      } else if (e.key === 'n') {
+        e.preventDefault()
+        setTransactionModalOpen(true)
+      } else if (e.key === ',') {
         e.preventDefault()
         navigate('/settings')
-      }
-      if (e.key === 'd') {
+      } else if (e.key === 'd') {
         e.preventDefault()
         const next = profile.theme === 'dark' ? 'light' : 'dark'
         setProfile({ theme: next })
         window.api.theme.set(next)
         document.documentElement.classList.toggle('dark', next === 'dark')
-      }
-      if (e.key === 'f') {
+      } else if (e.key === 'f') {
         e.preventDefault()
         navigate('/transactions')
-      }
-      if (e.shiftKey && e.key === 'A') {
+      } else if (e.shiftKey && e.key === 'A') {
         e.preventDefault()
         openAI()
         navigate('/ai')

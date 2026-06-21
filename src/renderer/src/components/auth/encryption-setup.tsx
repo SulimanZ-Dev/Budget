@@ -50,70 +50,77 @@ export function EncryptionSetup({ onComplete }: EncryptionSetupProps) {
     }
   }
 
+  const sharedCardClass = "p-8 bg-card/80 backdrop-blur-xl border shadow-xl"
+  const sharedFieldClass = "mt-1.5"
+
   if (step === 'intro') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-background p-4"
+        style={{
+          background: 'linear-gradient(135deg, hsl(var(--background-gradient-start)), hsl(var(--background-gradient-end)))'
+        }}
+      >
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-2xl"
         >
-          <Card className="p-8 bg-zinc-900/50 border-zinc-800 backdrop-blur">
+          <Card className={sharedCardClass}>
             <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-500/10 mb-4">
-                <Shield className="w-8 h-8 text-indigo-400" />
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
+                <Shield className="w-8 h-8 text-primary" />
               </div>
-              <h1 className="text-3xl font-bold text-zinc-100 mb-2">
+              <h1 className="text-3xl font-bold mb-2">
                 Welcome to Budget
               </h1>
-              <p className="text-zinc-400">
+              <p className="text-muted-foreground">
                 Let's secure your financial data with zero-knowledge encryption
               </p>
             </div>
 
             <div className="space-y-6 mb-8">
-              <div className="flex items-start gap-4 p-4 rounded-lg bg-zinc-800/50">
-                <Lock className="w-5 h-5 text-indigo-400 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-4 p-4 rounded-lg bg-muted/50">
+                <Lock className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
                 <div>
-                  <h3 className="font-semibold text-zinc-100 mb-1">
+                  <h3 className="font-semibold mb-1">
                     End-to-End Encryption
                   </h3>
-                  <p className="text-sm text-zinc-400">
+                  <p className="text-sm text-muted-foreground">
                     Your data is encrypted locally using AES-256-GCM. Only you have the key.
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-start gap-4 p-4 rounded-lg bg-zinc-800/50">
-                <Key className="w-5 h-5 text-indigo-400 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-4 p-4 rounded-lg bg-muted/50">
+                <Key className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
                 <div>
-                  <h3 className="font-semibold text-zinc-100 mb-1">
+                  <h3 className="font-semibold mb-1">
                     Master Password
                   </h3>
-                  <p className="text-sm text-zinc-400">
+                  <p className="text-sm text-muted-foreground">
                     Your master password is never stored. It's used to derive encryption keys using Argon2id.
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-start gap-4 p-4 rounded-lg bg-zinc-800/50">
-                <Shield className="w-5 h-5 text-indigo-400 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-4 p-4 rounded-lg bg-muted/50">
+                <Shield className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
                 <div>
-                  <h3 className="font-semibold text-zinc-100 mb-1">
+                  <h3 className="font-semibold mb-1">
                     Tamper Detection
                   </h3>
-                  <p className="text-sm text-zinc-400">
+                  <p className="text-sm text-muted-foreground">
                     HMAC signatures protect your data integrity. Any unauthorized changes are detected.
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 mb-6">
+            <div className="bg-warning/10 border border-warning/20 rounded-lg p-4 mb-6">
               <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" />
-                <div className="text-sm text-amber-200">
-                  <p className="font-semibold mb-1">Important</p>
+                <AlertCircle className="w-5 h-5 text-warning mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-warning-foreground/80">
+                  <p className="font-semibold mb-1 text-warning-foreground">Important</p>
                   <p>
                     If you forget your master password, your data cannot be recovered. 
                     Choose a strong password you'll remember.
@@ -122,11 +129,7 @@ export function EncryptionSetup({ onComplete }: EncryptionSetupProps) {
               </div>
             </div>
 
-            <Button
-              onClick={() => setStep('setup')}
-              className="w-full bg-indigo-600 hover:bg-indigo-700"
-              size="lg"
-            >
+            <Button onClick={() => setStep('setup')} className="w-full" size="lg">
               Continue to Setup
             </Button>
           </Card>
@@ -136,43 +139,45 @@ export function EncryptionSetup({ onComplete }: EncryptionSetupProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-800 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4"
+      style={{
+        background: 'linear-gradient(135deg, hsl(var(--background-gradient-start)), hsl(var(--background-gradient-end)))'
+      }}
+    >
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md"
       >
-        <Card className="p-8 bg-zinc-900/50 border-zinc-800 backdrop-blur">
+        <Card className={sharedCardClass}>
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-500/10 mb-4">
-              <Lock className="w-8 h-8 text-indigo-400" />
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
+              <Lock className="w-8 h-8 text-primary" />
             </div>
-            <h1 className="text-2xl font-bold text-zinc-100 mb-2">
+            <h1 className="text-2xl font-bold mb-2">
               Create Master Password
             </h1>
-            <p className="text-zinc-400 text-sm">
+            <p className="text-muted-foreground text-sm">
               This password will encrypt all your financial data
             </p>
           </div>
 
           <div className="space-y-4 mb-6">
             <div>
-              <Label htmlFor="password" className="text-zinc-300">
-                Master Password
-              </Label>
+              <Label htmlFor="password">Master Password</Label>
               <Input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter a strong password"
-                className="mt-1.5 bg-zinc-800 border-zinc-700 text-zinc-100"
+                className={sharedFieldClass}
                 disabled={isLoading}
               />
               {password && (
                 <div className="mt-2">
                   <div className="flex items-center gap-2 text-xs">
-                    <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${passwordStrength.percent}%` }}
@@ -188,29 +193,27 @@ export function EncryptionSetup({ onComplete }: EncryptionSetupProps) {
             </div>
 
             <div>
-              <Label htmlFor="confirm" className="text-zinc-300">
-                Confirm Password
-              </Label>
+              <Label htmlFor="confirm">Confirm Password</Label>
               <Input
                 id="confirm"
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Re-enter your password"
-                className="mt-1.5 bg-zinc-800 border-zinc-700 text-zinc-100"
+                className={sharedFieldClass}
                 disabled={isLoading}
               />
               {confirmPassword && (
                 <div className="mt-2 flex items-center gap-2 text-xs">
                   {passwordsMatch ? (
                     <>
-                      <CheckCircle2 className="w-4 h-4 text-green-400" />
-                      <span className="text-green-400">Passwords match</span>
+                      <CheckCircle2 className="w-4 h-4 text-success" />
+                      <span className="text-success">Passwords match</span>
                     </>
                   ) : (
                     <>
-                      <AlertCircle className="w-4 h-4 text-red-400" />
-                      <span className="text-red-400">Passwords do not match</span>
+                      <AlertCircle className="w-4 h-4 text-destructive" />
+                      <span className="text-destructive">Passwords do not match</span>
                     </>
                   )}
                 </div>
@@ -219,7 +222,7 @@ export function EncryptionSetup({ onComplete }: EncryptionSetupProps) {
           </div>
 
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
               {error}
             </div>
           )}
@@ -228,7 +231,7 @@ export function EncryptionSetup({ onComplete }: EncryptionSetupProps) {
             <Button
               onClick={handleSetup}
               disabled={!passwordsMatch || password.length < 8 || isLoading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+              className="w-full disabled:opacity-50"
               size="lg"
             >
               {isLoading ? 'Setting up encryption...' : 'Create & Encrypt'}
@@ -237,7 +240,7 @@ export function EncryptionSetup({ onComplete }: EncryptionSetupProps) {
             <Button
               onClick={() => setStep('intro')}
               variant="ghost"
-              className="w-full text-zinc-400 hover:text-zinc-100"
+              className="w-full"
               disabled={isLoading}
             >
               Back

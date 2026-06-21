@@ -88,7 +88,7 @@ export function YearEndReportPage(): JSX.Element {
               </tr>
             </thead>
             <tbody>
-              {report.monthly.map((m) => (
+              {(report.monthly ?? []).map((m) => (
                 <tr key={m.month} className="border-b border-muted/30">
                   <td className="py-2">{MONTH_NAMES[m.month - 1]}</td>
                   <td className="text-right py-2 tabular-nums">
