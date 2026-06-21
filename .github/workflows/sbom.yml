@@ -39,7 +39,7 @@ jobs:
         run: cyclonedx-npm --output-file sbom.xml --output-format XML
       
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: |
