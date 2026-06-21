@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import { TransactionHistory } from './transaction-history'
 import type { TransactionRowData } from './transaction-row'
 
 interface TransactionDetailDrawerProps {
@@ -29,6 +30,7 @@ export function TransactionDetailDrawer({
   const [isRecurring, setIsRecurring] = useState(!!t.is_recurring)
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [members, setMembers] = useState<{ id: number; name: string }[]>([])
+  const [showHistory, setShowHistory] = useState(false)
 
   useEffect(() => {
     window.api.categories.list().then((c) => setCategories(c as { id: number; name: string }[]))
@@ -52,7 +54,21 @@ export function TransactionDetailDrawer({
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold">Edit transaction</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold">Edit transaction</h2>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowHistory(!showHistory)}
+        >
+          {showHistory ? 'Edit' : 'History'}
+        </Button>
+      </div>
+
+      {showHistory ? (
+        <TransactionHistory transactionId={t.id} onUndo={onSaved} />
+      ) : (
+        <>
       <div className="grid gap-2">
         <Label>Description</Label>
         <Input value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -102,9 +118,11 @@ export function TransactionDetailDrawer({
         <Label>Recurring</Label>
         <Switch checked={isRecurring} onCheckedChange={setIsRecurring} />
       </div>
-      <Button onClick={save} className="w-full">
-        Save changes
-      </Button>
+          <Button onClick={save} className="w-full">
+            Save changes
+          </Button>
+        </>
+      )}
     </div>
   )
 }

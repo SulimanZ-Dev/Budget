@@ -5,12 +5,18 @@
 @layer base {
   :root {
     --background: 0 0% 98%;
+    --background-gradient-start: 220 70% 97%;
+    --background-gradient-end: 200 80% 95%;
     --foreground: 240 10% 4%;
     --card: 0 0% 100%;
     --card-foreground: 240 10% 4%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 4%;
-    --primary: 221 83% 53%;
+    
+    /* Adaptive accent variables */
+    --accent-hue: 217;
+    --accent-sat: 91%;
+    --primary: var(--accent-hue) var(--accent-sat) 53%;
     --primary-foreground: 210 40% 98%;
     --secondary: 240 5% 96%;
     --secondary-foreground: 240 6% 10%;
@@ -34,12 +40,16 @@
 
   .dark {
     --background: 240 6% 4%;
+    --background-gradient-start: 240 8% 6%;
+    --background-gradient-end: 260 10% 8%;
     --foreground: 0 0% 98%;
     --card: 240 6% 7%;
     --card-foreground: 0 0% 98%;
     --popover: 240 6% 7%;
     --popover-foreground: 0 0% 98%;
-    --primary: 217 91% 60%;
+    
+    /* Adaptive accent in dark mode */
+    --primary: var(--accent-hue) var(--accent-sat) 60%;
     --primary-foreground: 240 6% 4%;
     --secondary: 240 4% 12%;
     --secondary-foreground: 0 0% 98%;
@@ -60,14 +70,32 @@
 
 @layer base {
   * {
-    @apply border-border;
+    @apply border-border/0;
   }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'rlig' 1, 'calt' 1;
+    background: linear-gradient(
+      135deg,
+      hsl(var(--background-gradient-start)) 0%,
+      hsl(var(--background-gradient-end)) 100%
+    );
   }
   :focus-visible {
-    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+    @apply outline-none ring-2 ring-ring ring-offset-1 ring-offset-background;
+  }
+}
+
+/* Glassmorphism utilities */
+@layer utilities {
+  .glass {
+    @apply backdrop-blur-xl bg-white/70 dark:bg-black/50 border border-white/30 dark:border-white/10;
+  }
+  .glass-card {
+    @apply glass shadow-xl shadow-black/10 dark:shadow-black/40;
+  }
+  .glass-strong {
+    @apply backdrop-blur-xl bg-white/90 dark:bg-black/80 border border-white/40 dark:border-white/15;
   }
 }
 

@@ -28,6 +28,7 @@ interface AppState {
   aiPrefill: string
   aiScreenContext: string
   onboardingComplete: boolean
+  showHelp: boolean
   inflationAdjust: boolean
   loading: boolean
 
@@ -42,6 +43,7 @@ interface AppState {
   setTransactionModalOpen: (v: boolean) => void
   openAI: (prefill?: string, context?: string) => void
   setOnboardingComplete: (v: boolean) => void
+  setShowHelp: (v: boolean) => void
   setInflationAdjust: (v: boolean) => void
   setLoading: (v: boolean) => void
 }
@@ -52,7 +54,7 @@ const defaultProfile: Profile = {
   displayCurrency: 'SEK',
   cpiPercent: 2.5,
   taxWithheldPercent: 30,
-  theme: 'system',
+  theme: 'dark', // Dark mode by default
   year: new Date().getFullYear(),
   autoHideZeroCategories: false,
   notificationsEnabled: true,
@@ -72,6 +74,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   aiPrefill: '',
   aiScreenContext: '',
   onboardingComplete: true,
+  showHelp: false,
   inflationAdjust: false,
   loading: true,
 
@@ -87,6 +90,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   openAI: (prefill = '', context = '') =>
     set({ aiPanelOpen: true, aiPrefill: prefill, aiScreenContext: context }),
   setOnboardingComplete: (v) => set({ onboardingComplete: v }),
+  setShowHelp: (v) => set({ showHelp: v }),
   setInflationAdjust: (v) => set({ inflationAdjust: v }),
   setLoading: (v) => set({ loading: v })
 }))

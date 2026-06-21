@@ -1,6 +1,8 @@
-import { motion } from 'framer-motion'
+import { motion, useSpring, useTransform } from 'framer-motion'
+import { useEffect } from 'react'
 import { cn, formatMoney } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
+import { cardHoverVariants, numberSpringConfig } from '@/lib/motion'
 import type { LucideIcon } from 'lucide-react'
 
 interface StatTileProps {
@@ -23,12 +25,26 @@ export function StatTile({
   delay = 0
 }: StatTileProps): JSX.Element {
   const { profile, rates } = useAppStore()
-  const display =
-    format === 'money' && typeof value === 'number'
-      ? formatMoney(value, profile.displayCurrency, rates)
-      : format === 'percent' && typeof value === 'number'
-        ? `${value.toFixed(1)}%`
-        : String(value)
+  
+  // Animated number value
+  const numericValue = typeof value === 'number' ? value : 0
+  const spring = useSpring(numericValue, numberSpringConfig)
+  
+  useEffect(() => {
+    spring.set(numericValue)
+  }, [numericValue, spring])
+
+  // Format the animated value
+  const displayValue = useTransform(spring, (latest) => {
+    if (format === 'money') {
+      return formatMoney(latest, profile.displayCurrency, rates)
+    } else if (format === 'percent') {
+      return `${latest.toFixed(1)}%`
+    } else if (format === 'number') {
+      return Math.round(latest).toLocaleString()
+    }
+    return String(value)
+  })
 
   const colorClass = {
     default: 'text-foreground',
@@ -42,14 +58,19 @@ export function StatTile({
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
+      whileHover="hover"
+      whileTap="tap"
+      variants={cardHoverVariants}
       transition={{ delay, duration: 0.4 }}
-      className="rounded-xl border bg-card p-5 shadow-sm"
+      className="glass-card rounded-xl p-5 cursor-pointer"
     >
       <div className="flex items-start justify-between">
         <p className="text-sm font-medium text-muted-foreground">{label}</p>
         {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
       </div>
-      <p className={cn('mt-2 text-3xl font-bold tracking-tight', colorClass)}>{display}</p>
+      <motion.p className={cn('mt-2 text-3xl font-bold tracking-tight', colorClass)}>
+        {displayValue}
+      </motion.p>
       {trend !== undefined && (
         <p
           className={cn(

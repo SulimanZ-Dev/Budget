@@ -1,7 +1,7 @@
 import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import { copyFileSync, readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
-import { getDatabase, getDbPath } from '../database'
+import { getDatabase, getDbPath } from '../database-encrypted'
 import { fetchExchangeRates, getCachedRates } from '../services/currency'
 import { saveApiKey, getApiKey, deleteApiKey, hasApiKey } from '../services/keychain'
 import {
@@ -17,6 +17,29 @@ import {
   guessColumnIndexes,
   type CsvMapping
 } from '../services/csv-import'
+import {
+  signBudgetEntry,
+  signGoal,
+  signCategory
+} from '../crypto/integrity'
+// CQRS imports
+import {
+  createTransaction,
+  updateTransaction,
+  deleteTransaction,
+  recategorizeTransaction,
+  flagTransaction,
+  bulkRecategorizeTransactions,
+  bulkDeleteTransactions,
+  bulkFlagTransactions,
+  undoLastChange,
+  importTransactionsFromCsvWithEvents
+} from '../commands/transaction-commands'
+import {
+  getTransactions,
+  getTransactionHistory,
+  verifyTransactionIntegrity
+} from '../queries/transaction-queries'
 
 type GetWindow = () => BrowserWindow | null
 
@@ -93,9 +116,16 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     db().prepare('SELECT * FROM categories ORDER BY sort_order, name').all()
   )
   ipcMain.handle('categories:create', (_, cat) => {
+    // Compute HMAC signature
+    const hmac = signCategory({
+      name: cat.name,
+      budget_amount: cat.budgetAmount ?? 0,
+      is_fixed: cat.isFixed ? 1 : 0
+    })
+    
     const r = db()
       .prepare(
-        'INSERT INTO categories (name, icon, color, is_fixed, budget_amount, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
+        'INSERT INTO categories (name, icon, color, is_fixed, budget_amount, sort_order, hmac) VALUES (?, ?, ?, ?, ?, ?, ?)'
       )
       .run(
         cat.name,
@@ -103,14 +133,22 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         cat.color ?? '#6366f1',
         cat.isFixed ? 1 : 0,
         cat.budgetAmount ?? 0,
-        cat.sortOrder ?? 0
+        cat.sortOrder ?? 0,
+        hmac
       )
     return { id: Number(r.lastInsertRowid), ...cat }
   })
   ipcMain.handle('categories:update', (_, id: number, cat) => {
+    // Compute new HMAC signature
+    const hmac = signCategory({
+      name: cat.name,
+      budget_amount: cat.budgetAmount,
+      is_fixed: cat.isFixed ? 1 : 0
+    })
+    
     db()
       .prepare(
-        'UPDATE categories SET name=?, icon=?, color=?, is_fixed=?, budget_amount=?, sort_order=? WHERE id=?'
+        'UPDATE categories SET name=?, icon=?, color=?, is_fixed=?, budget_amount=?, sort_order=?, hmac=? WHERE id=?'
       )
       .run(
         cat.name,
@@ -119,6 +157,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         cat.isFixed ? 1 : 0,
         cat.budgetAmount,
         cat.sortOrder,
+        hmac,
         id
       )
     return true
@@ -216,13 +255,21 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     }
   })
   ipcMain.handle('budget:setEntry', (_, data) => {
+    // Compute HMAC signature
+    const hmac = signBudgetEntry({
+      category_id: data.categoryId,
+      year: data.year,
+      month: data.month,
+      amount: data.amount
+    })
+    
     db()
       .prepare(
-        `INSERT INTO budget_entries (category_id, year, month, amount, notes)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(category_id, year, month) DO UPDATE SET amount=excluded.amount, notes=excluded.notes`
+        `INSERT INTO budget_entries (category_id, year, month, amount, notes, hmac)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(category_id, year, month) DO UPDATE SET amount=excluded.amount, notes=excluded.notes, hmac=excluded.hmac`
       )
-      .run(data.categoryId, data.year, data.month, data.amount, data.notes ?? null)
+      .run(data.categoryId, data.year, data.month, data.amount, data.notes ?? null, hmac)
     return true
   })
 
@@ -265,73 +312,66 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     sql += ' ORDER BY t.date DESC, t.id DESC'
     return db().prepare(sql).all(...params)
   })
+  // Use command pattern for transaction creation
   ipcMain.handle('transactions:create', (_, tx) => {
-    const r = db()
-      .prepare(
-        `INSERT INTO transactions (description, amount, type, category_id, date, is_recurring, is_unnecessary, member_id, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        tx.description,
-        tx.amount,
-        tx.type,
-        tx.categoryId ?? null,
-        tx.date,
-        tx.isRecurring ? 1 : 0,
-        tx.isUnnecessary ? 1 : 0,
-        tx.memberId ?? null,
-        tx.notes ?? null
-      )
+    const result = createTransaction({
+      description: tx.description,
+      amount: tx.amount,
+      type: tx.type,
+      category_id: tx.categoryId ?? null,
+      date: tx.date,
+      is_recurring: tx.isRecurring ?? false,
+      is_unnecessary: tx.isUnnecessary ?? false,
+      member_id: tx.memberId ?? null,
+      notes: tx.notes ?? null
+    })
+    
     updateSpendingStreak(tx.date)
     const txDate = new Date(tx.date)
-    checkBudgetAlerts(tx.categoryId, txDate.getFullYear(), txDate.getMonth() + 1)
-    return { id: Number(r.lastInsertRowid) }
-  })
-  ipcMain.handle('transactions:update', (_, id: number, tx) => {
-    db()
-      .prepare(
-        `UPDATE transactions SET description=?, amount=?, type=?, category_id=?, date=?,
-         is_recurring=?, is_unnecessary=?, member_id=?, notes=? WHERE id=?`
-      )
-      .run(
-        tx.description,
-        tx.amount,
-        tx.type,
-        tx.categoryId,
-        tx.date,
-        tx.isRecurring ? 1 : 0,
-        tx.isUnnecessary ? 1 : 0,
-        tx.memberId,
-        tx.notes,
-        id
-      )
-    const existing = db()
-      .prepare('SELECT date, category_id FROM transactions WHERE id = ?')
-      .get(id) as { date: string; category_id: number } | undefined
-    if (existing?.category_id) {
-      const d = new Date(tx.date ?? existing.date)
-      checkBudgetAlerts(tx.categoryId ?? existing.category_id, d.getFullYear(), d.getMonth() + 1)
+    if (tx.categoryId) {
+      checkBudgetAlerts(tx.categoryId, txDate.getFullYear(), txDate.getMonth() + 1)
     }
-    return true
+    return result
   })
+  // Use command pattern for transaction updates
+  ipcMain.handle('transactions:update', (_, id: number, tx) => {
+    const result = updateTransaction({
+      id,
+      description: tx.description,
+      amount: tx.amount,
+      type: tx.type,
+      category_id: tx.categoryId ?? null,
+      date: tx.date,
+      is_recurring: tx.isRecurring ?? false,
+      is_unnecessary: tx.isUnnecessary ?? false,
+      member_id: tx.memberId ?? null,
+      notes: tx.notes ?? null
+    })
+    
+    // Check budget alerts if category changed
+    if (tx.categoryId) {
+      const d = new Date(tx.date)
+      checkBudgetAlerts(tx.categoryId, d.getFullYear(), d.getMonth() + 1)
+    }
+    return result
+  })
+  // Use command pattern for transaction deletion
   ipcMain.handle('transactions:delete', (_, id: number) => {
-    db().prepare('DELETE FROM transactions WHERE id = ?').run(id)
-    return true
+    return deleteTransaction(id)
   })
+  // Use command pattern for bulk operations
   ipcMain.handle('transactions:bulk', (_, action: string, ids: number[], data?: unknown) => {
-    const stmt = db().prepare(`UPDATE transactions SET category_id = ? WHERE id = ?`)
     if (action === 'recategorize' && data) {
       const catId = (data as { categoryId: number }).categoryId
-      for (const id of ids) stmt.run(catId, id)
+      return bulkRecategorizeTransactions(ids, catId)
     }
     if (action === 'delete') {
-      for (const id of ids) db().prepare('DELETE FROM transactions WHERE id = ?').run(id)
+      return bulkDeleteTransactions(ids)
     }
     if (action === 'flag') {
-      for (const id of ids)
-        db().prepare('UPDATE transactions SET is_unnecessary = 1 WHERE id = ?').run(id)
+      return bulkFlagTransactions(ids)
     }
-    return true
+    return false
   })
   ipcMain.handle('transactions:csvPreview', (_, csv: string) => {
     const preview = parseCsvPreview(csv)
@@ -339,6 +379,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return { ...preview, guessed }
   })
 
+  // Use command pattern for CSV import
   ipcMain.handle('transactions:importCsv', (_, csv: string, mapping?: CsvMapping) => {
     const preview = parseCsvPreview(csv, 1)
     const map: CsvMapping = mapping ?? {
@@ -347,13 +388,16 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       hasHeader: true
     }
     const rows = importTransactionsFromCsv(csv, map)
-    const insert = db().prepare(
-      `INSERT INTO transactions (description, amount, type, date) VALUES (?, ?, 'expense', ?)`
-    )
-    for (const row of rows) {
-      insert.run(row.description, row.amount, row.date)
-    }
-    return { imported: rows.length }
+    return importTransactionsFromCsvWithEvents(rows)
+  })
+
+  // New transaction event sourcing handlers
+  ipcMain.handle('transactions:history', (_, id: number) => {
+    return getTransactionHistory(id)
+  })
+  
+  ipcMain.handle('transactions:undo', (_, id: number) => {
+    return undoLastChange(id)
   })
 
   // Goals

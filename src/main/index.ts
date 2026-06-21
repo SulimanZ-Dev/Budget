@@ -1,8 +1,11 @@
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, Notification } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { initDatabase, closeDatabase } from './database'
+import { closeDatabase } from './database-encrypted'
 import { registerIpcHandlers } from './ipc/handlers'
+import { registerEncryptionHandlers } from './ipc/encryption-handlers'
+import { registerPluginHandlers } from './ipc/plugin-handlers'
+import { getPluginManager } from './plugins/plugin-manager'
 import { setupAutoUpdater } from './updater'
 
 let mainWindow: BrowserWindow | null = null
@@ -24,9 +27,13 @@ function createWindow(): void {
     },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
-      contextIsolation: true,
-      nodeIntegration: false
+      sandbox: true, // Enable sandbox for security
+      contextIsolation: true, // Already enabled - good
+      nodeIntegration: false, // Already disabled - good
+      webSecurity: true, // Enforce web security
+      allowRunningInsecureContent: false, // Block insecure content
+      experimentalFeatures: false, // Disable experimental features
+      navigateOnDragDrop: false // Prevent navigation on drag-drop
     }
   })
 
@@ -48,9 +55,15 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.budgetapp.desktop')
-  initDatabase()
+  
+  // Register encryption handlers first (database init happens after unlock)
+  registerEncryptionHandlers()
   registerIpcHandlers(() => mainWindow)
+  registerPluginHandlers()
   setupAutoUpdater()
+  
+  // Load plugins after database is unlocked (handled by encryption-handlers)
+  // Plugins will be loaded when database:unlocked event is emitted
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

@@ -14,6 +14,16 @@ export function useKeyboardShortcuts(): void {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
+      // Don't intercept shortcuts when user is typing in an input/textarea/contenteditable
+      const target = e.target as HTMLElement
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return
+      }
+
       const mod = e.ctrlKey || e.metaKey
       if (!mod) return
 

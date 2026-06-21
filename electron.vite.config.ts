@@ -7,7 +7,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        external: ['better-sqlite3', 'keytar']
+        external: ['better-sqlite3', 'better-sqlite3-multiple-ciphers', 'keytar', 'argon2']
       }
     }
   },

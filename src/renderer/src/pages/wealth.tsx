@@ -391,10 +391,10 @@ export function WealthPage(): JSX.Element {
             <div className="h-48">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={pensionData}>
-                  <XAxis dataKey="year" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="balance" stroke="hsl(var(--primary))" dot={false} />
+                  <XAxis dataKey="year" fontSize={12} />
+                  <YAxis fontSize={12} tickFormatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)} />
+                  <Tooltip formatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)} />
+                  <Line type="monotone" dataKey="balance" stroke="hsl(var(--primary))" dot={false} strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

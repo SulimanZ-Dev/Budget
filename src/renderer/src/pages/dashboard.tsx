@@ -5,6 +5,8 @@ import {
   Bar,
   LineChart,
   Line,
+  AreaChart,
+  Area,
   PieChart,
   Pie,
   Cell,
@@ -22,6 +24,7 @@ import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { useAppStore } from '@/store/app-store'
 import { formatMoney, MONTH_NAMES } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { cardHoverVariants } from '@/lib/motion'
 
 interface DashboardStats {
   netWorth: number
@@ -120,101 +123,201 @@ export function DashboardPage(): JSX.Element {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Income, expenses & savings</CardTitle>
-          </CardHeader>
-          <CardContent className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barData}>
-                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                <Tooltip
-                  formatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)}
-                  contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-                />
-                <Legend />
-                <Bar dataKey="income" fill="hsl(var(--success))" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expenses" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="savings" fill="hsl(var(--info))" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        <motion.div
+          className="lg:col-span-2"
+          whileHover="hover"
+          variants={cardHoverVariants}
+        >
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle>Income, expenses & savings</CardTitle>
+            </CardHeader>
+            <CardContent className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={barData}>
+                  <defs>
+                    <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--success))" stopOpacity={0.8} />
+                      <stop offset="100%" stopColor="hsl(var(--success))" stopOpacity={0.3} />
+                    </linearGradient>
+                    <linearGradient id="expensesGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--destructive))" stopOpacity={0.8} />
+                      <stop offset="100%" stopColor="hsl(var(--destructive))" stopOpacity={0.3} />
+                    </linearGradient>
+                    <linearGradient id="savingsGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--info))" stopOpacity={0.8} />
+                      <stop offset="100%" stopColor="hsl(var(--info))" stopOpacity={0.3} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)} />
+                  <Tooltip
+                    formatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)}
+                    contentStyle={{
+                      background: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <Bar
+                    dataKey="income"
+                    fill="url(#incomeGradient)"
+                    radius={[4, 4, 0, 0]}
+                    animationDuration={800}
+                    animationBegin={0}
+                  />
+                  <Bar
+                    dataKey="expenses"
+                    fill="url(#expensesGradient)"
+                    radius={[4, 4, 0, 0]}
+                    animationDuration={800}
+                    animationBegin={100}
+                  />
+                  <Bar
+                    dataKey="savings"
+                    fill="url(#savingsGradient)"
+                    radius={[4, 4, 0, 0]}
+                    animationDuration={800}
+                    animationBegin={200}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Budget health</CardTitle>
-            <span
-              className={`text-3xl font-bold ${
-                stats.budgetHealth >= 70
-                  ? 'text-success'
-                  : stats.budgetHealth >= 40
-                    ? 'text-warning'
-                    : 'text-destructive'
-              }`}
-            >
-              {stats.budgetHealth}
-            </span>
-          </CardHeader>
-          <CardContent>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <motion.div
-                className="h-full bg-primary"
-                initial={{ width: 0 }}
-                animate={{ width: `${stats.budgetHealth}%` }}
-                transition={{ duration: 1, ease: 'easeOut' }}
-              />
-            </div>
-            <p className="mt-4 text-sm text-muted-foreground">
-              Based on savings rate, goal progress, and budget adherence.
-            </p>
-          </CardContent>
-        </Card>
+        <motion.div
+          whileHover="hover"
+          variants={cardHoverVariants}
+        >
+          <Card className="glass-card">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Budget health</CardTitle>
+              <span
+                className={`text-3xl font-bold ${
+                  stats.budgetHealth >= 70
+                    ? 'text-success'
+                    : stats.budgetHealth >= 40
+                      ? 'text-warning'
+                      : 'text-destructive'
+                }`}
+              >
+                {stats.budgetHealth}
+              </span>
+            </CardHeader>
+            <CardContent>
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <motion.div
+                  className="h-full bg-primary"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${stats.budgetHealth}%` }}
+                  transition={{ duration: 1, ease: 'easeOut' }}
+                />
+              </div>
+              <p className="mt-4 text-sm text-muted-foreground">
+                Based on savings rate, goal progress, and budget adherence.
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Savings rate trend</CardTitle>
-          </CardHeader>
-          <CardContent className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={stats.savingsByMonth.map((s) => ({
-                month: MONTH_NAMES[parseInt(s.month, 10) - 1]?.slice(0, 3),
-                rate: s.rate
-              }))}>
-                <XAxis dataKey="month" fontSize={12} />
-                <YAxis fontSize={12} />
-                <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
-                <Line type="monotone" dataKey="rate" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Spending by category</CardTitle>
-          </CardHeader>
-          <CardContent className="h-56">
-            {pieData.length ? (
+        <motion.div
+          whileHover="hover"
+          variants={cardHoverVariants}
+        >
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle>Savings rate trend</CardTitle>
+            </CardHeader>
+            <CardContent className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={pieData} dataKey="value" innerRadius={50} outerRadius={80} paddingAngle={2}>
-                    {pieData.map((e, i) => (
-                      <Cell key={i} fill={e.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)} />
-                  <Legend />
-                </PieChart>
+                <AreaChart data={stats.savingsByMonth.map((s) => ({
+                  month: MONTH_NAMES[parseInt(s.month, 10) - 1]?.slice(0, 3),
+                  rate: s.rate
+                }))}>
+                  <defs>
+                    <linearGradient id="savingsRateGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="month"
+                    fontSize={12}
+                    stroke="hsl(var(--muted-foreground))"
+                  />
+                  <YAxis
+                    fontSize={12}
+                    stroke="hsl(var(--muted-foreground))"
+                    tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+                  />
+                  <Tooltip
+                    formatter={(v: number) => `${v.toFixed(1)}%`}
+                    contentStyle={{
+                      background: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="rate"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    fill="url(#savingsRateGradient)"
+                    animationDuration={1000}
+                  />
+                </AreaChart>
               </ResponsiveContainer>
-            ) : (
-              <p className="py-12 text-center text-sm text-muted-foreground">No spending data yet</p>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          whileHover="hover"
+          variants={cardHoverVariants}
+        >
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle>Spending by category</CardTitle>
+            </CardHeader>
+            <CardContent className="h-56">
+              {pieData.length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      innerRadius={50}
+                      outerRadius={80}
+                      paddingAngle={2}
+                      animationDuration={800}
+                      animationBegin={0}
+                    >
+                      {pieData.map((e, i) => (
+                        <Cell key={i} fill={e.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)}
+                      contentStyle={{
+                        background: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px'
+                      }}
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="py-12 text-center text-sm text-muted-foreground">No spending data yet</p>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

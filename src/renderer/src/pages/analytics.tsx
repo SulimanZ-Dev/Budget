@@ -6,6 +6,8 @@ import { useAppStore } from '@/store/app-store'
 import { formatMoney, formatPercent, MONTH_NAMES } from '@/lib/utils'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SpendingHeatmap } from '@/components/shared/spending-heatmap'
+import { cardHoverVariants } from '@/lib/motion'
 import {
   BarChart,
   Bar,
@@ -31,6 +33,7 @@ export function AnalyticsPage(): JSX.Element {
     cells: Record<string, Record<number, number>>
     max: number
   } | null>(null)
+  const [dailySpending, setDailySpending] = useState<{ date: string; amount: number }[]>([])
   const [breakEven, setBreakEven] = useState<{
     timeline: { month: number; cumulative: number; net: number }[]
     breakEvenMonth: number | null
@@ -44,12 +47,24 @@ export function AnalyticsPage(): JSX.Element {
       window.api.analytics.summary(profile.year),
       window.api.analytics.mom(profile.year, selectedMonth),
       window.api.analytics.heatmap(profile.year),
-      window.api.analytics.breakEven(profile.year)
-    ]).then(([s, m, h, b]) => {
+      window.api.analytics.breakEven(profile.year),
+      window.api.transactions.list({ year: profile.year, month: selectedMonth })
+    ]).then(([s, m, h, b, txs]) => {
       setSummary(s as typeof summary)
       setMom(m as typeof mom)
       setHeatmap(h as typeof heatmap)
       setBreakEven(b as typeof breakEven)
+      
+      // Process daily spending for heatmap
+      const dailyMap = new Map<string, number>()
+      for (const tx of txs as { date: string; amount: number; type: string }[]) {
+        if (tx.type === 'expense') {
+          const dateStr = tx.date.split('T')[0]
+          dailyMap.set(dateStr, (dailyMap.get(dateStr) || 0) + tx.amount)
+        }
+      }
+      setDailySpending(Array.from(dailyMap.entries()).map(([date, amount]) => ({ date, amount })))
+      
       setLoading(false)
     })
   }, [profile.year, selectedMonth])
@@ -154,8 +169,8 @@ export function AnalyticsPage(): JSX.Element {
                 }))}
               >
                 <XAxis dataKey="month" fontSize={11} />
-                <YAxis fontSize={11} />
-                <Tooltip />
+                <YAxis fontSize={11} tickFormatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)} />
+                <Tooltip formatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)} />
                 <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" />
                 <Bar dataKey="cumulative" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -186,12 +201,37 @@ export function AnalyticsPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      {heatmap && heatmap.categories.length > 0 && (
-        <Card>
+      <motion.div
+        whileHover="hover"
+        variants={cardHoverVariants}
+      >
+        <Card className="glass-card">
           <CardHeader>
-            <CardTitle>Spending heatmap</CardTitle>
+            <CardTitle>Daily spending calendar</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {MONTH_NAMES[selectedMonth - 1]} {profile.year}
+            </p>
           </CardHeader>
           <CardContent>
+            <SpendingHeatmap
+              data={dailySpending}
+              year={profile.year}
+              month={selectedMonth}
+            />
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {heatmap && heatmap.categories.length > 0 && (
+        <motion.div
+          whileHover="hover"
+          variants={cardHoverVariants}
+        >
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle>Category spending heatmap</CardTitle>
+            </CardHeader>
+            <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full border-separate border-spacing-1 text-xs">
                 <thead>
@@ -232,6 +272,7 @@ export function AnalyticsPage(): JSX.Element {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
       )}
 
       <div className="grid gap-4 md:grid-cols-4">

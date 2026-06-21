@@ -68,7 +68,10 @@ const api = {
       ipcRenderer.invoke('transactions:bulk', action, ids, data),
     csvPreview: (csv: string) => ipcRenderer.invoke('transactions:csvPreview', csv),
     importCsv: (csv: string, mapping?: unknown) =>
-      ipcRenderer.invoke('transactions:importCsv', csv, mapping)
+      ipcRenderer.invoke('transactions:importCsv', csv, mapping),
+    // Event sourcing methods
+    history: (id: number) => ipcRenderer.invoke('transactions:history', id),
+    undo: (id: number) => ipcRenderer.invoke('transactions:undo', id)
   },
 
   goals: {
@@ -95,9 +98,18 @@ const api = {
   investmentHoldings: {
     list: () => ipcRenderer.invoke('investmentHoldings:list'),
     create: (holding: unknown) => ipcRenderer.invoke('investmentHoldings:create', holding),
-    update: (id: number, holding: unknown) => ipcRenderer.invoke('investmentHoldings:update', id, holding),
+    update: (id: number, holding: unknown) =>
+      ipcRenderer.invoke('investmentHoldings:update', id, holding),
     delete: (id: number) => ipcRenderer.invoke('investmentHoldings:delete', id),
     totalValue: () => ipcRenderer.invoke('investmentHoldings:totalValue')
+  },
+
+  plugins: {
+    discover: () => ipcRenderer.invoke('plugins:discover'),
+    load: (pluginId: string) => ipcRenderer.invoke('plugins:load', pluginId),
+    unload: (pluginId: string) => ipcRenderer.invoke('plugins:unload', pluginId),
+    reload: (pluginId: string) => ipcRenderer.invoke('plugins:reload', pluginId),
+    loaded: () => ipcRenderer.invoke('plugins:loaded')
   },
 
   subscriptions: {
@@ -145,6 +157,32 @@ const api = {
 
   print: {
     yearSummary: () => ipcRenderer.invoke('print:yearSummary')
+  },
+
+  encryption: {
+    requiresSetup: (): Promise<boolean> => ipcRenderer.invoke('encryption:requiresSetup'),
+    requiresMigration: (): Promise<boolean> => ipcRenderer.invoke('encryption:requiresMigration'),
+    isUnlocked: (): Promise<boolean> => ipcRenderer.invoke('encryption:isUnlocked'),
+    isDatabaseReady: (): Promise<boolean> => ipcRenderer.invoke('encryption:isDatabaseReady'),
+    setup: (password: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('encryption:setup', { password }),
+    unlock: (password: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('encryption:unlock', { password }),
+    lock: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('encryption:lock'),
+    changePassword: (currentPassword: string, newPassword: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('encryption:changePassword', { currentPassword, newPassword })
+  },
+
+  integrity: {
+    scan: (): Promise<{ success: boolean; results?: any; error?: string }> =>
+      ipcRenderer.invoke('integrity:scan'),
+    getWarnings: (): Promise<{ success: boolean; warnings?: any[]; error?: string }> =>
+      ipcRenderer.invoke('integrity:getWarnings'),
+    clearWarnings: (): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('integrity:clearWarnings'),
+    backfillHMACs: (): Promise<{ success: boolean; results?: any; error?: string }> =>
+      ipcRenderer.invoke('integrity:backfillHMACs')
   }
 }
 

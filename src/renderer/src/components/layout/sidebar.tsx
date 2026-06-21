@@ -14,7 +14,8 @@ import {
   ChevronRight,
   Heart,
   Banknote,
-  PiggyBank
+  PiggyBank,
+  HelpCircle
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
@@ -36,7 +37,7 @@ const navItems = [
 ]
 
 export function Sidebar(): JSX.Element {
-  const { sidebarCollapsed, setSidebarCollapsed } = useAppStore()
+  const { sidebarCollapsed, setSidebarCollapsed, setShowHelp } = useAppStore()
 
   return (
     <motion.aside
@@ -74,7 +75,16 @@ export function Sidebar(): JSX.Element {
           </NavLink>
         ))}
       </nav>
-      <div className="p-2">
+      <div className="space-y-1 p-2">
+        <Button
+          variant="ghost"
+          className={cn("w-full justify-start", sidebarCollapsed && "justify-center")}
+          onClick={() => setShowHelp(true)}
+          title="Help & Guide"
+        >
+          <HelpCircle className="h-5 w-5 shrink-0" />
+          {!sidebarCollapsed && <span className="ml-3">Help</span>}
+        </Button>
         <Button
           variant="ghost"
           size="icon"

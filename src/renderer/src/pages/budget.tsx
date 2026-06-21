@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useState, useRef } from 'react'
+import { motion, useAnimationControls } from 'framer-motion'
 import { ChevronLeft, ChevronRight, Plus, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { Button } from '@/components/ui/button'
@@ -10,11 +10,12 @@ import { ProgressRing } from '@/components/shared/progress-ring'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { CategoryModal } from '@/components/budget/category-modal'
 import { CategoryDrawerContent } from '@/components/budget/category-drawer'
-import { formatMoney, MONTH_NAMES } from '@/lib/utils'
+import { formatMoney, MONTH_NAMES, cn } from '@/lib/utils'
 import { frequencyToMonthly, monthlySubscriptionCost, netFromGross, type IncomeSourceRow } from '@/lib/finance'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Wallet } from 'lucide-react'
+import { cardHoverVariants, shakeVariants } from '@/lib/motion'
 
 interface BudgetRow {
   category_id: number
@@ -38,6 +39,8 @@ export function BudgetPage(): JSX.Element {
   const [entries, setEntries] = useState<BudgetRow[]>([])
   const [spending, setSpending] = useState<Record<number, number>>({})
   const [loading, setLoading] = useState(true)
+  const [previousSpending, setPreviousSpending] = useState<Record<number, number>>({})
+  const shakeControlsRef = useRef<Map<number, ReturnType<typeof useAnimationControls>>>(new Map())
   const [modalOpen, setModalOpen] = useState(false)
   const [monthlyIncome, setMonthlyIncome] = useState(0)
   const [subscriptionMonthly, setSubscriptionMonthly] = useState(0)
@@ -63,6 +66,23 @@ export function BudgetPage(): JSX.Element {
         map[t.category_id] = (map[t.category_id] || 0) + t.amount
       }
     }
+    
+    // Trigger shake animation for newly overspent categories
+    for (const cat of budget as BudgetRow[]) {
+      const spent = map[cat.category_id] || 0
+      const prevSpent = previousSpending[cat.category_id] || 0
+      const wasUnder = prevSpent <= cat.amount
+      const isOver = spent > cat.amount
+      
+      if (wasUnder && isOver && cat.amount > 0) {
+        const controls = shakeControlsRef.current.get(cat.category_id)
+        if (controls) {
+          controls.start('shake')
+        }
+      }
+    }
+    
+    setPreviousSpending(map)
     setSpending(map)
     const outflow = (txs as { amount: number; type: string }[]).reduce((sum, t) => {
       if (t.type === 'savings' || t.type === 'transfer') return sum + t.amount
@@ -183,14 +203,27 @@ export function BudgetPage(): JSX.Element {
             const budget = cat.amount * cpi
             const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0
             const over = budget > 0 && spent > budget
+            
+            // Create animation controls for this category if not exists
+            if (!shakeControlsRef.current.has(cat.category_id)) {
+              shakeControlsRef.current.set(cat.category_id, useAnimationControls())
+            }
+            const shakeControls = shakeControlsRef.current.get(cat.category_id)!
+            
             return (
               <motion.button
                 key={cat.category_id}
                 initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
+                animate={shakeControls}
+                whileHover="hover"
+                whileTap="tap"
+                variants={{ ...cardHoverVariants, ...shakeVariants }}
                 transition={{ delay: i * 0.05 }}
                 onClick={() => openCategoryDetail(cat)}
-                className="rounded-xl border bg-card p-5 text-left transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
+                className={cn(
+                  'rounded-xl border p-5 text-left focus-visible:ring-2 focus-visible:ring-ring',
+                  over ? 'glass-card border-destructive/30 bg-destructive/5' : 'bg-card'
+                )}
               >
                 <div className="flex items-start justify-between">
                   <div>
@@ -204,19 +237,28 @@ export function BudgetPage(): JSX.Element {
                   </div>
                   <ProgressRing progress={pct} color={over ? 'hsl(var(--destructive))' : cat.color} />
                 </div>
-                <p className="mt-3 text-2xl font-bold">{formatMoney(spent, profile.displayCurrency, rates)}</p>
+                <p className={cn('mt-3 text-2xl font-bold', over && 'text-destructive')}>
+                  {formatMoney(spent, profile.displayCurrency, rates)}
+                </p>
                 <p className="text-sm text-muted-foreground">
                   of {formatMoney(budget, profile.displayCurrency, rates)}
                 </p>
                 <div className="mt-2 flex items-center gap-1 text-xs">
                   {over ? (
-                    <TrendingUp className="h-3 w-3 text-destructive" />
+                    <>
+                      <TrendingUp className="h-3 w-3 text-destructive" />
+                      <span className="font-medium text-destructive">
+                        {formatMoney(spent - budget, profile.displayCurrency, rates)} over budget
+                      </span>
+                    </>
                   ) : (
-                    <TrendingDown className="h-3 w-3 text-success" />
+                    <>
+                      <TrendingDown className="h-3 w-3 text-success" />
+                      <span className="text-success">
+                        {formatMoney(budget - spent, profile.displayCurrency, rates)} left
+                      </span>
+                    </>
                   )}
-                  <span className={over ? 'text-destructive' : 'text-success'}>
-                    {formatMoney(budget - spent, profile.displayCurrency, rates)} left
-                  </span>
                 </div>
               </motion.button>
             )

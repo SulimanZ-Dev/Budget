@@ -7,10 +7,26 @@ import { useAppStore } from '@/store/app-store'
 import { Wallet, Target, Banknote, User, Plus, Minus } from 'lucide-react'
 
 const steps = [
-  { icon: User, title: 'Welcome', desc: 'Let\'s set up your personal budget in a few steps.' },
-  { icon: Banknote, title: 'Income Sources', desc: 'Add all your income sources.' },
-  { icon: Wallet, title: 'Budget', desc: 'Create your first spending categories.' },
-  { icon: Target, title: 'Goals', desc: 'Set a savings goal to stay motivated.' }
+  {
+    icon: User,
+    title: 'Welcome to Budget',
+    desc: 'Your personal finance manager that helps you track spending, save money, and reach your goals. Everything stays private on your computer—no cloud, no tracking.'
+  },
+  {
+    icon: Banknote,
+    title: 'Add Your Income',
+    desc: 'Tell us where your money comes from (salary, side jobs, etc.). This helps calculate how much you can save each month.'
+  },
+  {
+    icon: Wallet,
+    title: 'Create Categories',
+    desc: 'Organize your spending into categories like Food, Transport, and Entertainment. You can always add more later.'
+  },
+  {
+    icon: Target,
+    title: 'Set Your First Goal',
+    desc: 'What are you saving for? An emergency fund, vacation, or something else? Set a target to stay motivated.'
+  }
 ]
 
 interface IncomeSource {
@@ -117,7 +133,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
               </div>
             </div>
             <h2 className="text-center text-2xl font-bold">{steps[step].title}</h2>
-            <p className="mt-2 text-center text-muted-foreground">{steps[step].desc}</p>
+            <p className="mt-2 text-center text-sm text-muted-foreground leading-relaxed">{steps[step].desc}</p>
             <div className="mt-6 space-y-4">
               {step === 0 && (
                 <div className="grid gap-2">
