@@ -57,7 +57,7 @@
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.13.4",
+    "@types/node": "^26.0.0",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",
