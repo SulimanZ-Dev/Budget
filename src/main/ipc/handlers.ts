@@ -628,6 +628,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Income
   ipcMain.handle('income:sources', () => db().prepare('SELECT * FROM income_sources').all())
   ipcMain.handle('income:createSource', (_, src) => {
+    const amount = Number.isFinite(src.amount) ? src.amount : 0
     const grossOrNet = src.grossOrNet === 'gross' ? 'gross' : src.isGross ? 'gross' : 'net'
     const frequency =
       src.frequency === 'weekly' ||
@@ -642,7 +643,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       )
       .run(
         src.name,
-        src.amount,
+        amount,
         grossOrNet === 'gross' ? 1 : 0,
         grossOrNet,
         src.isRecurring !== false ? 1 : 0,
@@ -652,6 +653,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return { id: Number(r.lastInsertRowid) }
   })
   ipcMain.handle('income:updateSource', (_, src) => {
+    const amount = Number.isFinite(src.amount) ? src.amount : 0
     const grossOrNet = src.grossOrNet === 'gross' ? 'gross' : src.isGross ? 'gross' : 'net'
     const frequency =
       src.frequency === 'weekly' ||
@@ -666,7 +668,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       )
       .run(
         src.name,
-        src.amount,
+        amount,
         grossOrNet === 'gross' ? 1 : 0,
         grossOrNet,
         src.isRecurring !== false ? 1 : 0,
@@ -689,13 +691,14 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       .all(year)
   })
   ipcMain.handle('income:setEntry', (_, data) => {
+    const amount = Number.isFinite(data.amount) ? data.amount : 0
     db()
       .prepare(
         `INSERT INTO income_entries (source_id, year, month, amount, is_irregular)
          VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(source_id, year, month) DO UPDATE SET amount=excluded.amount, is_irregular=excluded.is_irregular`
       )
-      .run(data.sourceId, data.year, data.month, data.amount, data.isIrregular ? 1 : 0)
+      .run(data.sourceId, data.year, data.month, amount, data.isIrregular ? 1 : 0)
     return true
   })
 

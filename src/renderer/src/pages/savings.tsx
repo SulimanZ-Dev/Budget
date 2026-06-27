@@ -28,7 +28,7 @@ type SavingsTx = {
 }
 
 export function SavingsPage(): JSX.Element {
-  const { profile, rates, selectedMonth, openDrawer, closeDrawer } = useAppStore()
+  const { profile, rates, selectedMonth, openDrawer, closeDrawer, refreshTrigger, triggerRefresh } = useAppStore()
   const [rows, setRows] = useState<SavingsTx[]>([])
   const [form, setForm] = useState({
     description: '',
@@ -38,7 +38,7 @@ export function SavingsPage(): JSX.Element {
 
   useEffect(() => {
     load()
-  }, [profile.year, selectedMonth])
+  }, [profile.year, selectedMonth, refreshTrigger])
 
   async function load(): Promise<void> {
     const txs = (await window.api.transactions.list({
@@ -65,12 +65,14 @@ export function SavingsPage(): JSX.Element {
     })
     setForm({ description: '', amount: '', date: new Date().toISOString().slice(0, 10) })
     await load()
+    triggerRefresh()
   }
 
   async function remove(id: number): Promise<void> {
     if (!confirm('Delete this savings transaction?')) return
     await window.api.transactions.delete(id)
     await load()
+    triggerRefresh()
   }
 
   const totalSavedMonth = rows.reduce((sum, row) => sum + row.amount, 0)

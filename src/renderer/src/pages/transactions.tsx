@@ -27,7 +27,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value'
 type RecurringFilter = 'all' | 'recurring' | 'oneoff'
 
 export function TransactionsPage(): JSX.Element {
-  const { profile, selectedMonth, rates, openAI, openDrawer, closeDrawer } = useAppStore()
+  const { profile, selectedMonth, rates, openAI, openDrawer, closeDrawer, refreshTrigger } = useAppStore()
   const navigate = useNavigate()
   const [transactions, setTransactions] = useState<TransactionRowData[]>([])
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
@@ -51,7 +51,7 @@ export function TransactionsPage(): JSX.Element {
 
   useEffect(() => {
     load()
-  }, [profile.year, selectedMonth, debouncedSearch, flaggedOnly, categoryFilter, typeFilter, recurringFilter])
+  }, [profile.year, selectedMonth, debouncedSearch, flaggedOnly, categoryFilter, typeFilter, recurringFilter, refreshTrigger])
 
   async function load(): Promise<void> {
     setLoading(true)

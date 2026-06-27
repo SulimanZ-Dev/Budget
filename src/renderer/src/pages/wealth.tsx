@@ -21,7 +21,7 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { Pencil, Trash2 } from 'lucide-react'
 
 export function WealthPage(): JSX.Element {
-  const { profile, rates } = useAppStore()
+  const { profile, rates, refreshTrigger } = useAppStore()
   const [snapshots, setSnapshots] = useState<
     {
       date: string
@@ -63,7 +63,7 @@ export function WealthPage(): JSX.Element {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [refreshTrigger])
 
   async function load(): Promise<void> {
     setSnapshots(await window.api.wealth.list())

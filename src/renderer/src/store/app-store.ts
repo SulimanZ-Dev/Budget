@@ -31,6 +31,7 @@ interface AppState {
   showHelp: boolean
   inflationAdjust: boolean
   loading: boolean
+  refreshTrigger: number
 
   setProfile: (p: Partial<Profile>) => void
   setRates: (rates: Record<string, number>) => void
@@ -46,6 +47,7 @@ interface AppState {
   setShowHelp: (v: boolean) => void
   setInflationAdjust: (v: boolean) => void
   setLoading: (v: boolean) => void
+  triggerRefresh: () => void
 }
 
 const defaultProfile: Profile = {
@@ -77,6 +79,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   showHelp: false,
   inflationAdjust: false,
   loading: true,
+  refreshTrigger: 0,
 
   setProfile: (p) => set({ profile: { ...get().profile, ...p } }),
   setRates: (rates) => set({ rates }),
@@ -92,5 +95,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setOnboardingComplete: (v) => set({ onboardingComplete: v }),
   setShowHelp: (v) => set({ showHelp: v }),
   setInflationAdjust: (v) => set({ inflationAdjust: v }),
-  setLoading: (v) => set({ loading: v })
+  setLoading: (v) => set({ loading: v }),
+  triggerRefresh: () => set((state) => ({ refreshTrigger: state.refreshTrigger + 1 }))
 }))

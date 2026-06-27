@@ -44,7 +44,7 @@ export function YearEndReportPage(): JSX.Element {
   }
 
   return (
-    <div className="min-h-screen bg-white text-black print:p-8 dark:bg-background dark:text-foreground">
+    <div className="min-h-screen bg-background text-foreground print:p-8">
       <div className="mx-auto max-w-3xl p-8 print:max-w-none">
         <div className="mb-8 flex items-center justify-between print:hidden">
           <Button variant="ghost" onClick={() => navigate(-1)}>
@@ -99,7 +99,7 @@ export function YearEndReportPage(): JSX.Element {
                   </td>
                   <td
                     className={`text-right py-2 tabular-nums font-medium ${
-                      m.income - m.expenses >= 0 ? 'text-green-700' : 'text-red-700'
+                      m.income - m.expenses >= 0 ? 'text-success' : 'text-destructive'
                     }`}
                   >
                     {formatMoney(m.income - m.expenses, profile.displayCurrency, rates)}
@@ -179,9 +179,9 @@ function Stat({
 }): JSX.Element {
   const color =
     highlight === 'success'
-      ? 'text-green-600'
+      ? 'text-success'
       : highlight === 'danger'
-        ? 'text-red-600'
+        ? 'text-destructive'
         : ''
   return (
     <div>

@@ -125,7 +125,8 @@ function AppContent(): JSX.Element {
     showHelp,
     setShowHelp,
     loading,
-    selectedMonth
+    selectedMonth,
+    triggerRefresh
   } = useAppStore()
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [budgetStatus, setBudgetStatus] = useState<'under' | 'near' | 'over'>('under')
@@ -291,6 +292,7 @@ function AppContent(): JSX.Element {
         <TransactionModal
           open={transactionModalOpen}
           onOpenChange={setTransactionModalOpen}
+          onSaved={() => triggerRefresh()}
         />
       </div>
       </TooltipProvider>

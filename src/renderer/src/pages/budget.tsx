@@ -33,7 +33,8 @@ export function BudgetPage(): JSX.Element {
     rates,
     inflationAdjust,
     setInflationAdjust,
-    openDrawer
+    openDrawer,
+    refreshTrigger
   } = useAppStore()
   const [entries, setEntries] = useState<BudgetRow[]>([])
   const [spending, setSpending] = useState<Record<number, number>>({})
@@ -45,7 +46,7 @@ export function BudgetPage(): JSX.Element {
 
   useEffect(() => {
     load()
-  }, [profile.year, selectedMonth])
+  }, [profile.year, selectedMonth, refreshTrigger])
 
   async function load(): Promise<void> {
     setLoading(true)

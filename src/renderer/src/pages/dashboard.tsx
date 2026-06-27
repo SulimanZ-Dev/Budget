@@ -41,7 +41,7 @@ interface DashboardStats {
 }
 
 export function DashboardPage(): JSX.Element {
-  const { profile, selectedMonth, rates, loading: appLoading } = useAppStore()
+  const { profile, selectedMonth, rates, loading: appLoading, refreshTrigger } = useAppStore()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [weeklyTip, setWeeklyTip] = useState('')
@@ -57,7 +57,7 @@ export function DashboardPage(): JSX.Element {
       setLoading(false)
     }
     if (!appLoading) load()
-  }, [profile.year, selectedMonth, appLoading])
+  }, [profile.year, selectedMonth, appLoading, refreshTrigger])
 
   async function refreshInsight(): Promise<void> {
     setGeneratingInsight(true)

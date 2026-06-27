@@ -19,7 +19,7 @@ import {
 } from 'recharts'
 
 export function AnalyticsPage(): JSX.Element {
-  const { profile, rates, selectedMonth } = useAppStore()
+  const { profile, rates, selectedMonth, refreshTrigger } = useAppStore()
   const [summary, setSummary] = useState<{
     monthly: { month: string; expenses: number; income: number; savings: number }[]
     byCategory: { name: string; color: string; total: number }[]
@@ -67,7 +67,7 @@ export function AnalyticsPage(): JSX.Element {
       
       setLoading(false)
     })
-  }, [profile.year, selectedMonth])
+  }, [profile.year, selectedMonth, refreshTrigger])
 
   if (loading || !summary) {
     return (

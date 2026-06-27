@@ -23,7 +23,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { InfoTooltip } from '@/components/shared/info-tooltip'
 
 export function IncomePage(): JSX.Element {
-  const { profile, rates, setProfile } = useAppStore()
+  const { profile, rates, setProfile, refreshTrigger, triggerRefresh } = useAppStore()
   const [sources, setSources] = useState<
     (IncomeSourceRow & { name: string; color: string; is_gross: number; is_recurring: number })[]
   >([])
@@ -52,7 +52,7 @@ export function IncomePage(): JSX.Element {
 
   useEffect(() => {
     load()
-  }, [profile.year])
+  }, [profile.year, refreshTrigger])
 
   async function load(): Promise<void> {
     setSources(await window.api.income.sources())
@@ -62,45 +62,55 @@ export function IncomePage(): JSX.Element {
   async function saveSource(): Promise<void> {
     const parsedAmount = parseFloat(form.amount)
     if (!form.name.trim() || !Number.isFinite(parsedAmount) || parsedAmount <= 0) return
-    if (editingSource) {
-      await window.api.income.updateSource({
-        id: editingSource.id,
-        name: form.name,
-        amount: parsedAmount,
-        isGross: form.isGross,
-        isRecurring: form.isRecurring,
-        grossOrNet: form.isGross ? 'gross' : 'net',
-        frequency: form.frequency,
-        color: form.color
+    try {
+      if (editingSource) {
+        await window.api.income.updateSource({
+          id: editingSource.id,
+          name: form.name,
+          amount: parsedAmount,
+          isGross: form.isGross,
+          isRecurring: form.isRecurring,
+          grossOrNet: form.isGross ? 'gross' : 'net',
+          frequency: form.frequency,
+          color: form.color
+        })
+      } else {
+        await window.api.income.createSource({
+          name: form.name,
+          amount: parsedAmount,
+          isGross: form.isGross,
+          isRecurring: form.isRecurring,
+          grossOrNet: form.isGross ? 'gross' : 'net',
+          frequency: form.frequency,
+          color: form.color
+        })
+      }
+      setModalOpen(false)
+      setEditingSource(null)
+      setForm({
+        name: '',
+        amount: '',
+        isGross: false,
+        isRecurring: true,
+        frequency: 'monthly',
+        color: '#22c55e'
       })
-    } else {
-      await window.api.income.createSource({
-        name: form.name,
-        amount: parsedAmount,
-        isGross: form.isGross,
-        isRecurring: form.isRecurring,
-        grossOrNet: form.isGross ? 'gross' : 'net',
-        frequency: form.frequency,
-        color: form.color
-      })
+      load()
+      triggerRefresh()
+    } catch (error) {
+      console.error('Failed to save income source:', error)
     }
-    setModalOpen(false)
-    setEditingSource(null)
-    setForm({
-      name: '',
-      amount: '',
-      isGross: false,
-      isRecurring: true,
-      frequency: 'monthly',
-      color: '#22c55e'
-    })
-    load()
   }
 
   async function deleteSource(id: number): Promise<void> {
     if (!confirm('Delete this income source?')) return
-    await window.api.income.deleteSource(id)
-    load()
+    try {
+      await window.api.income.deleteSource(id)
+      load()
+      triggerRefresh()
+    } catch (error) {
+      console.error('Failed to delete income source:', error)
+    }
   }
 
   function openEditModal(src: typeof sources[0]): void {
