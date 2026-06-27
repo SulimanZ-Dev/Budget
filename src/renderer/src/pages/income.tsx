@@ -30,6 +30,7 @@ export function IncomePage(): JSX.Element {
   const [entries, setEntries] = useState<
     { source_id: number; source_name: string; month: number; amount: number; is_irregular: number; color: string; is_gross: number }[]
   >([])
+  const [txIncomeTotal, setTxIncomeTotal] = useState(0)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingSource, setEditingSource] = useState<{
     id: number
@@ -58,6 +59,8 @@ export function IncomePage(): JSX.Element {
     try {
       setSources(await window.api.income.sources())
       setEntries(await window.api.income.entries(profile.year))
+      const txs = (await window.api.transactions.list({ year: profile.year })) as { amount: number; type: string }[]
+      setTxIncomeTotal(txs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0))
     } catch (error) {
       console.error('Failed to load income data:', error)
     }
@@ -152,6 +155,8 @@ export function IncomePage(): JSX.Element {
     return mode === 'gross' ? netFromGross(monthly, profile.taxWithheldPercent) : roundCurrency(monthly)
   }
 
+  const txMonthlyAvg = txIncomeTotal > 0 ? txIncomeTotal / 12 : 0
+
   const chartData = MONTH_NAMES.map((name, i) => {
     const month = i + 1
     const row: Record<string, string | number> = { month: name.slice(0, 3) }
@@ -162,6 +167,7 @@ export function IncomePage(): JSX.Element {
       const viewAmount = shouldShowGross ? grossFromNet(netAmount, profile.taxWithheldPercent) : netAmount
       row[src.name] = Number.isFinite(viewAmount) ? Math.max(0, viewAmount) : 0
     }
+    if (txIncomeTotal > 0) row['Transactions'] = shouldShowGross ? grossFromNet(txMonthlyAvg, profile.taxWithheldPercent) : txMonthlyAvg
     return row
   })
 
@@ -173,7 +179,7 @@ export function IncomePage(): JSX.Element {
       return monthSum + toNetMonthly(amountForMonth, src)
     }, 0)
     return sum + monthTotal
-  }, 0)
+  }, 0) + txIncomeTotal
   const totalAnnualGross = grossFromNet(totalAnnualNet, profile.taxWithheldPercent)
   const totalView = shouldShowGross ? totalAnnualGross : totalAnnualNet
   const estimatedTax = Math.max(0, totalAnnualGross - totalAnnualNet)
@@ -283,6 +289,27 @@ export function IncomePage(): JSX.Element {
               </div>
             )
           })}
+          {txIncomeTotal > 0 && (
+            <div className="flex items-center justify-between rounded-lg border p-4 border-dashed border-info/30">
+              <div className="flex items-center gap-3">
+                <div className="h-3 w-3 rounded-full bg-info" />
+                <div>
+                  <span className="font-medium">Transaction income (one-time)</span>
+                  <p className="text-xs text-muted-foreground">Entered via transaction modal</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="font-bold">
+                  {formatMoney(
+                    shouldShowGross ? grossFromNet(txIncomeTotal, profile.taxWithheldPercent) : txIncomeTotal,
+                    profile.displayCurrency,
+                    rates
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">{totalAnnualNet > 0 ? ((txIncomeTotal / totalAnnualNet) * 100).toFixed(0) : 0}% of total</p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -300,6 +327,7 @@ export function IncomePage(): JSX.Element {
               {sources.map((s) => (
                 <Bar key={s.id} dataKey={s.name} stackId="a" fill={s.color} radius={[0, 0, 0, 0]} />
               ))}
+              {txIncomeTotal > 0 && <Bar dataKey="Transactions" stackId="a" fill="hsl(var(--info))" radius={[0, 0, 0, 0]} />}
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
