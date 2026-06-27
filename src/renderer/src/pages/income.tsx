@@ -51,12 +51,16 @@ export function IncomePage(): JSX.Element {
   })
 
   useEffect(() => {
-    load()
+    load().catch(console.error)
   }, [profile.year, refreshTrigger])
 
   async function load(): Promise<void> {
-    setSources(await window.api.income.sources())
-    setEntries(await window.api.income.entries(profile.year))
+    try {
+      setSources(await window.api.income.sources())
+      setEntries(await window.api.income.entries(profile.year))
+    } catch (error) {
+      console.error('Failed to load income data:', error)
+    }
   }
 
   async function saveSource(): Promise<void> {
@@ -95,7 +99,7 @@ export function IncomePage(): JSX.Element {
         frequency: 'monthly',
         color: '#22c55e'
       })
-      load()
+      await load()
       triggerRefresh()
     } catch (error) {
       console.error('Failed to save income source:', error)
@@ -106,7 +110,7 @@ export function IncomePage(): JSX.Element {
     if (!confirm('Delete this income source?')) return
     try {
       await window.api.income.deleteSource(id)
-      load()
+      await load()
       triggerRefresh()
     } catch (error) {
       console.error('Failed to delete income source:', error)

@@ -679,11 +679,11 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         src.color ?? '#22c55e',
         src.id
       )
-    // Scale existing per-month entries proportionally so they stay in sync
+    // Replace all per-month entries with the new base amount
     if (oldAmount > 0 && amount !== oldAmount) {
       db().prepare(
-        'UPDATE income_entries SET amount = ROUND(amount * ?, 2) WHERE source_id = ?'
-      ).run(amount / oldAmount, src.id)
+        'UPDATE income_entries SET amount = ? WHERE source_id = ?'
+      ).run(amount, src.id)
     }
     return true
   })
