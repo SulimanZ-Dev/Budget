@@ -89,11 +89,11 @@ export function PluginRegistry() {
 
   function getCategoryColor(category: string): string {
     const colors: Record<string, string> = {
-      finance: 'bg-green-500/10 text-green-500',
-      productivity: 'bg-blue-500/10 text-blue-500',
+      finance: 'bg-success/10 text-success',
+      productivity: 'bg-info/10 text-info',
       analytics: 'bg-purple-500/10 text-purple-500',
-      integration: 'bg-orange-500/10 text-orange-500',
-      utility: 'bg-gray-500/10 text-gray-500'
+      integration: 'bg-warning/10 text-warning',
+      utility: 'bg-muted text-muted-foreground'
     }
     return colors[category] || colors.utility
   }
@@ -155,7 +155,7 @@ export function PluginRegistry() {
                       {plugin.manifest.category}
                     </Badge>
                     {plugin.loaded && (
-                      <Badge className="bg-green-500/10 text-green-500">
+                      <Badge className="bg-success/10 text-success">
                         <CheckCircle className="h-3 w-3 mr-1" />
                         Loaded
                       </Badge>

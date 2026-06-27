@@ -57,14 +57,14 @@ export function IntegrityPanel() {
 
   return (
     <div className="space-y-6">
-      <Card className="p-6 bg-zinc-900/50 border-zinc-800">
+      <Card className="p-6 bg-card border-border">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h3 className="text-lg font-semibold text-zinc-100 flex items-center gap-2">
-              <Shield className="w-5 h-5 text-indigo-400" />
+            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <Shield className="w-5 h-5 text-primary" />
               Data Integrity
             </h3>
-            <p className="text-sm text-zinc-400 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Verify HMAC signatures to detect unauthorized modifications
             </p>
           </div>
@@ -72,7 +72,7 @@ export function IntegrityPanel() {
             onClick={handleScan}
             disabled={isScanning}
             size="sm"
-            className="bg-indigo-600 hover:bg-indigo-700"
+            className="bg-primary hover:bg-primary/90"
           >
             {isScanning ? (
               <>
@@ -95,43 +95,43 @@ export function IntegrityPanel() {
             className="space-y-4"
           >
             <div className="grid grid-cols-4 gap-4">
-              <div className="p-4 rounded-lg bg-zinc-800/50">
-                <div className="text-2xl font-bold text-zinc-100">
+              <div className="p-4 rounded-lg bg-muted">
+                <div className="text-2xl font-bold text-foreground">
                   {scanResults.total}
                 </div>
-                <div className="text-xs text-zinc-400 mt-1">Total Records</div>
+                <div className="text-xs text-muted-foreground mt-1">Total Records</div>
               </div>
-              <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-                <div className="text-2xl font-bold text-green-400">
+              <div className="p-4 rounded-lg bg-success/10 border border-success/20">
+                <div className="text-2xl font-bold text-success">
                   {scanResults.verified}
                 </div>
-                <div className="text-xs text-green-400/80 mt-1">Verified</div>
+                <div className="text-xs text-success/80 mt-1">Verified</div>
               </div>
-              <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
-                <div className="text-2xl font-bold text-red-400">
+              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+                <div className="text-2xl font-bold text-destructive">
                   {scanResults.failed}
                 </div>
-                <div className="text-xs text-red-400/80 mt-1">Failed</div>
+                <div className="text-xs text-destructive/80 mt-1">Failed</div>
               </div>
-              <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                <div className="text-2xl font-bold text-amber-400">
+              <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
+                <div className="text-2xl font-bold text-warning">
                   {scanResults.missing}
                 </div>
-                <div className="text-xs text-amber-400/80 mt-1">Missing HMAC</div>
+                <div className="text-xs text-warning/80 mt-1">Missing HMAC</div>
               </div>
             </div>
 
             {scanResults.failed === 0 && scanResults.missing === 0 ? (
-              <div className="flex items-center gap-3 p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-                <CheckCircle2 className="w-5 h-5 text-green-400 flex-shrink-0" />
-                <div className="text-sm text-green-400">
+              <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/20">
+                <CheckCircle2 className="w-5 h-5 text-success flex-shrink-0" />
+                <div className="text-sm text-success">
                   All records passed integrity verification. Your data is secure.
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0" />
-                <div className="text-sm text-amber-400">
+              <div className="flex items-center gap-3 p-4 rounded-lg bg-warning/10 border border-warning/20">
+                <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
+                <div className="text-sm text-warning">
                   {scanResults.failed > 0 && (
                     <p className="font-medium">
                       {scanResults.failed} record(s) failed verification. This may indicate tampering.
@@ -148,24 +148,24 @@ export function IntegrityPanel() {
 
             {Object.keys(scanResults.tables).length > 0 && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-zinc-300">By Table</h4>
+                <h4 className="text-sm font-medium text-foreground">By Table</h4>
                 {Object.entries(scanResults.tables).map(([table, stats]: [string, any]) => (
                   <div
                     key={table}
-                    className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/30"
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
                   >
-                    <span className="text-sm text-zinc-300 font-mono">{table}</span>
+                    <span className="text-sm text-foreground font-mono">{table}</span>
                     <div className="flex items-center gap-4 text-xs">
-                      <span className="text-green-400">
+                      <span className="text-success">
                         ✓ {stats.verified}
                       </span>
                       {stats.failed > 0 && (
-                        <span className="text-red-400">
+                        <span className="text-destructive">
                           ✗ {stats.failed}
                         </span>
                       )}
                       {stats.missing > 0 && (
-                        <span className="text-amber-400">
+                        <span className="text-warning">
                           ? {stats.missing}
                         </span>
                       )}
@@ -179,17 +179,17 @@ export function IntegrityPanel() {
       </Card>
 
       {warnings.length > 0 && (
-        <Card className="p-6 bg-zinc-900/50 border-zinc-800">
+        <Card className="p-6 bg-card border-border">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-zinc-100 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-400" />
+            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-warning" />
               Integrity Warnings ({warnings.length})
             </h3>
             <Button
               onClick={handleClearWarnings}
               size="sm"
               variant="ghost"
-              className="text-zinc-400 hover:text-zinc-100"
+              className="text-muted-foreground hover:text-foreground"
             >
               <Trash2 className="w-4 h-4 mr-2" />
               Clear All
@@ -202,20 +202,20 @@ export function IntegrityPanel() {
                 key={warning.id}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20"
+                className="p-3 rounded-lg bg-warning/5 border border-warning/20"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-mono text-amber-400">
+                      <span className="text-xs font-mono text-warning">
                         {warning.table_name}
                       </span>
-                      <span className="text-xs text-zinc-500">
+                      <span className="text-xs text-muted-foreground">
                         Row #{warning.row_id}
                       </span>
                     </div>
-                    <p className="text-sm text-zinc-300">{warning.reason}</p>
-                    <p className="text-xs text-zinc-500 mt-1">
+                    <p className="text-sm text-foreground">{warning.reason}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
                       {new Date(warning.detected_at).toLocaleString()}
                     </p>
                   </div>

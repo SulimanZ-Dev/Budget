@@ -248,8 +248,9 @@ function AppContent(): JSX.Element {
       <div className="flex h-screen overflow-hidden bg-background">
         <Sidebar />
         <main className="flex flex-1 flex-col overflow-hidden">
-          <header className="flex h-10 shrink-0 items-center justify-end gap-4 border-b px-4 pt-10 md:pt-0 md:pl-4">
-            <ThemeToggle />
+          <header className="flex h-10 shrink-0 items-center justify-end gap-4 border-b px-4 pt-10 md:pt-0 md:pl-4 app-drag-region">
+            <div className="app-no-drag"><ThemeToggle /></div>
+            <div className="app-no-drag">
             <Select
               value={String(profile.year)}
               onValueChange={(v) => setYear(parseInt(v))}
@@ -265,6 +266,7 @@ function AppContent(): JSX.Element {
                 ))}
               </SelectContent>
             </Select>
+            </div>
           </header>
           <CoachMarks />
           <div className="flex-1 overflow-hidden">

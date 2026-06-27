@@ -279,22 +279,22 @@ function getPasswordStrength(password: string): {
     return {
       percent: strength,
       label: 'Weak',
-      color: 'bg-red-500',
-      textColor: 'text-red-400'
+      color: 'bg-destructive',
+      textColor: 'text-destructive'
     }
   } else if (strength < 70) {
     return {
       percent: strength,
       label: 'Fair',
-      color: 'bg-amber-500',
-      textColor: 'text-amber-400'
+      color: 'bg-warning',
+      textColor: 'text-warning'
     }
   } else {
     return {
       percent: strength,
       label: 'Strong',
-      color: 'bg-green-500',
-      textColor: 'text-green-400'
+      color: 'bg-success',
+      textColor: 'text-success'
     }
   }
 }

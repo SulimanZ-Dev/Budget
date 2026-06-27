@@ -118,6 +118,10 @@ export function WealthPage(): JSX.Element {
     load()
   }
 
+  // Investment holdings total current value
+  const holdingsTotal = holdings.reduce((sum, h) => sum + h.current_value, 0)
+  const investmentsTotal = investments.reduce((sum, inv) => sum + inv.current_value, 0)
+
   const chartData = snapshots.map((s) => ({
     date: s.date.slice(0, 7),
     net:
@@ -127,6 +131,11 @@ export function WealthPage(): JSX.Element {
       s.liabilities_loans -
       s.liabilities_credit
   }))
+
+  // Compute a live current net worth by adding savings & investments to the latest snapshot
+  const latestSnapshotNet = chartData.length > 0 ? chartData[chartData.length - 1].net : 0
+  const hasLiveData = totalSavings > 0 || holdingsTotal > 0 || investmentsTotal > 0
+  const currentNetWorth = latestSnapshotNet + totalSavings + holdingsTotal + investmentsTotal
 
   const pensionData = Array.from({ length: 30 }, (_, i) => {
     const months = i * 12
@@ -143,6 +152,20 @@ export function WealthPage(): JSX.Element {
         <h1 className="text-2xl font-bold">Wealth</h1>
         <AskAiButton context="wealth" prefill="How is my net worth trending?" />
       </div>
+
+      {hasLiveData && (
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="p-6">
+            <p className="text-sm text-muted-foreground">Current net worth (incl. live savings + investments)</p>
+            <p className="text-3xl font-bold mt-1">{formatMoney(currentNetWorth, profile.displayCurrency, rates)}</p>
+            <div className="flex gap-6 mt-3 text-sm text-muted-foreground">
+              <span>Savings: <strong className="text-foreground">{formatMoney(totalSavings, profile.displayCurrency, rates)}</strong></span>
+              <span>ETFs: <strong className="text-foreground">{formatMoney(holdingsTotal, profile.displayCurrency, rates)}</strong></span>
+              <span>Investments: <strong className="text-foreground">{formatMoney(investmentsTotal, profile.displayCurrency, rates)}</strong></span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

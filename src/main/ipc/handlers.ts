@@ -662,6 +662,9 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       src.frequency === 'monthly'
         ? src.frequency
         : 'monthly'
+    // Fetch old amount before updating — needed to scale per-month entries
+    const oldRow = db().prepare('SELECT amount FROM income_sources WHERE id = ?').get(src.id) as { amount: number } | undefined
+    const oldAmount = oldRow?.amount ?? amount
     db()
       .prepare(
         'UPDATE income_sources SET name = ?, amount = ?, is_gross = ?, gross_or_net = ?, is_recurring = ?, frequency = ?, color = ? WHERE id = ?'
@@ -676,6 +679,12 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         src.color ?? '#22c55e',
         src.id
       )
+    // Scale existing per-month entries proportionally so they stay in sync
+    if (oldAmount > 0 && amount !== oldAmount) {
+      db().prepare(
+        'UPDATE income_entries SET amount = ROUND(amount * ?, 2) WHERE source_id = ?'
+      ).run(amount / oldAmount, src.id)
+    }
     return true
   })
   ipcMain.handle('income:deleteSource', (_, id: number) => {

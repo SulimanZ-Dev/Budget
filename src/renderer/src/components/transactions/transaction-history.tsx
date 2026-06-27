@@ -53,19 +53,19 @@ export function TransactionHistory({ transactionId, onUndo }: TransactionHistory
   function getEventIcon(eventType: string): JSX.Element {
     switch (eventType) {
       case 'CREATED':
-        return <Edit className="h-4 w-4 text-green-500" />
+        return <Edit className="h-4 w-4 text-success" />
       case 'UPDATED':
-        return <Edit className="h-4 w-4 text-blue-500" />
+        return <Edit className="h-4 w-4 text-info" />
       case 'DELETED':
-        return <Trash2 className="h-4 w-4 text-red-500" />
+        return <Trash2 className="h-4 w-4 text-destructive" />
       case 'FLAGGED':
-        return <Flag className="h-4 w-4 text-orange-500" />
+        return <Flag className="h-4 w-4 text-warning" />
       case 'UNFLAGGED':
-        return <FlagOff className="h-4 w-4 text-gray-500" />
+        return <FlagOff className="h-4 w-4 text-muted-foreground" />
       case 'RECATEGORIZED':
         return <Tag className="h-4 w-4 text-purple-500" />
       default:
-        return <Clock className="h-4 w-4 text-gray-500" />
+        return <Clock className="h-4 w-4 text-muted-foreground" />
     }
   }
 
