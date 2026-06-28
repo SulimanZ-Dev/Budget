@@ -31,6 +31,7 @@ export function IncomePage(): JSX.Element {
     { source_id: number; source_name: string; month: number; amount: number; is_irregular: number; color: string; is_gross: number }[]
   >([])
   const [txIncomeTotal, setTxIncomeTotal] = useState(0)
+  const [txIncomeByMonth, setTxIncomeByMonth] = useState<Record<number, number>>({})
   const [modalOpen, setModalOpen] = useState(false)
   const [editingSource, setEditingSource] = useState<{
     id: number
@@ -59,8 +60,17 @@ export function IncomePage(): JSX.Element {
     try {
       setSources(await window.api.income.sources())
       setEntries(await window.api.income.entries(profile.year))
-      const txs = (await window.api.transactions.list({ year: profile.year })) as { amount: number; type: string }[]
-      setTxIncomeTotal(txs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0))
+      const txs = (await window.api.transactions.list({ year: profile.year })) as { amount: number; type: string; date: string; notes?: string }[]
+      // Exclude linked transactions (created alongside non-recurring income sources)
+      // to avoid double-counting — those amounts are already in income_entries
+      const incomeTxs = txs.filter((t) => t.type === 'income' && !t.notes?.startsWith('income_source:'))
+      setTxIncomeTotal(incomeTxs.reduce((s, t) => s + t.amount, 0))
+      const monthly: Record<number, number> = {}
+      for (const tx of incomeTxs) {
+        const m = new Date(tx.date).getMonth() + 1
+        monthly[m] = (monthly[m] ?? 0) + tx.amount
+      }
+      setTxIncomeByMonth(monthly)
     } catch (error) {
       console.error('Failed to load income data:', error)
     }
@@ -155,8 +165,6 @@ export function IncomePage(): JSX.Element {
     return mode === 'gross' ? netFromGross(monthly, profile.taxWithheldPercent) : roundCurrency(monthly)
   }
 
-  const txMonthlyAvg = txIncomeTotal > 0 ? txIncomeTotal / 12 : 0
-
   const chartData = MONTH_NAMES.map((name, i) => {
     const month = i + 1
     const row: Record<string, string | number> = { month: name.slice(0, 3) }
@@ -167,7 +175,10 @@ export function IncomePage(): JSX.Element {
       const viewAmount = shouldShowGross ? grossFromNet(netAmount, profile.taxWithheldPercent) : netAmount
       row[src.name] = Number.isFinite(viewAmount) ? Math.max(0, viewAmount) : 0
     }
-    if (txIncomeTotal > 0) row['Transactions'] = shouldShowGross ? grossFromNet(txMonthlyAvg, profile.taxWithheldPercent) : txMonthlyAvg
+    const monthTxTotal = txIncomeByMonth[month] ?? 0
+    if (monthTxTotal > 0) {
+      row['Transactions'] = shouldShowGross ? grossFromNet(monthTxTotal, profile.taxWithheldPercent) : monthTxTotal
+    }
     return row
   })
 

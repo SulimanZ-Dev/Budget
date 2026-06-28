@@ -637,6 +637,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       src.frequency === 'monthly'
         ? src.frequency
         : 'monthly'
+    const isRecurring = src.isRecurring !== false ? 1 : 0
     const r = db()
       .prepare(
         'INSERT INTO income_sources (name, amount, is_gross, gross_or_net, is_recurring, frequency, color) VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -646,11 +647,30 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         amount,
         grossOrNet === 'gross' ? 1 : 0,
         grossOrNet,
-        src.isRecurring !== false ? 1 : 0,
+        isRecurring,
         frequency,
         src.color ?? '#22c55e'
       )
-    return { id: Number(r.lastInsertRowid) }
+    const newId = Number(r.lastInsertRowid)
+    // Non-recurring: create entry + transaction scoped to current month only
+    if (isRecurring === 0) {
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = now.getMonth() + 1
+      const dateStr = now.toISOString().slice(0, 10)
+      db().prepare(
+        'INSERT OR IGNORE INTO income_entries (source_id, year, month, amount, is_irregular) VALUES (?, ?, ?, ?, 1)'
+      ).run(newId, year, month, amount)
+      createTransaction({
+        description: src.name + ' (one-time)',
+        amount,
+        type: 'income',
+        date: dateStr,
+        is_recurring: false,
+        notes: 'income_source:' + newId
+      })
+    }
+    return { id: newId }
   })
   ipcMain.handle('income:updateSource', (_, src) => {
     const amount = Number.isFinite(src.amount) ? src.amount : 0
@@ -662,7 +682,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       src.frequency === 'monthly'
         ? src.frequency
         : 'monthly'
-    // Fetch old amount before updating — needed to scale per-month entries
+    const isRecurring = src.isRecurring !== false ? 1 : 0
+    // Fetch old amount before updating — needed to update per-month entries
     const oldRow = db().prepare('SELECT amount FROM income_sources WHERE id = ?').get(src.id) as { amount: number } | undefined
     const oldAmount = oldRow?.amount ?? amount
     db()
@@ -674,20 +695,53 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         amount,
         grossOrNet === 'gross' ? 1 : 0,
         grossOrNet,
-        src.isRecurring !== false ? 1 : 0,
+        isRecurring,
         frequency,
         src.color ?? '#22c55e',
         src.id
       )
-    // Replace all per-month entries with the new base amount
+    // Update all existing entries for this source (covers recurring 12-row and non-recurring 1-row)
     if (oldAmount > 0 && amount !== oldAmount) {
       db().prepare(
         'UPDATE income_entries SET amount = ? WHERE source_id = ?'
       ).run(amount, src.id)
+      // Also update the linked transaction amount for non-recurring
+      if (isRecurring === 0) {
+        const existingTx = db().prepare("SELECT id FROM transactions WHERE notes = ?").get('income_source:' + src.id) as { id: number } | undefined
+        if (existingTx) {
+          db().prepare('UPDATE transactions SET amount = ?, description = ?, date = ? WHERE id = ?').run(amount, src.name + ' (one-time)', new Date().toISOString().slice(0, 10), existingTx.id)
+        }
+      }
+    }
+    // Non-recurring: ensure entry + transaction exist (covers toggle from recurring)
+    if (isRecurring === 0) {
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = now.getMonth() + 1
+      const dateStr = now.toISOString().slice(0, 10)
+      db().prepare(
+        'INSERT OR IGNORE INTO income_entries (source_id, year, month, amount, is_irregular) VALUES (?, ?, ?, ?, 1)'
+      ).run(src.id, year, month, amount)
+      const existingTx = db().prepare("SELECT id FROM transactions WHERE notes = ?").get('income_source:' + src.id) as { id: number } | undefined
+      if (!existingTx) {
+        createTransaction({
+          description: src.name + ' (one-time)',
+          amount,
+          type: 'income',
+          date: dateStr,
+          is_recurring: false,
+          notes: 'income_source:' + src.id
+        })
+      }
     }
     return true
   })
   ipcMain.handle('income:deleteSource', (_, id: number) => {
+    // Delete linked transaction before deleting the source
+    const existingTx = db().prepare("SELECT id FROM transactions WHERE notes = ?").get('income_source:' + id) as { id: number } | undefined
+    if (existingTx) {
+      deleteTransaction(existingTx.id)
+    }
     db().prepare('DELETE FROM income_sources WHERE id = ?').run(id)
     return true
   })
