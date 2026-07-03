@@ -326,6 +326,14 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       notes: tx.notes ?? null
     })
     
+    // If recurring, auto-create linked subscription
+    if (tx.isRecurring) {
+      db().prepare(
+        `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
+         VALUES (?, ?, 'monthly', ?, ?)`
+      ).run(tx.description, tx.amount, tx.date, result.id)
+    }
+    
     updateSpendingStreak(tx.date)
     const txDate = new Date(tx.date)
     if (tx.categoryId) {
@@ -335,6 +343,11 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
   // Use command pattern for transaction updates
   ipcMain.handle('transactions:update', (_, id: number, tx) => {
+    // Get current state before update
+    const current = db().prepare('SELECT is_recurring, description, amount, date FROM transactions WHERE id = ?').get(id) as
+      | { is_recurring: number; description: string; amount: number; date: string }
+      | undefined
+
     const result = updateTransaction({
       id,
       description: tx.description,
@@ -347,6 +360,28 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       member_id: tx.memberId ?? null,
       notes: tx.notes ?? null
     })
+
+    const wasRecurring = current?.is_recurring === 1
+    const isRecurring = tx.isRecurring ?? false
+    const description = tx.description ?? current?.description ?? ''
+    const amount = tx.amount ?? current?.amount ?? 0
+    const date = tx.date ?? current?.date ?? new Date().toISOString().slice(0, 10)
+
+    if (wasRecurring && !isRecurring) {
+      // Was recurring, now not - delete linked subscription
+      db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(id)
+    } else if (!wasRecurring && isRecurring) {
+      // Was not recurring, now is - create linked subscription
+      db().prepare(
+        `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
+         VALUES (?, ?, 'monthly', ?, ?)`
+      ).run(description, amount, date, id)
+    } else if (wasRecurring && isRecurring) {
+      // Still recurring - update linked subscription details
+      db().prepare(
+        `UPDATE subscriptions SET name = ?, amount = ?, next_billing_date = ? WHERE transaction_id = ?`
+      ).run(description, amount, date, id)
+    }
     
     // Check budget alerts if category changed
     if (tx.categoryId) {
@@ -357,6 +392,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
   // Use command pattern for transaction deletion
   ipcMain.handle('transactions:delete', (_, id: number) => {
+    db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(id)
     return deleteTransaction(id)
   })
   // Use command pattern for bulk operations
@@ -366,6 +402,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       return bulkRecategorizeTransactions(ids, catId)
     }
     if (action === 'delete') {
+      const delSub = db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?')
+      for (const id of ids) delSub.run(id)
       return bulkDeleteTransactions(ids)
     }
     if (action === 'flag') {
@@ -581,7 +619,12 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
   // Subscriptions
   ipcMain.handle('subscriptions:list', () =>
-    db().prepare('SELECT * FROM subscriptions ORDER BY amount DESC').all()
+    db().prepare(
+      `SELECT s.*, t.description as transaction_description
+       FROM subscriptions s
+       LEFT JOIN transactions t ON s.transaction_id = t.id
+       ORDER BY s.amount DESC`
+    ).all()
   )
   ipcMain.handle('subscriptions:create', (_, sub) => {
     const r = db()

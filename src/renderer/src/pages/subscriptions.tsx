@@ -21,6 +21,8 @@ interface Sub {
   next_billing_date?: string
   website_url?: string
   color: string
+  transaction_id?: number | null
+  transaction_description?: string | null
 }
 
 export function SubscriptionsPage(): JSX.Element {
@@ -135,15 +137,22 @@ export function SubscriptionsPage(): JSX.Element {
             >
               <Card className={tier(sub.amount)}>
                 <CardContent className="p-5">
-                  <div className="flex items-start justify-between">
-                    <div
-                      className="flex h-10 w-10 items-center justify-center rounded-lg"
-                      style={{ backgroundColor: `${sub.color}33` }}
-                    >
-                      <CreditCard className="h-5 w-5" style={{ color: sub.color }} />
+                    <div className="flex items-start justify-between">
+                      <div
+                        className="flex h-10 w-10 items-center justify-center rounded-lg"
+                        style={{ backgroundColor: `${sub.color}33` }}
+                      >
+                        <CreditCard className="h-5 w-5" style={{ color: sub.color }} />
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-xs text-muted-foreground capitalize">{sub.frequency}</span>
+                        {sub.transaction_id && (
+                          <span className="text-[10px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded">
+                            Linked
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <span className="text-xs text-muted-foreground capitalize">{sub.frequency}</span>
-                  </div>
                   <h3 className="mt-3 font-semibold">{sub.name}</h3>
                   <p className="text-2xl font-bold">
                     {formatMoney(sub.amount, profile.displayCurrency, rates)}

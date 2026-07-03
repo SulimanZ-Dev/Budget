@@ -137,7 +137,8 @@ function runMigrations(database: Database.Database): void {
       website_url TEXT,
       icon TEXT DEFAULT 'credit-card',
       color TEXT DEFAULT '#8b5cf6',
-      notes TEXT
+      notes TEXT,
+      transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS income_sources (
@@ -269,6 +270,18 @@ function runMigrations(database: Database.Database): void {
     }
   } catch (e) {
     console.log('Income sources migration skipped:', e)
+  }
+
+  // Migration: Add transaction_id column to subscriptions
+  try {
+    const subColumns = database.pragma('table_info(subscriptions)') as Array<{ name: string }>
+    if (!subColumns.some((c) => c.name === 'transaction_id')) {
+      console.log('Adding transaction_id column to subscriptions...')
+      database.exec('ALTER TABLE subscriptions ADD COLUMN transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL')
+      console.log('transaction_id column added to subscriptions')
+    }
+  } catch (e) {
+    console.log('Subscriptions transaction_id migration skipped:', e)
   }
 
   try {
