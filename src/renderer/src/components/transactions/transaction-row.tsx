@@ -74,55 +74,71 @@ export function TransactionRow({
   async function saveAmount(): Promise<void> {
     const val = parseFloat(amount)
     if (isNaN(val)) return
-    await window.api.transactions.update(t.id, {
-      description: t.description,
-      amount: val,
-      type: t.type,
-      categoryId: t.category_id,
-      date: t.date,
-      isRecurring: !!t.is_recurring,
-      isUnnecessary: !!t.is_unnecessary,
-      memberId: null,
-      notes: t.notes
-    })
-    setEditingAmount(false)
-    onUpdated()
+    try {
+      await window.api.transactions.update(t.id, {
+        description: t.description,
+        amount: val,
+        type: t.type,
+        categoryId: t.category_id,
+        date: t.date,
+        isRecurring: !!t.is_recurring,
+        isUnnecessary: !!t.is_unnecessary,
+        memberId: t.member_id,
+        notes: t.notes
+      })
+      setEditingAmount(false)
+      onUpdated()
+    } catch {
+      setEditingAmount(false)
+    }
   }
 
   async function saveCategory(catId: string): Promise<void> {
-    await window.api.transactions.update(t.id, {
-      description: t.description,
-      amount: t.amount,
-      type: t.type,
-      categoryId: parseInt(catId),
-      date: t.date,
-      isRecurring: !!t.is_recurring,
-      isUnnecessary: !!t.is_unnecessary,
-      memberId: null,
-      notes: t.notes
-    })
-    setEditingCategory(false)
-    onUpdated()
+    try {
+      await window.api.transactions.update(t.id, {
+        description: t.description,
+        amount: t.amount,
+        type: t.type,
+        categoryId: parseInt(catId),
+        date: t.date,
+        isRecurring: !!t.is_recurring,
+        isUnnecessary: !!t.is_unnecessary,
+        memberId: t.member_id,
+        notes: t.notes
+      })
+      setEditingCategory(false)
+      onUpdated()
+    } catch {
+      setEditingCategory(false)
+    }
   }
 
   async function flagUnnecessary(): Promise<void> {
-    await window.api.transactions.update(t.id, {
-      description: t.description,
-      amount: t.amount,
-      type: t.type,
-      categoryId: t.category_id,
-      date: t.date,
-      isRecurring: !!t.is_recurring,
-      isUnnecessary: true,
-      memberId: null,
-      notes: t.notes
-    })
-    onUpdated()
+    try {
+      await window.api.transactions.update(t.id, {
+        description: t.description,
+        amount: t.amount,
+        type: t.type,
+        categoryId: t.category_id,
+        date: t.date,
+        isRecurring: !!t.is_recurring,
+        isUnnecessary: true,
+        memberId: t.member_id,
+        notes: t.notes
+      })
+      onUpdated()
+    } catch {
+      // Silently fail
+    }
   }
 
   async function remove(): Promise<void> {
-    await window.api.transactions.delete(t.id)
-    onUpdated()
+    try {
+      await window.api.transactions.delete(t.id)
+      onUpdated()
+    } catch {
+      // Silently fail
+    }
   }
 
   return (

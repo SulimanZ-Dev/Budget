@@ -16,7 +16,7 @@ import {
   ResponsiveContainer,
   Legend
 } from 'recharts'
-import { Flame, TrendingUp, Sparkles } from 'lucide-react'
+import { Flame, TrendingUp, Sparkles, CreditCard } from 'lucide-react'
 import { StatTile } from '@/components/shared/stat-tile'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -46,6 +46,9 @@ export function DashboardPage(): JSX.Element {
   const [loading, setLoading] = useState(true)
   const [weeklyTip, setWeeklyTip] = useState('')
   const [generatingInsight, setGeneratingInsight] = useState(false)
+  const [upcomingSubs, setUpcomingSubs] = useState<
+    { id: number; name: string; amount: number; frequency: string; next_billing_date?: string }[]
+  >([])
 
   useEffect(() => {
     async function load(): Promise<void> {
@@ -56,8 +59,12 @@ export function DashboardPage(): JSX.Element {
       setWeeklyTip(tip)
       setLoading(false)
     }
-    if (!appLoading) load()
-  }, [profile.year, selectedMonth, appLoading, refreshTrigger])
+        if (!appLoading) {
+          load()
+          window.api.subscriptions.checkBilling().catch(() => {})
+          window.api.subscriptions.upcoming().then((u) => setUpcomingSubs(u as typeof upcomingSubs)).catch(() => {})
+        }
+      }, [profile.year, selectedMonth, appLoading, refreshTrigger])
 
   async function refreshInsight(): Promise<void> {
     setGeneratingInsight(true)
@@ -374,6 +381,35 @@ export function DashboardPage(): JSX.Element {
           ))}
         </div>
       </div>
+
+      {upcomingSubs.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <CreditCard className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-base">Upcoming payments</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {upcomingSubs.map((sub) => {
+              const daysUntil = sub.next_billing_date
+                ? Math.ceil((new Date(sub.next_billing_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                : null
+              return (
+                <div key={sub.id} className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{sub.name}</span>
+                  <span className="tabular-nums">
+                    {formatMoney(sub.amount, profile.displayCurrency, rates)}
+                    {daysUntil !== null && (
+                      <span className={`ml-2 text-xs ${daysUntil <= 3 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                        {daysUntil <= 0 ? 'Today' : daysUntil === 1 ? 'Tomorrow' : `${daysUntil}d`}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {weeklyTip && (
         <Card className="border-primary/20">

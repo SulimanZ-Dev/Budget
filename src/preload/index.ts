@@ -12,6 +12,10 @@ const api = {
   notify: (title: string, body: string): Promise<void> =>
     ipcRenderer.invoke('notification:show', { title, body }),
 
+  years: {
+    list: () => ipcRenderer.invoke('years:list')
+  },
+
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
@@ -117,7 +121,9 @@ const api = {
     create: (sub: unknown) => ipcRenderer.invoke('subscriptions:create', sub),
     update: (id: number, sub: unknown) => ipcRenderer.invoke('subscriptions:update', id, sub),
     delete: (id: number) => ipcRenderer.invoke('subscriptions:delete', id),
-    unlink: (id: number) => ipcRenderer.invoke('subscriptions:unlink', id)
+    unlink: (id: number) => ipcRenderer.invoke('subscriptions:unlink', id),
+    checkBilling: () => ipcRenderer.invoke('subscriptions:checkBilling'),
+    upcoming: () => ipcRenderer.invoke('subscriptions:upcoming')
   },
 
   income: {

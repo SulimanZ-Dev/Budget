@@ -1,5 +1,5 @@
 import { getDatabase } from '../database-encrypted'
-import { signTransaction } from '../crypto/integrity'
+import { signEventStoreEntry } from '../crypto/integrity'
 
 /**
  * Event types for transaction lifecycle
@@ -80,15 +80,11 @@ export function appendEvent(
   
   const payloadJson = JSON.stringify(payload)
   
-  // Compute HMAC for event integrity
-  const hmac = signTransaction({
-    id: transactionId,
-    description: payload.description || '',
-    amount: payload.amount || 0,
-    type: payload.type || 'expense',
-    category_id: payload.category_id || null,
-    date: payload.date || new Date().toISOString().split('T')[0],
-    member_id: payload.member_id || null
+  // Compute HMAC over the actual event data (event_type + payload)
+  const hmac = signEventStoreEntry({
+    transaction_id: transactionId,
+    event_type: eventType,
+    payload_json: payloadJson
   })
   
   const result = db.prepare(`

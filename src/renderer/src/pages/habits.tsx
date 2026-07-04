@@ -18,9 +18,12 @@ export function HabitsPage(): JSX.Element {
   }, [])
 
   async function rateMonth(rating: number): Promise<void> {
+    const now = new Date()
+    const lastMonth = now.getMonth() === 0 ? 12 : now.getMonth()
+    const lastYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
     await window.api.mood.set({
-      year: profile.year,
-      month: profile.year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12,
+      year: lastYear,
+      month: lastMonth,
       rating,
       emoji: EMOJIS[rating - 1]
     })

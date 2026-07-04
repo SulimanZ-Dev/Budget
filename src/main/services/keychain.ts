@@ -32,7 +32,7 @@ export async function saveApiKey(key: string): Promise<boolean> {
     }
     
     // Fallback: Use machine-bound encryption instead of base64
-    const { getDatabase } = await import('../database')
+    const { getDatabase } = await import('../database-encrypted')
     const db = getDatabase()
     const encrypted = encryptWithMachineKey(key)
     db.prepare(
@@ -58,7 +58,7 @@ export async function getApiKey(): Promise<string | null> {
   }
   
   // Fallback: Decrypt from machine-bound encryption
-  const { getDatabase } = await import('../database')
+  const { getDatabase } = await import('../database-encrypted')
   const db = getDatabase()
   const row = db.prepare("SELECT value FROM settings WHERE key = 'encryptedApiKey'").get() as
     | { value: string }
@@ -88,7 +88,7 @@ export async function deleteApiKey(): Promise<void> {
     await kt.deletePassword(SERVICE, ACCOUNT)
     return
   }
-  const { getDatabase } = await import('../database')
+  const { getDatabase } = await import('../database-encrypted')
   getDatabase().prepare("DELETE FROM settings WHERE key = 'encryptedApiKey'").run()
 }
 

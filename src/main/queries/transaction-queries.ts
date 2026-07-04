@@ -1,5 +1,6 @@
 import { getDatabase } from '../database-encrypted'
 import { verifyTransaction } from '../crypto/integrity'
+import { getTransactionHistory as getEventHistory } from '../events/event-store'
 
 /**
  * Query: Get all transactions with optional filters
@@ -337,9 +338,7 @@ export function getTransactionsWithIntegrityIssues() {
  * Query: Get transaction event history
  */
 export function getTransactionHistory(id: number) {
-  const db = getDatabase()
-  const { getTransactionHistory: getHistory } = require('../events/event-store')
-  return getHistory(db, id)
+  return getEventHistory(id)
 }
 
 /**

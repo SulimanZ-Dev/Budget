@@ -85,6 +85,34 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return profile
   })
 
+  // Years
+  ipcMain.handle('years:list', () => {
+    const transactionYears = db()
+      .prepare("SELECT DISTINCT CAST(strftime('%Y', date) AS INTEGER) as year FROM transactions ORDER BY year DESC")
+      .all() as Array<{ year: number }>
+    const budgetYears = db()
+      .prepare('SELECT DISTINCT year FROM budget_entries ORDER BY year DESC')
+      .all() as Array<{ year: number }>
+    const incomeYears = db()
+      .prepare('SELECT DISTINCT year FROM income_entries ORDER BY year DESC')
+      .all() as Array<{ year: number }>
+    const moodYears = db()
+      .prepare('SELECT DISTINCT year FROM monthly_mood ORDER BY year DESC')
+      .all() as Array<{ year: number }>
+
+    const yearSet = new Set<number>()
+    for (const y of [...transactionYears, ...budgetYears, ...incomeYears, ...moodYears]) {
+      yearSet.add(y.year)
+    }
+
+    const currentYear = new Date().getFullYear()
+    // Always include the previous year and current year
+    yearSet.add(currentYear)
+    yearSet.add(currentYear - 1)
+
+    return Array.from(yearSet).sort((a, b) => b - a)
+  })
+
   // Currency
   ipcMain.handle('currency:fetch', () => fetchExchangeRates())
   ipcMain.handle('currency:cached', () => getCachedRates())
@@ -314,6 +342,12 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
   // Use command pattern for transaction creation
   ipcMain.handle('transactions:create', (_, tx) => {
+    if (!Number.isFinite(tx.amount) || tx.amount <= 0) {
+      throw new Error('Amount must be a positive number')
+    }
+    if (!tx.description?.trim()) {
+      throw new Error('Description is required')
+    }
     const result = createTransaction({
       description: tx.description,
       amount: tx.amount,
@@ -348,44 +382,48 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       | { is_recurring: number; description: string; amount: number; date: string }
       | undefined
 
+    if (!current) {
+      throw new Error(`Transaction ${id} not found`)
+    }
+
     const result = updateTransaction({
       id,
       description: tx.description,
       amount: tx.amount,
       type: tx.type,
-      category_id: tx.categoryId ?? null,
+      category_id: tx.categoryId !== undefined ? tx.categoryId : undefined,
       date: tx.date,
-      is_recurring: tx.isRecurring ?? false,
-      is_unnecessary: tx.isUnnecessary ?? false,
-      member_id: tx.memberId ?? null,
-      notes: tx.notes ?? null
+      is_recurring: tx.isRecurring,
+      is_unnecessary: tx.isUnnecessary,
+      member_id: tx.memberId !== undefined ? tx.memberId : undefined,
+      notes: tx.notes !== undefined ? tx.notes : undefined
     })
 
-    const wasRecurring = current?.is_recurring === 1
-    const isRecurring = tx.isRecurring ?? false
-    const description = tx.description ?? current?.description ?? ''
-    const amount = tx.amount ?? current?.amount ?? 0
-    const date = tx.date ?? current?.date ?? new Date().toISOString().slice(0, 10)
+    const description = tx.description ?? current.description
+    const amount = tx.amount ?? current.amount
+    const date = tx.date ?? current.date
 
-    if (wasRecurring && !isRecurring) {
-      // Was recurring, now not - delete linked subscription
-      db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(id)
-    } else if (!wasRecurring && isRecurring) {
-      // Was not recurring, now is - create linked subscription
-      db().prepare(
-        `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
-         VALUES (?, ?, 'monthly', ?, ?)`
-      ).run(description, amount, date, id)
-    } else if (wasRecurring && isRecurring) {
-      // Still recurring - update linked subscription details
-      db().prepare(
-        `UPDATE subscriptions SET name = ?, amount = ?, next_billing_date = ? WHERE transaction_id = ?`
-      ).run(description, amount, date, id)
+    if (tx.isRecurring !== undefined) {
+      const wasRecurring = current.is_recurring === 1
+      const isRecurring = tx.isRecurring
+
+      if (wasRecurring && !isRecurring) {
+        db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(id)
+      } else if (!wasRecurring && isRecurring) {
+        db().prepare(
+          `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
+           VALUES (?, ?, 'monthly', ?, ?)`
+        ).run(description, amount, date, id)
+      } else if (wasRecurring && isRecurring) {
+        db().prepare(
+          `UPDATE subscriptions SET name = ?, amount = ?, next_billing_date = ? WHERE transaction_id = ?`
+        ).run(description, amount, date, id)
+      }
     }
     
     // Check budget alerts if category changed
     if (tx.categoryId) {
-      const d = new Date(tx.date)
+      const d = new Date(date)
       checkBudgetAlerts(tx.categoryId, d.getFullYear(), d.getMonth() + 1)
     }
     return result
@@ -664,6 +702,16 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return true
   })
   ipcMain.handle('subscriptions:delete', (_, id: number) => {
+    const sub = db().prepare('SELECT transaction_id FROM subscriptions WHERE id = ?').get(id) as
+      | { transaction_id: number }
+      | undefined
+    if (sub?.transaction_id) {
+      try {
+        updateTransaction({ id: sub.transaction_id, is_recurring: false })
+      } catch {
+        // Linked transaction already deleted, ignore
+      }
+    }
     db().prepare('DELETE FROM subscriptions WHERE id = ?').run(id)
     return true
   })
@@ -672,10 +720,55 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       | { transaction_id: number }
       | undefined
     if (sub?.transaction_id) {
-      updateTransaction({ id: sub.transaction_id, is_recurring: false })
+      try {
+        updateTransaction({ id: sub.transaction_id, is_recurring: false })
+      } catch {
+        // Linked transaction already deleted, ignore
+      }
     }
     db().prepare('DELETE FROM subscriptions WHERE id = ?').run(id)
     return true
+  })
+
+  // Check subscriptions with past-due billing dates and auto-create transactions
+  ipcMain.handle('subscriptions:checkBilling', () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const due = db().prepare(
+      `SELECT * FROM subscriptions WHERE transaction_id IS NULL AND next_billing_date IS NOT NULL AND next_billing_date <= ?`
+    ).all(today) as Array<{
+      id: number
+      name: string
+      amount: number
+      frequency: string
+      next_billing_date: string
+    }>
+    const created: number[] = []
+    for (const sub of due) {
+      const result = createTransaction({
+        description: sub.name,
+        amount: sub.amount,
+        type: 'expense',
+        date: sub.next_billing_date,
+        is_recurring: true
+      })
+      // Link subscription to new transaction
+      db().prepare(`UPDATE subscriptions SET transaction_id = ? WHERE id = ?`).run(result.id, sub.id)
+      created.push(result.id)
+    }
+    return created
+  })
+
+  // Get upcoming subscription payments
+  ipcMain.handle('subscriptions:upcoming', () => {
+    const today = new Date().toISOString().slice(0, 10)
+    return db().prepare(
+      `SELECT s.*, t.description as transaction_description
+       FROM subscriptions s
+       LEFT JOIN transactions t ON s.transaction_id = t.id
+       WHERE s.next_billing_date IS NOT NULL AND s.next_billing_date >= ?
+       ORDER BY s.next_billing_date ASC
+       LIMIT 5`
+    ).all(today)
   })
 
   // Income
@@ -1109,6 +1202,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   ipcMain.handle('data:wipe', () => {
     const tables = [
       'transactions',
+      'transaction_events',
       'budget_entries',
       'categories',
       'goals',
@@ -1168,7 +1262,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       .all(y)
 
     const goals = db().prepare('SELECT * FROM goals').all()
-    const subscriptions = db().prepare("SELECT COALESCE(SUM(amount),0) as total FROM subscriptions WHERE transaction_id IS NULL").get() as
+    const subscriptions = db().prepare(`SELECT COALESCE(SUM(CASE WHEN frequency='annual' OR frequency='yearly' THEN CAST(amount AS REAL)/12.0 ELSE amount END),0) as total FROM subscriptions WHERE transaction_id IS NULL`).get() as
       | { total: number }
       | undefined
     const txCount = db()
@@ -1324,6 +1418,7 @@ function exportAllTables(): Record<string, unknown[]> {
     'goals',
     'wealth_snapshots',
     'investments',
+    'investment_holdings',
     'subscriptions',
     'income_sources',
     'income_entries',
@@ -1347,6 +1442,7 @@ function importAllTables(data: Record<string, unknown[]>): void {
     'goals',
     'wealth_snapshots',
     'investments',
+    'investment_holdings',
     'subscriptions',
     'income_sources',
     'income_entries',

@@ -4,7 +4,9 @@ import {
   appendEvent, 
   TransactionEventType, 
   TransactionEventPayload,
-  replayTransactionEvents
+  replayTransactionEvents,
+  undoLastEvents,
+  replayAllEvents
 } from '../events/event-store'
 
 /**
@@ -285,7 +287,6 @@ export function undoLastChange(id: number): boolean {
   const db = getDatabase()
   
   // Get the state before the last event
-  const { undoLastEvents } = require('../events/event-store')
   const previousState = undoLastEvents(id, 1)
   
   if (!previousState) {
@@ -392,7 +393,6 @@ export function importTransactionsFromCsvWithEvents(
  */
 export function rebuildTransactionsProjection(): number {
   const db = getDatabase()
-  const { replayAllEvents } = require('../events/event-store')
   
   // Get current state from events
   const eventState = replayAllEvents()

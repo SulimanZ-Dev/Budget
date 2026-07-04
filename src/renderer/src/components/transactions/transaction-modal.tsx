@@ -59,22 +59,26 @@ export function TransactionModal({
   async function save(): Promise<void> {
     const amt = parseFloat(amount)
     if (!description || isNaN(amt)) return
-    await window.api.transactions.create({
-      description,
-      amount: amt,
-      type,
-      categoryId: categoryId ? parseInt(categoryId) : null,
-      date,
-      isRecurring,
-      isUnnecessary,
-      memberId: memberId ? parseInt(memberId) : null,
-      notes: notes || null
-    })
-    setDescription('')
-    setAmount('')
-    setNotes('')
-    onOpenChange(false)
-    onSaved?.()
+    try {
+      await window.api.transactions.create({
+        description,
+        amount: amt,
+        type,
+        categoryId: categoryId ? parseInt(categoryId) : null,
+        date,
+        isRecurring,
+        isUnnecessary,
+        memberId: memberId ? parseInt(memberId) : null,
+        notes: notes || null
+      })
+      setDescription('')
+      setAmount('')
+      setNotes('')
+      onOpenChange(false)
+      onSaved?.()
+    } catch {
+      // Silently fail
+    }
   }
 
   return (

@@ -31,14 +31,34 @@ export function SubscriptionsPage(): JSX.Element {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState({ name: '', amount: '', url: '', date: '' })
+  const [filter, setFilter] = useState<'all' | 'linked' | 'unlinked'>('all')
+  const [sort, setSort] = useState<'name' | 'amount' | 'date'>('amount')
 
   useEffect(() => {
     load()
   }, [])
 
   async function load(): Promise<void> {
-    setSubs(await window.api.subscriptions.list())
+    try {
+      window.api.subscriptions.checkBilling().catch(() => {})
+      setSubs(await window.api.subscriptions.list())
+    } catch {
+      // Silently fail
+    }
   }
+
+  const filtered = subs.filter((sub) => {
+    if (filter === 'linked') return !!sub.transaction_id
+    if (filter === 'unlinked') return !sub.transaction_id
+    return true
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sort === 'name') return a.name.localeCompare(b.name)
+    if (sort === 'amount') return b.amount - a.amount
+    if (sort === 'date') return (a.next_billing_date ?? '').localeCompare(b.next_billing_date ?? '')
+    return 0
+  })
 
   const monthlyTotal = subs.reduce(
     (s, sub) => s + (sub.frequency === 'annual' ? sub.amount / 12 : sub.amount),
@@ -57,33 +77,41 @@ export function SubscriptionsPage(): JSX.Element {
   async function save(): Promise<void> {
     const amount = parseFloat(form.amount)
     if (!form.name.trim() || !Number.isFinite(amount) || amount <= 0) return
-    if (editingId) {
-      await window.api.subscriptions.update(editingId, {
-        name: form.name,
-        amount,
-        frequency: 'monthly',
-        websiteUrl: form.url,
-        nextBillingDate: form.date || undefined
-      })
-    } else {
-      await window.api.subscriptions.create({
-        name: form.name,
-        amount,
-        frequency: 'monthly',
-        websiteUrl: form.url,
-        nextBillingDate: form.date || undefined
-      })
+    try {
+      if (editingId) {
+        await window.api.subscriptions.update(editingId, {
+          name: form.name,
+          amount,
+          frequency: 'monthly',
+          websiteUrl: form.url,
+          nextBillingDate: form.date || undefined
+        })
+      } else {
+        await window.api.subscriptions.create({
+          name: form.name,
+          amount,
+          frequency: 'monthly',
+          websiteUrl: form.url,
+          nextBillingDate: form.date || undefined
+        })
+      }
+      setEditingId(null)
+      setForm({ name: '', amount: '', url: '', date: '' })
+      setModalOpen(false)
+      load()
+    } catch {
+      // Silently fail
     }
-    setEditingId(null)
-    setForm({ name: '', amount: '', url: '', date: '' })
-    setModalOpen(false)
-    load()
   }
 
   async function remove(id: number): Promise<void> {
     if (!confirm('Delete this subscription?')) return
-    await window.api.subscriptions.delete(id)
-    load()
+    try {
+      await window.api.subscriptions.delete(id)
+      load()
+    } catch {
+      // Silently fail
+    }
   }
 
   return (
@@ -120,17 +148,44 @@ export function SubscriptionsPage(): JSX.Element {
         </Card>
       </div>
 
-      {subs.length === 0 ? (
+      {subs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border bg-card p-1">
+            {(['all', 'unlinked', 'linked'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  filter === f ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {f === 'all' ? 'All' : f === 'linked' ? 'Linked' : 'Unlinked'}
+              </button>
+            ))}
+          </div>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as 'name' | 'amount' | 'date')}
+            className="h-8 rounded-lg border bg-card px-2 text-xs"
+          >
+            <option value="amount">By amount</option>
+            <option value="name">By name</option>
+            <option value="date">By billing date</option>
+          </select>
+        </div>
+      )}
+
+      {sorted.length === 0 ? (
         <EmptyState
           icon={CreditCard}
-          title="No subscriptions tracked"
+          title={subs.length === 0 ? 'No subscriptions tracked' : 'No matching subscriptions'}
           description="Add streaming, software, and other recurring services to see your true monthly cost."
           actionLabel="Add subscription"
           onAction={() => setModalOpen(true)}
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {subs.map((sub, i) => (
+          {sorted.map((sub, i) => (
             <motion.div
               key={sub.id}
               initial={{ opacity: 0, y: 8 }}

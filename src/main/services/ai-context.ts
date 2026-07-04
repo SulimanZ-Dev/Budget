@@ -1,4 +1,4 @@
-import { getDatabase } from '../database'
+import { getDatabase } from '../database-encrypted'
 
 export function buildFinancialContext(): string {
   const db = getDatabase()

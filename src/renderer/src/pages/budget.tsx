@@ -50,48 +50,51 @@ export function BudgetPage(): JSX.Element {
 
   async function load(): Promise<void> {
     setLoading(true)
-    const [budget, txs, incomeEntries, incomeSources, subscriptions] = await Promise.all([
-      window.api.budget.getMonth(profile.year, selectedMonth),
-      window.api.transactions.list({ year: profile.year, month: selectedMonth }),
-      window.api.income.entries(profile.year),
-      window.api.income.sources(),
-      window.api.subscriptions.list()
-    ])
-    setEntries(budget as BudgetRow[])
-    const map: Record<number, number> = {}
-    for (const t of txs as { category_id: number; amount: number; type: string }[]) {
-      if (t.type === 'expense' && t.category_id) {
-        map[t.category_id] = (map[t.category_id] || 0) + t.amount
+    try {
+      const [budget, txs, incomeEntries, incomeSources, subscriptions] = await Promise.all([
+        window.api.budget.getMonth(profile.year, selectedMonth),
+        window.api.transactions.list({ year: profile.year, month: selectedMonth }),
+        window.api.income.entries(profile.year),
+        window.api.income.sources(),
+        window.api.subscriptions.list()
+      ])
+      setEntries((budget as BudgetRow[]) ?? [])
+      const map: Record<number, number> = {}
+      for (const t of (txs as { category_id: number; amount: number; type: string }[]) ?? []) {
+        if (t.type === 'expense' && t.category_id) {
+          map[t.category_id] = (map[t.category_id] || 0) + t.amount
+        }
       }
+      setSpending(map)
+      const outflow = ((txs as { amount: number; type: string }[]) ?? []).reduce((sum, t) => {
+        if (t.type === 'savings' || t.type === 'transfer') return sum + t.amount
+        return sum
+      }, 0)
+      setSavingsAndTransfersOutflow(outflow)
+      
+      // Budget always uses net take-home, adjusted to monthly baseline.
+      const sources = (incomeSources as IncomeSourceRow[]) ?? []
+      const monthEntries = (incomeEntries as { source_id: number; month: number; amount: number }[]) ?? []
+      const monthIncome = sources.reduce((sum, src) => {
+        const entry = monthEntries.find((e) => e.source_id === src.id && e.month === selectedMonth)
+        const rawAmount =
+          entry?.amount ??
+          (src.is_recurring === 1 ? src.amount : 0)
+        const normalized = frequencyToMonthly(rawAmount, src.frequency ?? 'monthly')
+        if ((src.gross_or_net ?? (src.is_gross ? 'gross' : 'net')) === 'gross') {
+          return sum + netFromGross(normalized, profile.taxWithheldPercent)
+        }
+        return sum + normalized
+      }, 0)
+      setMonthlyIncome(monthIncome)
+      const monthlySubs = ((subscriptions as { amount: number; frequency: string; transaction_id?: number | null }[]) ?? []).reduce(
+        (sum, sub) => sub.transaction_id ? sum : sum + monthlySubscriptionCost(sub.amount, sub.frequency),
+        0
+      )
+      setSubscriptionMonthly(monthlySubs)
+    } catch {
+      // Silently fail
     }
-    setSpending(map)
-    const outflow = (txs as { amount: number; type: string }[]).reduce((sum, t) => {
-      if (t.type === 'savings' || t.type === 'transfer') return sum + t.amount
-      return sum
-    }, 0)
-    setSavingsAndTransfersOutflow(outflow)
-    
-    // Budget always uses net take-home, adjusted to monthly baseline.
-    const sources = incomeSources as IncomeSourceRow[]
-    const monthEntries = incomeEntries as { source_id: number; month: number; amount: number }[]
-    const monthIncome = sources.reduce((sum, src) => {
-      const entry = monthEntries.find((e) => e.source_id === src.id && e.month === selectedMonth)
-      const rawAmount =
-        entry?.amount ??
-        (src.is_recurring === 1 ? src.amount : 0)
-      const normalized = frequencyToMonthly(rawAmount, src.frequency ?? 'monthly')
-      if ((src.gross_or_net ?? (src.is_gross ? 'gross' : 'net')) === 'gross') {
-        return sum + netFromGross(normalized, profile.taxWithheldPercent)
-      }
-      return sum + normalized
-    }, 0)
-    setMonthlyIncome(monthIncome)
-    const monthlySubs = (subscriptions as { amount: number; frequency: string; transaction_id?: number | null }[]).reduce(
-      (sum, sub) => sub.transaction_id ? sum : sum + monthlySubscriptionCost(sub.amount, sub.frequency),
-      0
-    )
-    setSubscriptionMonthly(monthlySubs)
-    
     setLoading(false)
   }
 

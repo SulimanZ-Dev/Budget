@@ -1,5 +1,5 @@
 import { Notification } from 'electron'
-import { getDatabase } from '../database'
+import { getDatabase } from '../database-encrypted'
 
 export function checkBudgetAlerts(
   categoryId: number | null | undefined,

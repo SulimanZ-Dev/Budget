@@ -1,4 +1,4 @@
-import { getDatabase } from '../database'
+import { getDatabase } from '../database-encrypted'
 
 const FRANKFURTER_URL = 'https://api.frankfurter.app/latest?from=SEK&to=EUR,USD'
 

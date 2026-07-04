@@ -1,6 +1,6 @@
 import { createHmac } from 'crypto'
 import { deriveKey, isKeystoreUnlocked } from './keyManager'
-import { getDatabase } from '../database'
+import { getDatabase } from '../database-encrypted'
 
 /**
  * Table-specific signing keys derived from the master signing key
@@ -295,6 +295,52 @@ export function getIntegrityWarnings(): Array<{
 export function clearIntegrityWarnings(): void {
   const db = getDatabase()
   db.prepare('DELETE FROM integrity_warnings').run()
+}
+
+/**
+ * Serialize event store entry for HMAC computation
+ */
+function serializeEventStoreEntry(row: {
+  transaction_id: number
+  event_type: string
+  payload_json: string
+}): string {
+  return JSON.stringify({
+    transaction_id: row.transaction_id,
+    event_type: row.event_type,
+    payload_json: row.payload_json
+  })
+}
+
+/**
+ * Sign an event store entry
+ */
+export function signEventStoreEntry(row: {
+  transaction_id: number
+  event_type: string
+  payload_json: string
+}): string {
+  const data = serializeEventStoreEntry(row)
+  return computeHMAC('transaction_events', data)
+}
+
+/**
+ * Verify an event store entry's HMAC signature
+ */
+export function verifyEventStoreEntry(row: {
+  transaction_id: number
+  event_type: string
+  payload_json: string
+  hmac?: string
+}): boolean {
+  if (!row.hmac) {
+    return false
+  }
+
+  const data = serializeEventStoreEntry(row)
+  const expectedHMAC = computeHMAC('transaction_events', data)
+
+  return row.hmac === expectedHMAC
 }
 
 /**

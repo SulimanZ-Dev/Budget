@@ -38,18 +38,25 @@ export function TransactionDetailDrawer({
   }, [])
 
   async function save(): Promise<void> {
-    await window.api.transactions.update(t.id, {
-      description,
-      amount: parseFloat(amount),
-      type: t.type,
-      categoryId: categoryId ? parseInt(categoryId) : null,
-      date: t.date,
-      isRecurring,
-      isUnnecessary: !!t.is_unnecessary,
-      memberId: memberId && memberId !== 'none' ? parseInt(memberId) : null,
-      notes: notes || null
-    })
-    onSaved()
+    if (!description.trim()) return
+    const numAmount = parseFloat(amount)
+    if (!Number.isFinite(numAmount) || numAmount <= 0) return
+    try {
+      await window.api.transactions.update(t.id, {
+        description,
+        amount: numAmount,
+        type: t.type,
+        categoryId: categoryId ? parseInt(categoryId) : null,
+        date: t.date,
+        isRecurring,
+        isUnnecessary: !!t.is_unnecessary,
+        memberId: memberId && memberId !== 'none' ? parseInt(memberId) : null,
+        notes: notes || null
+      })
+      onSaved()
+    } catch {
+      // Silently fail
+    }
   }
 
   return (

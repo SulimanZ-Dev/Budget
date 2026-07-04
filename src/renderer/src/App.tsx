@@ -130,6 +130,16 @@ function AppContent(): JSX.Element {
   } = useAppStore()
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [budgetStatus, setBudgetStatus] = useState<'under' | 'near' | 'over'>('under')
+  const [availableYears, setAvailableYears] = useState<number[]>([profile.year])
+
+  useEffect(() => {
+    window.api.years.list().then((years) => {
+      setAvailableYears(years as number[])
+      if ((years as number[]).length > 0 && !(years as number[]).includes(profile.year)) {
+        setYear((years as number[])[0])
+      }
+    })
+  }, [])
 
   useEffect(() => {
     if (!loading && !onboardingComplete) setShowOnboarding(true)
@@ -259,7 +269,7 @@ function AppContent(): JSX.Element {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {[2024, 2025, 2026].map((y) => (
+                {availableYears.map((y) => (
                   <SelectItem key={y} value={String(y)}>
                     {y}
                   </SelectItem>
