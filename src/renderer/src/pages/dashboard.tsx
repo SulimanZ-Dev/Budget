@@ -62,6 +62,8 @@ export function DashboardPage(): JSX.Element {
         if (!appLoading) {
           load()
           window.api.subscriptions.checkBilling().catch(() => {})
+          window.api.savings.checkBilling().catch(() => {})
+          window.api.income.checkBilling().catch(() => {})
           window.api.subscriptions.upcoming().then((u) => setUpcomingSubs(u as typeof upcomingSubs)).catch(() => {})
         }
       }, [profile.year, selectedMonth, appLoading, refreshTrigger])

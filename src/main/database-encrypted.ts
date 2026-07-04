@@ -321,6 +321,24 @@ function runMigrations(database: SqlCipher.Database): void {
     console.log('Subscriptions transaction_id migration skipped:', e)
   }
 
+  // Migration: Add savings_sources table
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS savings_sources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        description TEXT NOT NULL,
+        amount REAL NOT NULL,
+        is_recurring INTEGER DEFAULT 1,
+        frequency TEXT DEFAULT 'monthly',
+        category_id INTEGER,
+        transaction_id INTEGER,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `)
+  } catch (e) {
+    console.log('Savings sources migration skipped:', e)
+  }
+
   // Ensure default settings exist
   const onboardingDone = database
     .prepare("SELECT value FROM settings WHERE key = 'onboardingComplete'")

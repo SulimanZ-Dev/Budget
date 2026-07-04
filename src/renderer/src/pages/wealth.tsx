@@ -69,10 +69,11 @@ export function WealthPage(): JSX.Element {
     setSnapshots(await window.api.wealth.list())
     setInvestments(await window.api.investments.list())
     setHoldings(await window.api.investmentHoldings.list())
-    // Load total savings from transactions
+    // Load total savings from past transactions (exclude future auto-created ones)
     const transactions = await window.api.transactions.list()
+    const today = new Date().toISOString().slice(0, 10)
     const savingsTotal = transactions
-      .filter((t: any) => t.type === 'savings')
+      .filter((t: any) => t.type === 'savings' && t.date <= today)
       .reduce((sum: number, t: any) => sum + t.amount, 0)
     setTotalSavings(savingsTotal)
   }

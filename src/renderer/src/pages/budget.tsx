@@ -61,13 +61,15 @@ export function BudgetPage(): JSX.Element {
       setEntries((budget as BudgetRow[]) ?? [])
       const map: Record<number, number> = {}
       for (const t of (txs as { category_id: number; amount: number; type: string }[]) ?? []) {
-        if (t.type === 'expense' && t.category_id) {
+        if (t.type === 'savings' && t.category_id) {
+          map[t.category_id] = (map[t.category_id] || 0) + t.amount
+        } else if (t.type === 'expense' && t.category_id) {
           map[t.category_id] = (map[t.category_id] || 0) + t.amount
         }
       }
       setSpending(map)
       const outflow = ((txs as { amount: number; type: string }[]) ?? []).reduce((sum, t) => {
-        if (t.type === 'savings' || t.type === 'transfer') return sum + t.amount
+        if (t.type === 'transfer') return sum + t.amount
         return sum
       }, 0)
       setSavingsAndTransfersOutflow(outflow)
@@ -155,7 +157,7 @@ export function BudgetPage(): JSX.Element {
               {formatMoney(remainingBalance, profile.displayCurrency, rates)}
             </p>
             <p className="text-xs text-muted-foreground">
-              Income: {formatMoney(monthlyIncome, profile.displayCurrency, rates)} - Spent: {formatMoney(totalSpent, profile.displayCurrency, rates)} - Saved/Transfers: {formatMoney(savingsAndTransfersOutflow, profile.displayCurrency, rates)} - Subs: {formatMoney(subscriptionMonthly, profile.displayCurrency, rates)}
+              Income: {formatMoney(monthlyIncome, profile.displayCurrency, rates)} - Spent: {formatMoney(totalSpent, profile.displayCurrency, rates)} - Transfers: {formatMoney(savingsAndTransfersOutflow, profile.displayCurrency, rates)} - Subs: {formatMoney(subscriptionMonthly, profile.displayCurrency, rates)}
             </p>
           </div>
           <div

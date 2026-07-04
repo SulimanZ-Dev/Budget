@@ -15,6 +15,11 @@ export function useAppInit(): void {
 
         const rates = await window.api.currency.fetch()
         if (rates?.rates) setRates(rates.rates)
+
+        // Check recurring sources for due billings
+        window.api.subscriptions.checkBilling().catch(() => {})
+        window.api.savings.checkBilling().catch(() => {})
+        window.api.income.checkBilling().catch(() => {})
       } finally {
         setLoading(false)
       }

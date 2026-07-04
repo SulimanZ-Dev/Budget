@@ -126,13 +126,21 @@ const api = {
     upcoming: () => ipcRenderer.invoke('subscriptions:upcoming')
   },
 
+  savings: {
+    sources: () => ipcRenderer.invoke('savings:sources'),
+    deleteSource: (id: number) => ipcRenderer.invoke('savings:deleteSource', id),
+    populateFuture: () => ipcRenderer.invoke('savings:populateFuture'),
+    checkBilling: () => ipcRenderer.invoke('savings:checkBilling')
+  },
+
   income: {
     sources: () => ipcRenderer.invoke('income:sources'),
     createSource: (src: unknown) => ipcRenderer.invoke('income:createSource', src),
     updateSource: (src: unknown) => ipcRenderer.invoke('income:updateSource', src),
     deleteSource: (id: number) => ipcRenderer.invoke('income:deleteSource', id),
     entries: (year: number) => ipcRenderer.invoke('income:entries', year),
-    setEntry: (data: unknown) => ipcRenderer.invoke('income:setEntry', data)
+    setEntry: (data: unknown) => ipcRenderer.invoke('income:setEntry', data),
+    checkBilling: () => ipcRenderer.invoke('income:checkBilling')
   },
 
   mood: {

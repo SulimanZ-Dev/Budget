@@ -41,6 +41,7 @@ export function SavingsPage(): JSX.Element {
   }, [profile.year, selectedMonth, refreshTrigger])
 
   async function load(): Promise<void> {
+    await window.api.savings.checkBilling().catch(() => {})
     const txs = (await window.api.transactions.list({
       year: profile.year,
       month: selectedMonth,

@@ -298,6 +298,27 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
          ON CONFLICT(category_id, year, month) DO UPDATE SET amount=excluded.amount, notes=excluded.notes, hmac=excluded.hmac`
       )
       .run(data.categoryId, data.year, data.month, data.amount, data.notes ?? null, hmac)
+
+    // Propagate to future months (same year) — always update future, never touch past
+    const now = new Date()
+    const currentMonthNum = now.getFullYear() * 12 + (now.getMonth() + 1)
+    const inputMonthNum = data.year * 12 + data.month
+
+    if (inputMonthNum >= currentMonthNum) {
+      for (let m = data.month + 1; m <= 12; m++) {
+        const futureHmac = signBudgetEntry({
+          category_id: data.categoryId,
+          year: data.year,
+          month: m,
+          amount: data.amount
+        })
+        db().prepare(
+          `INSERT INTO budget_entries (category_id, year, month, amount, notes, hmac)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(category_id, year, month) DO UPDATE SET amount=excluded.amount, notes=excluded.notes, hmac=excluded.hmac`
+        ).run(data.categoryId, data.year, m, data.amount, data.notes ?? null, futureHmac)
+      }
+    }
     return true
   })
 
@@ -348,11 +369,18 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (!tx.description?.trim()) {
       throw new Error('Description is required')
     }
+    // Auto-assign savings category for savings transactions
+    let savingsCategoryId: number | null = null
+    if (tx.type === 'savings') {
+      savingsCategoryId = getSavingsCategoryId(db())
+    }
+    const assignedCategoryId = tx.type === 'savings' && !tx.categoryId ? savingsCategoryId : (tx.categoryId ?? null)
+
     const result = createTransaction({
       description: tx.description,
       amount: tx.amount,
       type: tx.type,
-      category_id: tx.categoryId ?? null,
+      category_id: assignedCategoryId,
       date: tx.date,
       is_recurring: tx.isRecurring ?? false,
       is_unnecessary: tx.isUnnecessary ?? false,
@@ -360,12 +388,26 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       notes: tx.notes ?? null
     })
     
-    // If recurring, auto-create linked subscription
+    // If recurring, auto-create subscription (non-savings) or savings source (savings)
     if (tx.isRecurring) {
-      db().prepare(
-        `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
-         VALUES (?, ?, 'monthly', ?, ?)`
-      ).run(tx.description, tx.amount, tx.date, result.id)
+      if (tx.type === 'savings') {
+        const ssResult = db().prepare(
+          `INSERT INTO savings_sources (description, amount, is_recurring, frequency, category_id, transaction_id)
+           VALUES (?, ?, 1, 'monthly', ?, ?)`
+        ).run(tx.description, tx.amount, savingsCategoryId, result.id)
+        const sourceId = Number(ssResult.lastInsertRowid)
+        const marker = 'savings_source:' + sourceId
+        const newNotes = tx.notes ? tx.notes + ' | ' + marker : marker
+        db().prepare('UPDATE transactions SET notes = ? WHERE id = ?').run(newNotes, result.id)
+      } else {
+        // Start next billing one month from now — the current transaction is the first bill
+        const nextDate = new Date(tx.date)
+        nextDate.setMonth(nextDate.getMonth() + 1)
+        db().prepare(
+          `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
+           VALUES (?, ?, 'monthly', ?, ?)`
+        ).run(tx.description, tx.amount, nextDate.toISOString().slice(0, 10), result.id)
+      }
     }
     
     updateSpendingStreak(tx.date)
@@ -378,8 +420,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Use command pattern for transaction updates
   ipcMain.handle('transactions:update', (_, id: number, tx) => {
     // Get current state before update
-    const current = db().prepare('SELECT is_recurring, description, amount, date FROM transactions WHERE id = ?').get(id) as
-      | { is_recurring: number; description: string; amount: number; date: string }
+    const current = db().prepare('SELECT is_recurring, description, amount, date, type FROM transactions WHERE id = ?').get(id) as
+      | { is_recurring: number; description: string; amount: number; date: string; type: string }
       | undefined
 
     if (!current) {
@@ -406,18 +448,43 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (tx.isRecurring !== undefined) {
       const wasRecurring = current.is_recurring === 1
       const isRecurring = tx.isRecurring
+      const txType = tx.type ?? current.type
 
       if (wasRecurring && !isRecurring) {
         db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(id)
+        db().prepare('DELETE FROM savings_sources WHERE transaction_id = ?').run(id)
       } else if (!wasRecurring && isRecurring) {
-        db().prepare(
-          `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
-           VALUES (?, ?, 'monthly', ?, ?)`
-        ).run(description, amount, date, id)
+        if (txType === 'savings') {
+          const savingsCategoryId = getSavingsCategoryId(db())
+          const ssResult = db().prepare(
+            `INSERT INTO savings_sources (description, amount, is_recurring, frequency, category_id, transaction_id)
+             VALUES (?, ?, 1, 'monthly', ?, ?)`
+          ).run(description, amount, savingsCategoryId, id)
+          const sourceId = Number(ssResult.lastInsertRowid)
+          const marker = 'savings_source:' + sourceId
+          const existingNotes = db().prepare('SELECT notes FROM transactions WHERE id = ?').get(id) as { notes: string | null } | undefined
+          const currentNotes = existingNotes?.notes ?? ''
+          const newNotes = currentNotes ? currentNotes + ' | ' + marker : marker
+          db().prepare('UPDATE transactions SET notes = ? WHERE id = ?').run(newNotes, id)
+        } else {
+          const nextDate = new Date(date)
+          nextDate.setMonth(nextDate.getMonth() + 1)
+          db().prepare(
+            `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
+             VALUES (?, ?, 'monthly', ?, ?)`
+          ).run(description, amount, nextDate.toISOString().slice(0, 10), id)
+        }
       } else if (wasRecurring && isRecurring) {
-        db().prepare(
-          `UPDATE subscriptions SET name = ?, amount = ?, next_billing_date = ? WHERE transaction_id = ?`
-        ).run(description, amount, date, id)
+        if (txType === 'savings') {
+          db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(id)
+          db().prepare(
+            `UPDATE savings_sources SET description = ?, amount = ? WHERE transaction_id = ?`
+          ).run(description, amount, id)
+        } else {
+          db().prepare(
+            `UPDATE subscriptions SET name = ?, amount = ? WHERE transaction_id = ?`
+          ).run(description, amount, id)
+        }
       }
     }
     
@@ -430,6 +497,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
   // Use command pattern for transaction deletion
   ipcMain.handle('transactions:delete', (_, id: number) => {
+    db().prepare('DELETE FROM savings_sources WHERE transaction_id = ?').run(id)
     db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(id)
     return deleteTransaction(id)
   })
@@ -734,7 +802,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   ipcMain.handle('subscriptions:checkBilling', () => {
     const today = new Date().toISOString().slice(0, 10)
     const due = db().prepare(
-      `SELECT * FROM subscriptions WHERE transaction_id IS NULL AND next_billing_date IS NOT NULL AND next_billing_date <= ?`
+      `SELECT * FROM subscriptions WHERE next_billing_date IS NOT NULL AND next_billing_date <= ?`
     ).all(today) as Array<{
       id: number
       name: string
@@ -748,11 +816,18 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         description: sub.name,
         amount: sub.amount,
         type: 'expense',
-        date: sub.next_billing_date,
+        date: today,
         is_recurring: true
       })
-      // Link subscription to new transaction
-      db().prepare(`UPDATE subscriptions SET transaction_id = ? WHERE id = ?`).run(result.id, sub.id)
+      // Advance next_billing_date by frequency so it fires again next period
+      const nextDate = new Date(sub.next_billing_date)
+      if (sub.frequency === 'yearly') nextDate.setFullYear(nextDate.getFullYear() + 1)
+      else if (sub.frequency === 'weekly') nextDate.setDate(nextDate.getDate() + 7)
+      else if (sub.frequency === 'fortnightly') nextDate.setDate(nextDate.getDate() + 14)
+      else nextDate.setMonth(nextDate.getMonth() + 1)
+      db().prepare(
+        'UPDATE subscriptions SET next_billing_date = ? WHERE id = ?'
+      ).run(nextDate.toISOString().slice(0, 10), sub.id)
       created.push(result.id)
     }
     return created
@@ -769,6 +844,70 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
        ORDER BY s.next_billing_date ASC
        LIMIT 5`
     ).all(today)
+  })
+
+  // Savings Sources
+  ipcMain.handle('savings:sources', () => {
+    return db().prepare('SELECT * FROM savings_sources ORDER BY id').all()
+  })
+
+  ipcMain.handle('savings:deleteSource', (_, id: number) => {
+    const source = db().prepare('SELECT * FROM savings_sources WHERE id = ?').get(id) as
+      | { transaction_id: number; description: string }
+      | undefined
+    if (!source) return false
+    // Delete auto-created future transactions linked to this source
+    const futureTxs = db().prepare(
+      `SELECT id FROM transactions WHERE notes = ? AND date >= date('now')`
+    ).all('savings_source:' + id) as { id: number }[]
+    for (const tx of futureTxs) {
+      deleteTransaction(tx.id)
+    }
+    // Delete linked subscription if any
+    if (source.transaction_id) {
+      db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(source.transaction_id)
+    }
+    db().prepare('DELETE FROM savings_sources WHERE id = ?').run(id)
+    return true
+  })
+
+  ipcMain.handle('savings:populateFuture', () => {
+    populateSavingsFuture(db())
+    return true
+  })
+
+  ipcMain.handle('savings:checkBilling', () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const year = new Date().getFullYear()
+    const month = new Date().getMonth() + 1
+    const sources = db().prepare('SELECT * FROM savings_sources').all() as Array<{
+      id: number
+      description: string
+      amount: number
+      category_id: number | null
+    }>
+    const created: number[] = []
+    for (const source of sources) {
+      const notePattern = '%savings_source:' + source.id + '%'
+      const noteMarker = 'savings_source:' + source.id
+      const existing = db().prepare(
+        `SELECT id FROM transactions WHERE notes LIKE ? AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`
+      ).get(notePattern, String(year), String(month).padStart(2, '0')) as { id: number } | undefined
+      if (!existing) {
+        const catId = source.category_id ?? getSavingsCategoryId(db())
+        const result = createTransaction({
+          description: source.description,
+          amount: source.amount,
+          type: 'savings',
+          category_id: catId,
+          date: today,
+          is_recurring: false,
+          notes: noteMarker
+        })
+        created.push(result.id)
+      }
+    }
+    return created
   })
 
   // Income
@@ -909,6 +1048,39 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       )
       .run(data.sourceId, data.year, data.month, amount, data.isIrregular ? 1 : 0)
     return true
+  })
+
+  ipcMain.handle('income:checkBilling', () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const year = new Date().getFullYear()
+    const month = new Date().getMonth() + 1
+    const sources = db().prepare('SELECT * FROM income_sources WHERE is_recurring = 1').all() as Array<{
+      id: number
+      name: string
+      amount: number
+    }>
+    const created: number[] = []
+    for (const source of sources) {
+      const existingEntry = db().prepare(
+        'SELECT id FROM income_entries WHERE source_id = ? AND year = ? AND month = ?'
+      ).get(source.id, year, month) as { id: number } | undefined
+      if (!existingEntry) {
+        const noteMarker = 'income_source:' + source.id
+        const result = createTransaction({
+          description: source.name,
+          amount: source.amount,
+          type: 'income',
+          date: today,
+          is_recurring: false,
+          notes: noteMarker
+        })
+        db().prepare(
+          'INSERT OR IGNORE INTO income_entries (source_id, year, month, amount, is_irregular) VALUES (?, ?, ?, ?, 0)'
+        ).run(source.id, year, month, source.amount)
+        created.push(result.id)
+      }
+    }
+    return created
   })
 
   // Mood
@@ -1326,6 +1498,18 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const win = getWindow()
     win?.webContents.print({ silent: false, printBackground: true })
   })
+}
+
+function getSavingsCategoryId(database: ReturnType<typeof getDatabase>): number | null {
+  const row = database.prepare("SELECT id FROM categories WHERE goal_type = 'savings' LIMIT 1").get() as
+    | { id: number }
+    | undefined
+  return row?.id ?? null
+}
+
+function populateSavingsFuture(_database: ReturnType<typeof getDatabase>): void {
+  // No-op — savings sources appear as blue cards in the Recurring tab
+  // but do not auto-create transactions or budget entries.
 }
 
 function updateSpendingStreak(date: string): void {

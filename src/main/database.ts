@@ -187,6 +187,17 @@ function runMigrations(database: Database.Database): void {
       fetched_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS savings_sources (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      description TEXT NOT NULL,
+      amount REAL NOT NULL,
+      is_recurring INTEGER DEFAULT 1,
+      frequency TEXT DEFAULT 'monthly',
+      category_id INTEGER,
+      transaction_id INTEGER,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
     CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
   `)

@@ -58,6 +58,7 @@ export function IncomePage(): JSX.Element {
 
   async function load(): Promise<void> {
     try {
+      await window.api.income.checkBilling().catch(() => {})
       setSources(await window.api.income.sources())
       setEntries(await window.api.income.entries(profile.year))
       const txs = (await window.api.transactions.list({ year: profile.year })) as { amount: number; type: string; date: string; notes?: string }[]
