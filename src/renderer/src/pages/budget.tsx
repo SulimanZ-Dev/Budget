@@ -86,8 +86,8 @@ export function BudgetPage(): JSX.Element {
       return sum + normalized
     }, 0)
     setMonthlyIncome(monthIncome)
-    const monthlySubs = (subscriptions as { amount: number; frequency: string }[]).reduce(
-      (sum, sub) => sum + monthlySubscriptionCost(sub.amount, sub.frequency),
+    const monthlySubs = (subscriptions as { amount: number; frequency: string; transaction_id?: number | null }[]).reduce(
+      (sum, sub) => sub.transaction_id ? sum : sum + monthlySubscriptionCost(sub.amount, sub.frequency),
       0
     )
     setSubscriptionMonthly(monthlySubs)

@@ -667,6 +667,16 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     db().prepare('DELETE FROM subscriptions WHERE id = ?').run(id)
     return true
   })
+  ipcMain.handle('subscriptions:unlink', (_, id: number) => {
+    const sub = db().prepare('SELECT transaction_id FROM subscriptions WHERE id = ?').get(id) as
+      | { transaction_id: number }
+      | undefined
+    if (sub?.transaction_id) {
+      updateTransaction({ id: sub.transaction_id, is_recurring: false })
+    }
+    db().prepare('DELETE FROM subscriptions WHERE id = ?').run(id)
+    return true
+  })
 
   // Income
   ipcMain.handle('income:sources', () => db().prepare('SELECT * FROM income_sources').all())
@@ -1158,7 +1168,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       .all(y)
 
     const goals = db().prepare('SELECT * FROM goals').all()
-    const subscriptions = db().prepare('SELECT SUM(amount) as total FROM subscriptions').get() as
+    const subscriptions = db().prepare("SELECT COALESCE(SUM(amount),0) as total FROM subscriptions WHERE transaction_id IS NULL").get() as
       | { total: number }
       | undefined
     const txCount = db()

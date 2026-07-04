@@ -116,7 +116,8 @@ const api = {
     list: () => ipcRenderer.invoke('subscriptions:list'),
     create: (sub: unknown) => ipcRenderer.invoke('subscriptions:create', sub),
     update: (id: number, sub: unknown) => ipcRenderer.invoke('subscriptions:update', id, sub),
-    delete: (id: number) => ipcRenderer.invoke('subscriptions:delete', id)
+    delete: (id: number) => ipcRenderer.invoke('subscriptions:delete', id),
+    unlink: (id: number) => ipcRenderer.invoke('subscriptions:unlink', id)
   },
 
   income: {

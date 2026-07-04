@@ -30,7 +30,7 @@ export function SubscriptionsPage(): JSX.Element {
   const [subs, setSubs] = useState<Sub[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState({ name: '', amount: '', url: '' })
+  const [form, setForm] = useState({ name: '', amount: '', url: '', date: '' })
 
   useEffect(() => {
     load()
@@ -62,18 +62,20 @@ export function SubscriptionsPage(): JSX.Element {
         name: form.name,
         amount,
         frequency: 'monthly',
-        websiteUrl: form.url
+        websiteUrl: form.url,
+        nextBillingDate: form.date || undefined
       })
     } else {
       await window.api.subscriptions.create({
         name: form.name,
         amount,
         frequency: 'monthly',
-        websiteUrl: form.url
+        websiteUrl: form.url,
+        nextBillingDate: form.date || undefined
       })
     }
     setEditingId(null)
-    setForm({ name: '', amount: '', url: '' })
+    setForm({ name: '', amount: '', url: '', date: '' })
     setModalOpen(false)
     load()
   }
@@ -177,13 +179,22 @@ export function SubscriptionsPage(): JSX.Element {
                       size="sm"
                       onClick={() => {
                         setEditingId(sub.id)
-                        setForm({ name: sub.name, amount: String(sub.amount), url: sub.website_url ?? '' })
+                        setForm({ name: sub.name, amount: String(sub.amount), url: sub.website_url ?? '', date: sub.next_billing_date ?? '' })
                         setModalOpen(true)
                       }}
                     >
                       <Pencil className="h-3 w-3" />
                       Edit
                     </Button>
+                    {sub.transaction_id && (
+                      <Button variant="secondary" size="sm" onClick={async () => {
+                        if (!confirm('Unlink this subscription and make the transaction non-recurring?')) return
+                        await window.api.subscriptions.unlink(sub.id)
+                        load()
+                      }}>
+                        Unlink
+                      </Button>
+                    )}
                     <Button variant="destructive" size="sm" onClick={() => remove(sub.id)}>
                       <Trash2 className="h-3 w-3" />
                       Delete
@@ -217,6 +228,10 @@ export function SubscriptionsPage(): JSX.Element {
             <div className="grid gap-2">
               <Label>Website URL</Label>
               <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Next billing date</Label>
+              <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </div>
             <Button onClick={save}>Save</Button>
           </div>
