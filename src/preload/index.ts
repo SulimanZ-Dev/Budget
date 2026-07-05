@@ -106,6 +106,11 @@ const api = {
     create: (snap: unknown) => ipcRenderer.invoke('wealth:create', snap)
   },
 
+  pension: {
+    get: () => ipcRenderer.invoke('pension:get'),
+    save: (data: unknown) => ipcRenderer.invoke('pension:save', data)
+  },
+
   investments: {
     list: () => ipcRenderer.invoke('investments:list'),
     create: (inv: unknown) => ipcRenderer.invoke('investments:create', inv),

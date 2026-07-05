@@ -1757,6 +1757,17 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return Math.round(avg.avg * 3)
   })
 
+  // Pension projection
+  ipcMain.handle('pension:get', () => {
+    const row = db().prepare("SELECT value FROM settings WHERE key = 'pension'").get() as { value: string } | undefined
+    if (!row) return null
+    try { return JSON.parse(row.value) } catch { return null }
+  })
+  ipcMain.handle('pension:save', (_, data) => {
+    db().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('pension', ?)").run(JSON.stringify(data))
+    return true
+  })
+
   ipcMain.handle('print:yearSummary', () => {
     const win = getWindow()
     win?.webContents.print({ silent: false, printBackground: true })

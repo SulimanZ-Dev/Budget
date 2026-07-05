@@ -76,6 +76,25 @@ export function WealthPage(): JSX.Element {
       .filter((t: any) => t.type === 'savings' && t.date <= today)
       .reduce((sum: number, t: any) => sum + t.amount, 0)
     setTotalSavings(savingsTotal)
+    // Load persisted pension projection
+    const saved = await window.api.pension.get()
+    if (saved) {
+      setPension({
+        current: String(saved.current ?? '100000'),
+        monthly: String(saved.monthly ?? '5000'),
+        returnRate: String(saved.returnRate ?? '7'),
+        retirementAge: String(saved.retirementAge ?? '65')
+      })
+    }
+  }
+
+  function savePension(): void {
+    window.api.pension.save({
+      current: parseFloat(pension.current) || 0,
+      monthly: parseFloat(pension.monthly) || 0,
+      returnRate: parseFloat(pension.returnRate) || 0,
+      retirementAge: parseInt(pension.retirementAge) || 65
+    }).catch(() => {})
   }
 
   async function addSnapshot(): Promise<void> {
@@ -397,21 +416,25 @@ export function WealthPage(): JSX.Element {
                 placeholder="Current savings"
                 value={pension.current}
                 onChange={(e) => setPension({ ...pension, current: e.target.value })}
+                onBlur={savePension}
               />
               <Input
                 placeholder="Monthly contribution"
                 value={pension.monthly}
                 onChange={(e) => setPension({ ...pension, monthly: e.target.value })}
+                onBlur={savePension}
               />
               <Input
                 placeholder="Return %"
                 value={pension.returnRate}
                 onChange={(e) => setPension({ ...pension, returnRate: e.target.value })}
+                onBlur={savePension}
               />
               <Input
                 placeholder="Retirement age"
                 value={pension.retirementAge}
                 onChange={(e) => setPension({ ...pension, retirementAge: e.target.value })}
+                onBlur={savePension}
               />
             </div>
             <div className="h-48">
