@@ -236,6 +236,8 @@ function AppContent(): JSX.Element {
           animate={{ opacity: [0.5, 1, 0.5] }}
           transition={{ repeat: Infinity, duration: 1.5 }}
           className="text-lg font-medium text-muted-foreground"
+          role="status"
+          aria-live="polite"
         >
           Loading your budget...
         </motion.div>
@@ -260,7 +262,7 @@ function AppContent(): JSX.Element {
       </a>
       <div className="flex h-screen overflow-hidden bg-background">
         <Sidebar />
-        <main id="main-content" className="flex flex-1 flex-col overflow-hidden">
+        <main id="main-content" aria-label="Main content" className="flex flex-1 flex-col overflow-hidden">
           <header className="flex h-10 shrink-0 items-center justify-end gap-4 border-b px-4 pt-10 md:pt-0 md:pl-4 app-drag-region">
             <div className="app-no-drag"><ThemeToggle /></div>
             <div className="app-no-drag">

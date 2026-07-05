@@ -114,7 +114,7 @@ export function TransactionsPage(): JSX.Element {
 
   function renderList(txs: TransactionRowData[], startIndex = 0): JSX.Element {
     return (
-      <div className="space-y-2">
+      <div className="space-y-2" role="list">
         {txs.map((t, i) => (
           <TransactionRow
             key={t.id}

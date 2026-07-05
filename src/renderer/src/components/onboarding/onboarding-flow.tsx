@@ -158,7 +158,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
                       <div className="flex items-center justify-between">
                         <Label>Income source {index + 1}</Label>
                         {incomeSources.length > 1 && (
-                          <Button variant="ghost" size="icon" onClick={() => removeIncomeSource(index)}>
+                          <Button variant="ghost" size="icon" onClick={() => removeIncomeSource(index)} aria-label="Remove income source">
                             <Minus className="h-4 w-4" />
                           </Button>
                         )}

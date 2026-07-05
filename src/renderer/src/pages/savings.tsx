@@ -155,6 +155,7 @@ export function SavingsPage(): JSX.Element {
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label="Edit savings entry"
                     onClick={() =>
                       openDrawer(
                         <TransactionDetailDrawer
@@ -169,7 +170,7 @@ export function SavingsPage(): JSX.Element {
                   >
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="text-destructive" onClick={() => remove(row.id)}>
+                  <Button variant="ghost" size="icon" className="text-destructive" aria-label="Delete savings entry" onClick={() => remove(row.id)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>

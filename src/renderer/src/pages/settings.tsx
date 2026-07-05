@@ -485,7 +485,7 @@ export function SettingsPage(): JSX.Element {
         </CardContent>
       </Card>
 
-      {saved && <p className="text-sm text-success">Saved.</p>}
+      {saved && <p className="text-sm text-success" role="status" aria-live="polite">Saved.</p>}
       {appVersion && (
         <p className="text-xs text-muted-foreground text-center pt-4">
           Budget v{appVersion}

@@ -52,6 +52,7 @@ export function RightDrawer(): JSX.Element {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-40 bg-black/40"
+            aria-hidden="true"
             onClick={closeDrawer}
           />
           <motion.aside

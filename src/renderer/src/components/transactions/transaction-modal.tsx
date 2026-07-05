@@ -97,7 +97,7 @@ export function TransactionModal({
                 onBlur={suggestCategory}
                 placeholder="Coffee at Espresso House"
               />
-              <Button variant="outline" size="icon" onClick={suggestCategory} disabled={suggesting} title="AI categorize">
+              <Button variant="outline" size="icon" onClick={suggestCategory} disabled={suggesting} aria-label="AI categorize" title="AI categorize">
                 <Sparkles className="h-4 w-4" />
               </Button>
             </div>

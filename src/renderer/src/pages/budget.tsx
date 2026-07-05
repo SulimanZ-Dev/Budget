@@ -138,13 +138,13 @@ export function BudgetPage(): JSX.Element {
       </div>
 
       <div className="flex items-center justify-between rounded-xl border bg-card p-4">
-        <Button variant="ghost" size="icon" onClick={() => setSelectedMonth(Math.max(1, selectedMonth - 1))}>
+        <Button variant="ghost" size="icon" aria-label="Previous month" onClick={() => setSelectedMonth(Math.max(1, selectedMonth - 1))}>
           <ChevronLeft />
         </Button>
         <span className="text-lg font-semibold">
           {MONTH_NAMES[selectedMonth - 1]} {profile.year}
         </span>
-        <Button variant="ghost" size="icon" onClick={() => setSelectedMonth(Math.min(12, selectedMonth + 1))}>
+        <Button variant="ghost" size="icon" aria-label="Next month" onClick={() => setSelectedMonth(Math.min(12, selectedMonth + 1))}>
           <ChevronRight />
         </Button>
       </div>

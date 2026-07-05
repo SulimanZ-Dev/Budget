@@ -83,7 +83,7 @@ export function RuleEditor(): JSX.Element {
               <span>
                 "<strong>{rule.pattern}</strong>" → {rule.category_name || `Category #${rule.category_id}`}
               </span>
-              <Button variant="ghost" size="icon" onClick={() => deleteRule(rule.id)}>
+              <Button variant="ghost" size="icon" aria-label="Delete rule" onClick={() => deleteRule(rule.id)}>
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </div>

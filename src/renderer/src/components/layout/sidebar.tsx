@@ -52,6 +52,7 @@ export function Sidebar(): JSX.Element {
     <motion.aside
       animate={{ width: sidebarCollapsed ? 72 : 220 }}
       className="flex h-full flex-col border-r bg-card/80 backdrop-blur-xl pt-10"
+      aria-label="Sidebar"
     >
       <div className="flex items-center gap-2 px-4 pb-6">
         {!sidebarCollapsed && (
@@ -64,7 +65,7 @@ export function Sidebar(): JSX.Element {
           </motion.span>
         )}
       </div>
-      <nav className="flex flex-1 flex-col gap-1 px-2">
+      <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-1 px-2">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
