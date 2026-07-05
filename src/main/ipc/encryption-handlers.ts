@@ -23,6 +23,7 @@ import {
   backfillHMACs
 } from '../crypto/integrity'
 import { start as startScheduler } from '../services/scheduler'
+import { getPluginManager } from '../plugins/plugin-manager'
 
 const UNLOCK_ATTEMPTS_KEY = 'unlockAttempts'
 
@@ -182,6 +183,7 @@ export function registerEncryptionHandlers(): void {
       // Initialize database after successful unlock
       initDatabase()
       startScheduler()
+      getPluginManager().loadAllPlugins()
       
       return { success: true }
     } catch (error) {
