@@ -30,6 +30,7 @@ interface Goal {
   target_date?: string
   interest_rate?: number
   monthly_payment?: number
+  notes?: string
 }
 
 function statusLabel(progress: number): { text: string; color: string } {
@@ -49,7 +50,8 @@ export function GoalsPage(): JSX.Element {
     targetAmount: '',
     currentAmount: '',
     interestRate: '',
-    monthlyPayment: ''
+    monthlyPayment: '',
+    notes: ''
   })
 
   useEffect(() => {
@@ -74,30 +76,26 @@ export function GoalsPage(): JSX.Element {
       targetAmount: String(goal.target_amount),
       currentAmount: String(goal.current_amount),
       interestRate: goal.interest_rate ? String(goal.interest_rate) : '',
-      monthlyPayment: goal.monthly_payment ? String(goal.monthly_payment) : ''
+      monthlyPayment: goal.monthly_payment ? String(goal.monthly_payment) : '',
+      notes: goal.notes || ''
     })
     setModalOpen(true)
   }
 
   async function save(): Promise<void> {
+    const goalData = {
+      name: form.name,
+      type: form.type,
+      targetAmount: parseFloat(form.targetAmount),
+      currentAmount: parseFloat(form.currentAmount) || 0,
+      interestRate: form.interestRate ? parseFloat(form.interestRate) : undefined,
+      monthlyPayment: form.monthlyPayment ? parseFloat(form.monthlyPayment) : undefined,
+      notes: form.notes || undefined
+    }
     if (editingGoal) {
-      await window.api.goals.update(editingGoal.id, {
-        name: form.name,
-        type: form.type,
-        targetAmount: parseFloat(form.targetAmount),
-        currentAmount: parseFloat(form.currentAmount) || 0,
-        interestRate: form.interestRate ? parseFloat(form.interestRate) : undefined,
-        monthlyPayment: form.monthlyPayment ? parseFloat(form.monthlyPayment) : undefined
-      })
+      await window.api.goals.update(editingGoal.id, goalData)
     } else {
-      await window.api.goals.create({
-        name: form.name,
-        type: form.type,
-        targetAmount: parseFloat(form.targetAmount),
-        currentAmount: parseFloat(form.currentAmount) || 0,
-        interestRate: form.interestRate ? parseFloat(form.interestRate) : undefined,
-        monthlyPayment: form.monthlyPayment ? parseFloat(form.monthlyPayment) : undefined
-      })
+      await window.api.goals.create(goalData)
     }
     setModalOpen(false)
     setEditingGoal(null)
@@ -107,7 +105,8 @@ export function GoalsPage(): JSX.Element {
       targetAmount: '',
       currentAmount: '',
       interestRate: '',
-      monthlyPayment: ''
+      monthlyPayment: '',
+      notes: ''
     })
     setGoals(await window.api.goals.list())
   }
@@ -121,7 +120,8 @@ export function GoalsPage(): JSX.Element {
       targetAmount: '',
       currentAmount: '',
       interestRate: '',
-      monthlyPayment: ''
+      monthlyPayment: '',
+      notes: ''
     })
   }
 
@@ -193,6 +193,9 @@ export function GoalsPage(): JSX.Element {
                           {g.type.replace('_', ' ')}
                         </span>
                         <h3 className="mt-1 text-lg font-bold">{g.name}</h3>
+                        {g.notes && (
+                          <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{g.notes}</p>
+                        )}
                         <p className={`mt-1 text-sm font-medium ${status.color}`}>{status.text}</p>
                       </div>
                       <div className="flex items-start gap-1">
@@ -355,6 +358,14 @@ export function GoalsPage(): JSX.Element {
                 </div>
               </div>
             )}
+            <div className="grid gap-2">
+              <Label>Notes (optional)</Label>
+              <Input
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                placeholder="Why this goal? Any notes..."
+              />
+            </div>
             <Button onClick={save}>{editingGoal ? 'Save changes' : 'Create goal'}</Button>
           </div>
         </DialogContent>
