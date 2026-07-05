@@ -1,5 +1,43 @@
 # Implementation Log
 
+## Session: 2026-07-05 - Full Demo Data Coverage
+
+### Part 1 Step 1: tab/data-source checklist
+- **Dashboard (`#/`)**: monthly stats, AI weekly tip/insights/anomalies, upcoming subscriptions. Data from `dashboard:stats`, `transactions:list`, `income:*`, `subscriptions:*`, `savings:*`, `ai:*`.
+- **Budget (`#/budget`)**: category budget entries, category spending, income context, subscription impact, category trend drawer. Data from `budget:getMonth`, `budget:setEntry`, `budget:categoryDetail`, `categories:*`, `transactions:list`, `transactions:categoryTrend`, `income:*`, `subscriptions:list`.
+- **Transactions (`#/transactions`)**: transactions, filters, CSV/OFX import/export, edit/delete/bulk/history/undo. Data from `transactions:*`, `categories:list`, `members:list`, event history via `transactions:history`.
+- **Goals (`#/goals`)**: savings and custom goals, progress, emergency target, auto-created category goals. Data from `goals:*`, `goals:emergencyTarget`, `goals:autoCreateFromCategories`.
+- **Wealth (`#/wealth`)**: wealth snapshots, savings transaction totals, ETF holdings, legacy investments, pension projection. Data from `wealth:*`, `transactions:list({ type: 'savings' })`, `investmentHoldings:*`, `investments:*`, `pension:*`.
+- **Analytics (`#/analytics`)**: annual summary, MoM movers, heatmap, break-even, year-over-year, transaction comparisons. Data from `analytics:*`, `transactions:list`.
+- **Subscriptions (`#/subscriptions`)**: subscriptions plus recurring income and savings sources, billing checks, tax/hold flags, link/unlink. Data from `subscriptions:*`, `income:sources`, `savings:sources`.
+- **Income (`#/income`)**: income sources, income entries, gross/net toggle, income transactions. Data from `income:*`, `transactions:list`, `settings:setProfile`.
+- **Savings (`#/savings`)**: savings transactions and recurring savings-source entries. Data from `transactions:list({ type: 'savings' })`, `transactions:create/delete`, `savings:*`.
+- **Habits (`#/habits`)**: spending streak, missed tracking days, monthly mood. Data from `settings:get('spendingStreak')`, `mood:*`, `habits:missedDays`, transaction dates.
+- **AI Assistant (`#/ai`)**: API-key state and chat UI. Data from `ai:hasKey`, `ai:chat`; demo data cannot seed a real API key without user credentials.
+- **Settings (`#/settings`)**: profile, members, currency, tax/inflation, AI key, appearance/display, backup/data actions, scheduler, categorization rules, integrity, plugins, onboarding, encryption. Data from `settings:*`, `members:*`, `theme:*`, `ai:*`, `data:*`, `scheduler:*`, `rules:*`, `integrity:*`, `plugins:*`, `encryption:*`, `currency:*`.
+- **Year-end report (`#/report`)**: yearly printable summary/PDF. Data from `reports:yearSummary`, `print:yearSummary`.
+
+### Part 1 Step 2: demo data expansion
+- **Transactions**: increased randomized transaction coverage to 60-90 transactions over up to 11 months, plus 14 recent daily expense transactions to give Habits recent tracking data.
+- **Subscriptions**: kept randomized subscription creation and now varies `tax_deductible`, `on_hold`, frequency, color, and occasional URL.
+- **Goals**: creates 3-5 varied goals with target/current values, monthly payments, interest-rate variation, target dates, and notes.
+- **Income**: creates 2-3 income sources and fills six months of income entries through `income:createSource` and `income:setEntry`.
+- **Savings sources**: creates 2-3 recurring savings transactions through `transactions:create`, which uses the existing recurring savings-source creation path.
+- **Budget**: writes six months of category budget entries through `budget:setEntry`, including notes.
+- **Wealth**: creates six net-worth snapshots through `wealth:create`, 2-3 ETF holdings through `investmentHoldings:create`, 1-2 legacy investments through `investments:create`, and non-default pension values through `pension:save`.
+- **Categorization rules**: creates three example rules through `rules:create`.
+- **Habits/mood**: fills six monthly mood rows through `mood:set`; transaction spread also produces missed-day/streak content.
+- **Settings/profile support data**: adds two household members through `members:create` so Settings is not visually sparse.
+- **Structurally not seeded**: AI Assistant API-key state, integrity warnings, plugin registry contents, and encryption password state are intentionally not faked by demo data.
+
+### Part 1 verification
+- **Run Demo pass 1**: clicked Settings > Run Demo in the live Electron app. Dialog reported 5 subscriptions, 77 transactions, 5 goals, 3 income sources, 2 savings sources, 48 budget entries, 6 wealth snapshots, 2 holdings, 3 rules, and 6 mood entries.
+- **Run Demo pass 2**: clicked Settings > Run Demo again. Dialog reported a different randomized batch: 7 subscriptions, 87 transactions, 4 goals, 3 income sources, 3 savings sources, 48 budget entries, 6 wealth snapshots, 3 holdings, 3 rules, and 6 mood entries.
+- **Coverage correction**: Wealth still showed the legacy-investments empty message after the first tab pass, so demo generation now also seeds `investments:create`.
+- **Run Demo pass 3 after correction**: clicked Settings > Run Demo again. Dialog reported 6 subscriptions, 77 transactions, 4 goals, 3 income sources, 3 savings sources, 48 budget entries, 6 wealth snapshots, 3 holdings, 1 legacy investment, 3 rules, and 6 mood entries.
+- **Tab click-through**: visited Dashboard, Budget, Transactions, Goals, Wealth, Analytics, Subscriptions, Income, Savings, Habits, AI Assistant, Settings, and Year-end report in the live Electron app. Data-backed pages rendered populated data. AI Assistant still correctly asks for a real API key; this is not demo-seeded.
+- **Automated checks attempted**: `npm run typecheck` is blocked by pre-existing `src/main/plugins/plugin-manager.ts` errors. `npx tsc --noEmit -p tsconfig.web.json` is blocked by pre-existing `ai-assistant.tsx` and `subscriptions.tsx` errors. `npm test` is blocked by pre-existing Electron app mocking failures in `keyManager.test.ts`. There is no `npm run lint` script.
+
 ## Session: 2026-07-05 - Dialog Focus Fix & Demo Data
 
 ### Shared untypeable-app investigation

@@ -25,6 +25,14 @@ interface DemoResult {
   subscriptions: number
   transactions: number
   goals: number
+  incomeSources: number
+  savingsSources: number
+  budgetEntries: number
+  wealthSnapshots: number
+  holdings: number
+  investments: number
+  rules: number
+  moods: number
 }
 
 function randomInt(min: number, max: number): number {
@@ -47,8 +55,15 @@ function randomFutureDateWithinMonths(monthsAhead: number): string {
   return date.toISOString().slice(0, 10)
 }
 
+function dateMonthsAgo(monthsBack: number, day = 15): string {
+  const date = new Date()
+  date.setMonth(date.getMonth() - monthsBack)
+  date.setDate(Math.min(day, 28))
+  return date.toISOString().slice(0, 10)
+}
+
 export function SettingsPage(): JSX.Element {
-  const { profile, setProfile, triggerRefresh } = useAppStore()
+  const { profile, setProfile, selectedMonth, triggerRefresh } = useAppStore()
   const dialog = useAppDialog()
   const [apiKey, setApiKey] = useState('')
   const [members, setMembers] = useState<{ id: number; name: string }[]>([])
@@ -79,6 +94,8 @@ export function SettingsPage(): JSX.Element {
   async function generateDemoData(): Promise<DemoResult> {
     const categories = await window.api.categories.list() as { id: number; name: string }[]
     const expenseCategories = categories.length > 0 ? categories : [{ id: undefined as unknown as number, name: 'Demo' }]
+    const currentYear = profile.year
+    const currentMonth = selectedMonth ?? new Date().getMonth() + 1
     const subscriptions = ['Netflix', 'Spotify', 'Gym', 'Rent', 'Phone Plan', 'Cloud Storage', 'Transit Pass', 'Meal Kit']
     const merchants = [
       'ICA groceries',
@@ -93,23 +110,82 @@ export function SettingsPage(): JSX.Element {
       'Freelance invoice'
     ]
     const goalNames = ['Vacation fund', 'New laptop', 'Emergency boost', 'Moving fund']
+    const incomeNames = ['Salary', 'Consulting retainer', 'Side project', 'Quarterly bonus']
+    const savingsNames = ['Emergency fund transfer', 'Index fund auto-save', 'Holiday account', 'Apartment deposit']
+    const holdings = [
+      { etfName: 'Global Index ETF', ticker: 'GLOBAL' },
+      { etfName: 'Nordic Dividend Fund', ticker: 'NORD' },
+      { etfName: 'Green Bonds ETF', ticker: 'GREEN' }
+    ]
+    const legacyInvestments = ['Company RSU plan', 'Robo-advisor account', 'Education fund']
+    const rulePatterns = [
+      { pattern: 'ICA', category: expenseCategories.find((c) => /food|grocer|market/i.test(c.name)) ?? pick(expenseCategories) },
+      { pattern: 'Espresso', category: expenseCategories.find((c) => /food|dining|coffee/i.test(c.name)) ?? pick(expenseCategories) },
+      { pattern: 'Train', category: expenseCategories.find((c) => /transport|travel/i.test(c.name)) ?? pick(expenseCategories) }
+    ]
     const subCount = randomInt(5, 8)
-    const txCount = randomInt(30, 50)
-    const goalCount = randomInt(1, 2)
+    const txCount = randomInt(60, 90)
+    const goalCount = randomInt(3, 5)
+    const incomeSourceCount = randomInt(2, 3)
+    const savingsSourceCount = randomInt(2, 3)
+    const monthsToSeed = Array.from({ length: 6 }, (_, i) => {
+      const date = new Date(currentYear, currentMonth - 1 - i, 1)
+      return { year: date.getFullYear(), month: date.getMonth() + 1 }
+    })
+
+    const memberNames = [`Alex ${randomInt(1, 99)}`, `Sam ${randomInt(1, 99)}`]
+    for (const name of memberNames) {
+      await window.api.members.create({ name })
+    }
+
+    const createdIncomeSourceIds: number[] = []
+    for (let i = 0; i < incomeSourceCount; i++) {
+      const amount = randomInt(12000, 42000)
+      const created = await window.api.income.createSource({
+        name: `${pick(incomeNames)} ${randomInt(1, 99)}`,
+        amount,
+        grossOrNet: pick(['gross', 'net']),
+        isRecurring: i !== incomeSourceCount - 1,
+        frequency: pick(['monthly', 'monthly', 'fortnightly']),
+        color: pick(['#22c55e', '#14b8a6', '#0ea5e9', '#84cc16'])
+      }) as { id: number }
+      createdIncomeSourceIds.push(created.id)
+      for (const period of monthsToSeed) {
+        await window.api.income.setEntry({
+          sourceId: created.id,
+          year: period.year,
+          month: period.month,
+          amount: amount + randomInt(-1500, 2500),
+          isIrregular: Math.random() < 0.25
+        })
+      }
+    }
+
+    for (let i = 0; i < savingsSourceCount; i++) {
+      await window.api.transactions.create({
+        description: `${pick(savingsNames)} ${randomInt(1, 99)}`,
+        amount: randomInt(800, 4500),
+        type: 'savings',
+        categoryId: undefined,
+        date: dateMonthsAgo(randomInt(0, 2), randomInt(3, 24)),
+        isRecurring: true,
+        notes: 'Demo recurring savings'
+      })
+    }
 
     for (let i = 0; i < subCount; i++) {
       const name = `${pick(subscriptions)} ${randomInt(1, 99)}`
       await window.api.subscriptions.create({
         name,
         amount: randomInt(79, 14900),
-        frequency: pick(['monthly', 'monthly', 'yearly']),
+        frequency: pick(['weekly', 'monthly', 'monthly', 'yearly']),
         nextBillingDate: randomFutureDateWithinMonths(2),
-        websiteUrl: '',
+        websiteUrl: pick(['https://example.com', '']),
         icon: 'credit-card',
         color: pick(['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']),
         notes: 'Demo data',
-        taxDeductible: false,
-        onHold: false
+        taxDeductible: Math.random() < 0.35,
+        onHold: Math.random() < 0.2
       })
     }
 
@@ -121,9 +197,24 @@ export function SettingsPage(): JSX.Element {
         amount: type === 'income' ? randomInt(12000, 42000) : randomInt(45, 3200),
         type,
         categoryId: type === 'expense' ? category.id : undefined,
-        date: randomDateWithinMonths(randomInt(3, 6)),
+        date: randomDateWithinMonths(randomInt(6, 11)),
         isRecurring: false,
+        isUnnecessary: type === 'expense' && Math.random() < 0.12,
         notes: 'Demo data'
+      })
+    }
+
+    for (let i = 1; i <= 14; i++) {
+      const date = new Date()
+      date.setDate(date.getDate() - i)
+      await window.api.transactions.create({
+        description: pick(['Daily groceries', 'Transit tap', 'Lunch cafe', 'Evening pharmacy']),
+        amount: randomInt(35, 260),
+        type: 'expense',
+        categoryId: pick(expenseCategories).id,
+        date: date.toISOString().slice(0, 10),
+        isRecurring: false,
+        notes: 'Demo streak data'
       })
     }
 
@@ -133,23 +224,113 @@ export function SettingsPage(): JSX.Element {
         name: `${pick(goalNames)} ${randomInt(1, 99)}`,
         type: `demo-${Date.now()}-${i}`,
         targetAmount: target,
-        currentAmount: randomInt(500, Math.floor(target * 0.45)),
+        currentAmount: randomInt(500, Math.floor(target * 0.8)),
         targetDate: randomFutureDateWithinMonths(12),
-        interestRate: 0,
+        interestRate: pick([0, 2.5, 4.2]),
         monthlyPayment: randomInt(500, 3000),
-        notes: 'Demo data'
+        notes: pick(['Demo target with monthly top-ups', 'Demo goal for a near-term purchase', 'Demo buffer goal'])
+      })
+    }
+
+    let budgetEntries = 0
+    const budgetCategories = expenseCategories.slice(0, Math.min(expenseCategories.length, 8))
+    for (const period of monthsToSeed) {
+      for (const category of budgetCategories) {
+        await window.api.budget.setEntry({
+          categoryId: category.id,
+          year: period.year,
+          month: period.month,
+          amount: randomInt(700, 8500),
+          notes: pick(['Demo planned spend', 'Demo seasonal adjustment', 'Demo regular category limit'])
+        })
+        budgetEntries++
+      }
+    }
+
+    for (let i = 0; i < 6; i++) {
+      await window.api.wealth.create({
+        date: dateMonthsAgo(5 - i, 28),
+        assetsSavings: 25000 + i * randomInt(1800, 4200),
+        assetsInvestments: 55000 + i * randomInt(2500, 6500),
+        assetsProperty: 0,
+        liabilitiesLoans: Math.max(0, 22000 - i * randomInt(1000, 2200)),
+        liabilitiesCredit: randomInt(1500, 9000),
+        notes: 'Demo monthly wealth snapshot'
+      })
+    }
+
+    const demoHoldings = holdings.slice(0, randomInt(2, 3))
+    for (const holding of demoHoldings) {
+      const shares = randomInt(8, 75)
+      const avgCost = randomInt(90, 650)
+      const currentPrice = Math.round(avgCost * (0.92 + Math.random() * 0.35))
+      await window.api.investmentHoldings.create({
+        etfName: holding.etfName,
+        ticker: holding.ticker,
+        shares,
+        avgCost,
+        currentPrice,
+        currentValue: shares * currentPrice,
+        notes: 'Demo holding'
+      })
+    }
+
+    const investmentCount = randomInt(1, 2)
+    for (let i = 0; i < investmentCount; i++) {
+      const purchasePrice = randomInt(8000, 65000)
+      await window.api.investments.create({
+        name: `${pick(legacyInvestments)} ${randomInt(1, 99)}`,
+        purchasePrice,
+        currentValue: Math.round(purchasePrice * (0.85 + Math.random() * 0.45)),
+        purchaseDate: dateMonthsAgo(randomInt(4, 24), randomInt(1, 24)),
+        notes: 'Demo legacy investment'
+      })
+    }
+
+    await window.api.pension.save({
+      current: randomInt(85000, 240000),
+      monthly: randomInt(2500, 9000),
+      returnRate: pick([4.5, 5.5, 6.5, 7]),
+      retirementAge: pick([62, 65, 67])
+    })
+
+    for (const rule of rulePatterns) {
+      if (rule.category?.id) {
+        await window.api.rules.create({ pattern: `${rule.pattern} ${randomInt(1, 99)}`, categoryId: rule.category.id })
+      }
+    }
+
+    const moods = ['🙂', '😐', '😄', '😌']
+    for (const period of monthsToSeed) {
+      await window.api.mood.set({
+        year: period.year,
+        month: period.month,
+        rating: randomInt(2, 5),
+        emoji: pick(moods)
       })
     }
 
     triggerRefresh()
-    return { subscriptions: subCount, transactions: txCount, goals: goalCount }
+    return {
+      subscriptions: subCount,
+      transactions: txCount + 14,
+      goals: goalCount,
+      incomeSources: incomeSourceCount,
+      savingsSources: savingsSourceCount,
+      budgetEntries,
+      wealthSnapshots: 6,
+      holdings: demoHoldings.length,
+      investments: investmentCount,
+      rules: rulePatterns.length,
+      moods: monthsToSeed.length
+    }
   }
 
   async function handleRunDemo(): Promise<void> {
     try {
       const result = await generateDemoData()
       await dialog.alert(
-        `Added ${result.subscriptions} subscriptions, ${result.transactions} transactions, and ${result.goals} goals.`,
+        `Added ${result.subscriptions} subscriptions, ${result.transactions} transactions, ${result.goals} goals, ${result.incomeSources} income sources, ${result.savingsSources} savings sources, ${result.budgetEntries} budget entries, ${result.wealthSnapshots} wealth snapshots, ${result.holdings} holdings, ${result.investments} legacy investments, ${result.rules} rules, and ${result.moods} mood entries.`,
         'Demo data added'
       )
     } catch (error) {
