@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Shield, AlertTriangle, CheckCircle2, RefreshCw, Trash2, FileSignature } from 'lucide-react'
 import { Button } from '../ui/button'
+import { Badge } from '../ui/badge'
 import { Card } from '../ui/card'
 
 export function IntegrityPanel() {
@@ -84,6 +85,11 @@ export function IntegrityPanel() {
             <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
               <Shield className="w-5 h-5 text-primary" />
               Data Integrity
+              {scanResults && (
+                scanResults.failed === 0 && scanResults.missing === 0
+                  ? <Badge className="bg-success/10 text-success border-success/20">All Verified</Badge>
+                  : <Badge variant="destructive">Issues Found</Badge>
+              )}
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
               Verify HMAC signatures to detect unauthorized modifications
@@ -144,19 +150,19 @@ export function IntegrityPanel() {
                 <div className="text-2xl font-bold text-success">
                   {scanResults.verified}
                 </div>
-                <div className="text-xs text-success/80 mt-1">Verified</div>
+                <Badge variant="secondary" className="mt-1 bg-success/20 text-success hover:bg-success/20">Verified</Badge>
               </div>
               <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
                 <div className="text-2xl font-bold text-destructive">
                   {scanResults.failed}
                 </div>
-                <div className="text-xs text-destructive/80 mt-1">Failed</div>
+                <Badge variant="destructive" className="mt-1">Failed</Badge>
               </div>
               <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
                 <div className="text-2xl font-bold text-warning">
                   {scanResults.missing}
                 </div>
-                <div className="text-xs text-warning/80 mt-1">Missing HMAC</div>
+                <Badge variant="outline" className="mt-1 border-warning/50 text-warning">Missing HMAC</Badge>
               </div>
             </div>
 
