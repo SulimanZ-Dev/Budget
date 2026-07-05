@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/app-store'
 import { formatMoney, formatPercent, MONTH_NAMES } from '@/lib/utils'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
@@ -19,7 +20,7 @@ import {
 } from 'recharts'
 
 export function AnalyticsPage(): JSX.Element {
-  const { profile, rates, selectedMonth, refreshTrigger } = useAppStore()
+  const { profile, rates, selectedMonth, refreshTrigger, openAI } = useAppStore()
   const [summary, setSummary] = useState<{
     monthly: { month: string; expenses: number; income: number; savings: number }[]
     byCategory: { name: string; color: string; total: number }[]
@@ -106,7 +107,22 @@ export function AnalyticsPage(): JSX.Element {
             Month-over-month for {MONTH_NAMES[selectedMonth - 1]} {profile.year}
           </p>
         </div>
-        <AskAiButton context="analytics" prefill="What are my biggest spending trends this year?" />
+        <div className="flex gap-2">
+          <AskAiButton context="analytics" prefill="What are my biggest spending trends this year?" />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              const current = await window.api.transactions.list({ year: profile.year, month: selectedMonth })
+              const prevMonth = selectedMonth === 1 ? 12 : selectedMonth - 1
+              const prevYear = selectedMonth === 1 ? profile.year - 1 : profile.year
+              const previous = await window.api.transactions.list({ year: prevYear, month: prevMonth })
+              openAI(`What changed between ${MONTH_NAMES[prevMonth - 1]} ${prevYear} and ${MONTH_NAMES[selectedMonth - 1]} ${profile.year}?\n\nCurrent month transactions:\n${JSON.stringify(current, null, 2)}\n\nPrevious month transactions:\n${JSON.stringify(previous, null, 2)}`, 'analytics')
+            }}
+          >
+            What changed?
+          </Button>
+        </div>
       </div>
 
       {biggestMover && (
