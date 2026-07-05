@@ -804,27 +804,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   ipcMain.handle('subscriptions:create', (_, sub) => {
     const r = db()
       .prepare(
-        `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, website_url, icon, color, notes, tax_deductible)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        sub.name,
-        sub.amount,
-        sub.frequency,
-        sub.nextBillingDate,
-        sub.websiteUrl,
-        sub.icon,
-        sub.color,
-        sub.notes,
-        sub.taxDeductible ? 1 : 0
-      )
-    return { id: Number(r.lastInsertRowid) }
-  })
-  ipcMain.handle('subscriptions:update', (_, id: number, sub) => {
-    db()
-      .prepare(
-        `UPDATE subscriptions SET name=?, amount=?, frequency=?, next_billing_date=?,
-         website_url=?, icon=?, color=?, notes=?, tax_deductible=? WHERE id=?`
+        `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, website_url, icon, color, notes, tax_deductible, on_hold)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         sub.name,
@@ -836,6 +817,27 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         sub.color,
         sub.notes,
         sub.taxDeductible ? 1 : 0,
+        sub.onHold ? 1 : 0
+      )
+    return { id: Number(r.lastInsertRowid) }
+  })
+  ipcMain.handle('subscriptions:update', (_, id: number, sub) => {
+    db()
+      .prepare(
+        `UPDATE subscriptions SET name=?, amount=?, frequency=?, next_billing_date=?,
+         website_url=?, icon=?, color=?, notes=?, tax_deductible=?, on_hold=? WHERE id=?`
+      )
+      .run(
+        sub.name,
+        sub.amount,
+        sub.frequency,
+        sub.nextBillingDate,
+        sub.websiteUrl,
+        sub.icon,
+        sub.color,
+        sub.notes,
+        sub.taxDeductible ? 1 : 0,
+        sub.onHold ? 1 : 0,
         id
       )
     return true

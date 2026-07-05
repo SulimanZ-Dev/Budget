@@ -25,6 +25,7 @@ type RecurringItem = {
   transaction_id?: number | null
   transaction_description?: string | null
   tax_deductible?: number
+  on_hold?: number
 }
 
 export function SubscriptionsPage(): JSX.Element {
@@ -34,7 +35,7 @@ export function SubscriptionsPage(): JSX.Element {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingType, setEditingType] = useState<'subscription' | 'income' | 'savings'>('subscription')
-  const [form, setForm] = useState({ name: '', amount: '', url: '', date: '', taxDeductible: false })
+  const [form, setForm] = useState({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false })
   const [filter, setFilter] = useState<'all' | 'subscription' | 'income' | 'savings'>('all')
   const [sort, setSort] = useState<'name' | 'amount' | 'date'>('amount')
 
@@ -64,7 +65,8 @@ export function SubscriptionsPage(): JSX.Element {
           website_url: sub.website_url,
           transaction_id: sub.transaction_id,
           transaction_description: sub.transaction_description,
-          tax_deductible: sub.tax_deductible
+          tax_deductible: sub.tax_deductible,
+          on_hold: sub.on_hold
         })),
         ...(incomeSources as IncomeSource[]).map((src) => ({
           type: 'income' as const,
@@ -136,7 +138,8 @@ export function SubscriptionsPage(): JSX.Element {
             frequency: 'monthly',
             websiteUrl: form.url,
             nextBillingDate: form.date || undefined,
-            taxDeductible: form.taxDeductible
+            taxDeductible: form.taxDeductible,
+            onHold: form.onHold
           })
         } else {
           await window.api.subscriptions.create({
@@ -145,13 +148,14 @@ export function SubscriptionsPage(): JSX.Element {
             frequency: 'monthly',
             websiteUrl: form.url,
             nextBillingDate: form.date || undefined,
-            taxDeductible: form.taxDeductible
+            taxDeductible: form.taxDeductible,
+            onHold: form.onHold
           })
         }
       }
       setEditingId(null)
       setEditingType('subscription')
-      setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false })
+      setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false })
       setModalOpen(false)
       load()
     } catch {
@@ -271,7 +275,7 @@ export function SubscriptionsPage(): JSX.Element {
             let sign: string
             let amountStyle: string
             if (item.type === 'subscription') {
-              borderStyle = 'border-destructive/30 bg-destructive/5'
+              borderStyle = item.on_hold ? 'border-warning/30 bg-warning/5' : 'border-destructive/30 bg-destructive/5'
               iconEl = <ArrowDownCircle className="h-5 w-5 text-destructive" />
               sign = '-'
               amountStyle = 'text-destructive'
@@ -314,6 +318,11 @@ export function SubscriptionsPage(): JSX.Element {
                               Tax deductible
                             </span>
                           ) : null}
+                          {item.on_hold ? (
+                            <span className="text-[10px] text-warning/80 bg-warning/10 px-1.5 py-0.5 rounded">
+                              On hold
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     <h3 className="mt-3 font-semibold">{item.name}</h3>
@@ -345,7 +354,7 @@ export function SubscriptionsPage(): JSX.Element {
                           onClick={() => {
                             setEditingId(item.id)
                             setEditingType('subscription')
-                            setForm({ name: item.name, amount: String(item.amount), url: item.website_url ?? '', date: item.next_billing_date ?? '', taxDeductible: !!item.tax_deductible })
+                            setForm({ name: item.name, amount: String(item.amount), url: item.website_url ?? '', date: item.next_billing_date ?? '', taxDeductible: !!item.tax_deductible, onHold: !!item.on_hold })
                             setModalOpen(true)
                           }}
                         >
@@ -419,6 +428,16 @@ export function SubscriptionsPage(): JSX.Element {
               />
               <Label htmlFor="taxDeductible">Tax deductible</Label>
             </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="onHold"
+                checked={form.onHold}
+                onChange={(e) => setForm({ ...form, onHold: e.target.checked })}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="onHold">On hold (holiday mode)</Label>
+            </div>
             <Button onClick={save}>Save</Button>
           </div>
         </DialogContent>
@@ -438,6 +457,7 @@ interface Sub {
   transaction_id?: number | null
   transaction_description?: string | null
   tax_deductible?: number
+  on_hold?: number
 }
 
 interface IncomeSource {

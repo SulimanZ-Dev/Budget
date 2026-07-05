@@ -306,6 +306,17 @@ function runMigrations(database: Database.Database): void {
     console.log('Subscriptions tax_deductible migration skipped:', e)
   }
 
+  // Migration: Add on_hold column to subscriptions
+  try {
+    const subColumns = database.pragma('table_info(subscriptions)') as Array<{ name: string }>
+    if (!subColumns.some((c) => c.name === 'on_hold')) {
+      console.log('Adding on_hold column to subscriptions...')
+      database.exec('ALTER TABLE subscriptions ADD COLUMN on_hold INTEGER DEFAULT 0')
+    }
+  } catch (e) {
+    console.log('Subscriptions on_hold migration skipped:', e)
+  }
+
   try {
     const incomeSourceColumns = database.pragma('table_info(income_sources)') as Array<{ name: string }>
     const hasGrossOrNet = incomeSourceColumns.some((c) => c.name === 'gross_or_net')
