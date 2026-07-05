@@ -28,9 +28,11 @@ export function SettingsPage(): JSX.Element {
   const [changePasswordError, setChangePasswordError] = useState('')
   const [changePasswordSuccess, setChangePasswordSuccess] = useState(false)
   const [changePasswordLoading, setChangePasswordLoading] = useState(false)
+  const [appVersion, setAppVersion] = useState('')
 
   useEffect(() => {
     window.api.members.list().then(setMembers)
+    window.api.getVersion().then(setAppVersion)
   }, [])
 
   async function saveProfile(): Promise<void> {
@@ -383,6 +385,11 @@ export function SettingsPage(): JSX.Element {
       </Card>
 
       {saved && <p className="text-sm text-success">Saved.</p>}
+      {appVersion && (
+        <p className="text-xs text-muted-foreground text-center pt-4">
+          Budget v{appVersion}
+        </p>
+      )}
     </div>
   )
 }
