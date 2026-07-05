@@ -12,7 +12,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { useAppStore, type DisplayCurrency } from '@/store/app-store'
-import { Download, Upload, Trash2, Key, Printer } from 'lucide-react'
+import { Download, Upload, Trash2, Key, Printer, Lock } from 'lucide-react'
 import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { IntegrityPanel } from '@/components/integrity/integrity-panel'
 
@@ -250,6 +250,16 @@ export function SettingsPage(): JSX.Element {
           >
             <Printer className="h-4 w-4" />
             Year-end PDF
+          </Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              await window.api.encryption.lock()
+              window.location.reload()
+            }}
+          >
+            <Lock className="h-4 w-4" />
+            Lock database
           </Button>
           <Button
             variant="destructive"
