@@ -35,6 +35,7 @@ export function AnalyticsPage(): JSX.Element {
     max: number
   } | null>(null)
   const [dailySpending, setDailySpending] = useState<{ date: string; amount: number }[]>([])
+  const [yoy, setYoy] = useState<{ year: number; expenses: number; income: number; savings: number }[]>([])
   const [breakEven, setBreakEven] = useState<{
     timeline: { month: number; cumulative: number; net: number }[]
     breakEvenMonth: number | null
@@ -49,12 +50,14 @@ export function AnalyticsPage(): JSX.Element {
       window.api.analytics.mom(profile.year, selectedMonth),
       window.api.analytics.heatmap(profile.year),
       window.api.analytics.breakEven(profile.year),
+      window.api.analytics.yearOverYear(profile.year, 3),
       window.api.transactions.list({ year: profile.year, month: selectedMonth })
-    ]).then(([s, m, h, b, txs]) => {
+    ]).then(([s, m, h, b, y, txs]) => {
       setSummary(s as typeof summary)
       setMom(m as typeof mom)
       setHeatmap(h as typeof heatmap)
       setBreakEven(b as typeof breakEven)
+      setYoy(y as typeof yoy)
       
       // Process daily spending for heatmap
       const dailyMap = new Map<string, number>()
@@ -312,6 +315,27 @@ export function AnalyticsPage(): JSX.Element {
           </Card>
         ))}
       </div>
+
+      {yoy.length > 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Year-over-year comparison</CardTitle>
+          </CardHeader>
+          <CardContent className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={yoy}>
+                <XAxis dataKey="year" fontSize={11} />
+                <YAxis fontSize={11} tickFormatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)} />
+                <Tooltip formatter={(v: number) => formatMoney(v, profile.displayCurrency, rates)} />
+                <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" />
+                <Bar dataKey="income" fill="hsl(var(--success))" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="expenses" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="savings" fill="hsl(var(--info))" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

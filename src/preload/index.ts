@@ -179,7 +179,9 @@ const api = {
     summary: (year: number) => ipcRenderer.invoke('analytics:summary', year),
     mom: (year: number, month: number) => ipcRenderer.invoke('analytics:mom', year, month),
     heatmap: (year: number) => ipcRenderer.invoke('analytics:heatmap', year),
-    breakEven: (year: number) => ipcRenderer.invoke('analytics:breakEven', year)
+    breakEven: (year: number) => ipcRenderer.invoke('analytics:breakEven', year),
+    yearOverYear: (currentYear: number, yearsBack?: number) =>
+      ipcRenderer.invoke('analytics:yearOverYear', currentYear, yearsBack)
   },
 
   dashboard: {

@@ -1389,6 +1389,29 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return { categories, months, cells, max, rows }
   })
 
+  ipcMain.handle('analytics:yearOverYear', (_, currentYear: number, yearsBack = 3) => {
+    const result: { year: number; expenses: number; income: number; savings: number }[] = []
+    for (let offset = 0; offset < yearsBack; offset++) {
+      const y = currentYear - offset
+      const monthly = db()
+        .prepare(
+          `SELECT CAST(strftime('%m', date) AS INTEGER) as month,
+           SUM(CASE WHEN type='expense' THEN amount ELSE 0 END) as expenses,
+           SUM(CASE WHEN type='income' THEN amount ELSE 0 END) as income,
+           SUM(CASE WHEN type='savings' THEN amount ELSE 0 END) as savings
+           FROM transactions WHERE strftime('%Y', date) = ? GROUP BY month ORDER BY month`
+        )
+        .all(String(y)) as { month: number; expenses: number; income: number; savings: number }[]
+      result.push({
+        year: y,
+        expenses: monthly.reduce((s, m) => s + m.expenses, 0),
+        income: monthly.reduce((s, m) => s + m.income, 0),
+        savings: monthly.reduce((s, m) => s + m.savings, 0)
+      })
+    }
+    return result
+  })
+
   ipcMain.handle('analytics:breakEven', (_, year: number) => {
     const monthly = db()
       .prepare(
