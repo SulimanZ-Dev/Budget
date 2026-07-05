@@ -38,6 +38,7 @@ const api = {
     suggestCategory: (desc: string) => ipcRenderer.invoke('ai:suggestCategory', desc),
     insight: () => ipcRenderer.invoke('ai:insight'),
     weeklyTip: () => ipcRenderer.invoke('ai:weeklyTip'),
+    detectAnomalies: () => ipcRenderer.invoke('ai:detectAnomalies'),
     saveInsight: (content: string, year: number, month: number) =>
       ipcRenderer.invoke('ai:saveInsight', content, year, month)
   },

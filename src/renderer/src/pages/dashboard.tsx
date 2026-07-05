@@ -16,7 +16,7 @@ import {
   ResponsiveContainer,
   Legend
 } from 'recharts'
-import { Flame, TrendingUp, Sparkles, CreditCard } from 'lucide-react'
+import { Flame, TrendingUp, Sparkles, CreditCard, AlertTriangle } from 'lucide-react'
 import { StatTile } from '@/components/shared/stat-tile'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -46,6 +46,7 @@ export function DashboardPage(): JSX.Element {
   const [loading, setLoading] = useState(true)
   const [weeklyTip, setWeeklyTip] = useState('')
   const [generatingInsight, setGeneratingInsight] = useState(false)
+  const [anomalies, setAnomalies] = useState<{ category: string; current: number; avg: number; stddev: number; severity: string }[]>([])
   const [upcomingSubs, setUpcomingSubs] = useState<
     { id: number; name: string; amount: number; frequency: string; next_billing_date?: string }[]
   >([])
@@ -64,6 +65,7 @@ export function DashboardPage(): JSX.Element {
           window.api.subscriptions.checkBilling().catch(() => {})
           window.api.savings.checkBilling().catch(() => {})
           window.api.income.checkBilling().catch(() => {})
+          window.api.ai.detectAnomalies().then(setAnomalies).catch(() => {})
           window.api.subscriptions.upcoming().then((u) => setUpcomingSubs(u as typeof upcomingSubs)).catch(() => {})
         }
       }, [profile.year, selectedMonth, appLoading, refreshTrigger])
@@ -139,6 +141,26 @@ export function DashboardPage(): JSX.Element {
         <StatTile label="Tracking streak" value={stats.streak.current} delay={0.2} format="number" color="info" />
         <StatTile label="Longest streak" value={stats.streak.longest} delay={0.25} format="number" color="info" />
       </div>
+
+      {anomalies.length > 0 && (
+        <div className="space-y-2">
+          {anomalies.map((a) => (
+            <Card key={a.category} className={a.severity === 'high' ? 'border-destructive/50 bg-destructive/5' : 'border-warning/50 bg-warning/5'}>
+              <CardContent className="flex items-start gap-4 p-4">
+                <AlertTriangle className={`h-5 w-5 shrink-0 mt-0.5 ${a.severity === 'high' ? 'text-destructive' : 'text-warning'}`} />
+                <div className="text-sm">
+                  <p className="font-medium">{a.category}</p>
+                  <p className="text-muted-foreground">
+                    {formatMoney(a.current, profile.displayCurrency, rates)} this month vs
+                    avg {formatMoney(a.avg, profile.displayCurrency, rates)} —
+                    {(a.severity === 'high' ? 'Critical spike' : 'Unusual activity')}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <motion.div

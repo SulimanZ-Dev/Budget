@@ -8,7 +8,8 @@ import {
   chatWithAI,
   suggestCategory,
   generateInsight,
-  generateWeeklyTip
+  generateWeeklyTip,
+  detectAnomalies
 } from '../services/ai'
 import { checkBudgetAlerts } from '../services/budget-alerts'
 import {
@@ -165,6 +166,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   ipcMain.handle('ai:suggestCategory', (_, desc) => suggestCategory(desc))
   ipcMain.handle('ai:insight', () => generateInsight())
   ipcMain.handle('ai:weeklyTip', () => generateWeeklyTip())
+  ipcMain.handle('ai:detectAnomalies', () => detectAnomalies())
 
   // Household
   ipcMain.handle('members:list', () => db().prepare('SELECT * FROM household_members').all())
