@@ -41,3 +41,14 @@
 - Fix: FLAGGED FOR REVIEW under the no-touch rule for encryption/security code.
 - Commit: None.
 - Verified: Not fixed; confirmed repeat failure across both test passes.
+
+## [Command Palette] - Ctrl+K shortcut appears unavailable in Electron
+- Type: QoL addition
+- Age: pre-existing (before this session)
+- Repro: Pass 1: with focus on the Dashboard body and no dialogs open, sent Ctrl+K through the live Electron renderer; the command palette did not open. Pass 2: repeated Ctrl+K after confirming shortcut guards were clear; it still did not open. Control checks showed the keyboard hook works for Ctrl+N (Add Transaction opened) and Ctrl+F (navigated to Transactions), so the issue is specific to Ctrl+K.
+- Expected: There should be a reliable keyboard path to open the command palette, or Ctrl+K should be confirmed working with real user input.
+- Actual: Ctrl+K is not delivered/effective in this Electron environment, likely because Chromium reserves it.
+- Root cause: FLAGGED FOR REVIEW - automation shows Ctrl+N and Ctrl+F work while Ctrl+K does not, but a fallback shortcut attempt could not be verified because the disposable profile remained locked.
+- Fix: FLAGGED FOR REVIEW. No code change kept.
+- Commit: None.
+- Verified: Not fixed; Ctrl+K failed twice in the live main shell, while control shortcuts worked.
