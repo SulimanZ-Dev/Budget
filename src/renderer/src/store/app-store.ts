@@ -14,6 +14,7 @@ export interface Profile {
   notificationsEnabled: boolean
   grossIncomeToggle: boolean
   savingsRateTarget: number
+  colorBlindMode: boolean
 }
 
 interface AppState {
@@ -62,7 +63,8 @@ const defaultProfile: Profile = {
   autoHideZeroCategories: false,
   notificationsEnabled: true,
   grossIncomeToggle: false,
-  savingsRateTarget: 20
+  savingsRateTarget: 20,
+  colorBlindMode: false
 }
 
 export const useAppStore = create<AppState>((set, get) => ({

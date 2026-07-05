@@ -227,7 +227,7 @@ export function SettingsPage(): JSX.Element {
         <CardHeader>
           <CardTitle>Appearance</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <Select value={profile.theme} onValueChange={(v) => setTheme(v as 'system' | 'light' | 'dark')}>
             <SelectTrigger>
               <SelectValue />
@@ -238,6 +238,16 @@ export function SettingsPage(): JSX.Element {
               <SelectItem value="dark">Dark</SelectItem>
             </SelectContent>
           </Select>
+          <div className="flex items-center justify-between">
+            <Label>Colorblind-friendly chart palette</Label>
+            <Switch
+              checked={profile.colorBlindMode}
+              onCheckedChange={(v) => {
+                setProfile({ colorBlindMode: v })
+                saveProfile()
+              }}
+            />
+          </div>
         </CardContent>
       </Card>
 

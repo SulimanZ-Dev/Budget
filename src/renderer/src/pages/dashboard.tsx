@@ -22,7 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { useAppStore } from '@/store/app-store'
-import { formatMoney, MONTH_NAMES } from '@/lib/utils'
+import { formatMoney, MONTH_NAMES, COLORBLIND_PALETTE } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { cardHoverVariants } from '@/lib/motion'
 
@@ -93,7 +93,11 @@ export function DashboardPage(): JSX.Element {
     )
   }
 
-  const pieData = stats.categoryMonth.map((c) => ({ name: c.name, value: c.value, fill: c.color }))
+  const pieData = stats.categoryMonth.map((c, i) => ({
+    name: c.name,
+    value: c.value,
+    fill: profile.colorBlindMode ? COLORBLIND_PALETTE[i % COLORBLIND_PALETTE.length] : c.color
+  }))
   const barData = stats.monthlyTrend.map((m) => ({
     month: MONTH_NAMES[parseInt(m.month, 10) - 1]?.slice(0, 3) ?? m.month,
     income: m.income,
