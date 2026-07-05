@@ -87,6 +87,8 @@ const api = {
     importCsv: (csv: string, mapping?: unknown) =>
       ipcRenderer.invoke('transactions:importCsv', csv, mapping),
     exportCsv: () => ipcRenderer.invoke('transactions:exportCsv'),
+    categoryTrend: (categoryId: number, year: number, months?: number) =>
+      ipcRenderer.invoke('transactions:categoryTrend', categoryId, year, months),
     importOfx: () => ipcRenderer.invoke('transactions:importOfx'),
     // Event sourcing methods
     history: (id: number) => ipcRenderer.invoke('transactions:history', id),

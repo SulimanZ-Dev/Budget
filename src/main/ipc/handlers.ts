@@ -1423,6 +1423,27 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     }
   })
 
+  ipcMain.handle('transactions:categoryTrend', (_, categoryId: number, year: number, months = 6) => {
+    const currentMonth = new Date().getMonth() + 1
+    const startMonth = Math.max(1, currentMonth - months + 1)
+    const rows = db()
+      .prepare(
+        `SELECT CAST(strftime('%m', date) AS INTEGER) as month,
+         COALESCE(SUM(amount), 0) as spent
+         FROM transactions
+         WHERE category_id = ? AND type = 'expense'
+           AND strftime('%Y', date) = ?
+           AND CAST(strftime('%m', date) AS INTEGER) BETWEEN ? AND ?
+         GROUP BY month ORDER BY month`
+      )
+      .all(categoryId, String(year), startMonth, currentMonth) as { month: number; spent: number }[]
+    const map: Record<number, number> = {}
+    for (const r of rows) map[r.month] = r.spent
+    const result: { month: number; spent: number }[] = []
+    for (let m = startMonth; m <= currentMonth; m++) result.push({ month: m, spent: map[m] || 0 })
+    return result
+  })
+
   ipcMain.handle('transactions:search', (_, query: string, limit = 20) => {
     return db()
       .prepare(

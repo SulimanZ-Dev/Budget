@@ -15,6 +15,7 @@ import { frequencyToMonthly, monthlySubscriptionCost, netFromGross, type IncomeS
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
 import { cardHoverVariants } from '@/lib/motion'
+import { CategorySparkline } from '@/components/budget/category-sparkline'
 
 interface BudgetRow {
   category_id: number
@@ -43,6 +44,7 @@ export function BudgetPage(): JSX.Element {
   const [monthlyIncome, setMonthlyIncome] = useState(0)
   const [subscriptionMonthly, setSubscriptionMonthly] = useState(0)
   const [savingsAndTransfersOutflow, setSavingsAndTransfersOutflow] = useState(0)
+  const [trends, setTrends] = useState<Record<number, { month: number; spent: number }[]>>({})
 
   useEffect(() => {
     load()
@@ -94,6 +96,17 @@ export function BudgetPage(): JSX.Element {
         0
       )
       setSubscriptionMonthly(monthlySubs)
+
+      // Load 6-month trends for visible categories
+      const trendRequests = visible.map(cat =>
+        window.api.transactions.categoryTrend(cat.category_id, profile.year, 6)
+      )
+      const trendResults = await Promise.all(trendRequests)
+      const trendMap: Record<number, { month: number; spent: number }[]> = {}
+      visible.forEach((cat, idx) => {
+        trendMap[cat.category_id] = trendResults[idx] ?? []
+      })
+      setTrends(trendMap)
     } catch {
       // Silently fail
     }
@@ -240,6 +253,15 @@ export function BudgetPage(): JSX.Element {
                     </>
                   )}
                 </div>
+                {trends[cat.category_id]?.length ? (
+                  <div className="mt-3">
+                    <CategorySparkline
+                      data={trends[cat.category_id] ?? []}
+                      currency={profile.displayCurrency}
+                      rates={rates}
+                    />
+                  </div>
+                ) : null}
               </motion.button>
             )
           })}
