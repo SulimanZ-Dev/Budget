@@ -6,7 +6,7 @@
 - Actual: The appended assistant reply object widened to `{ role: string; content: any }`, breaking the `Message[]` state updater type.
 - Root cause: The inline assistant message object was not contextually typed after array spreading and slicing.
 - Fix: Added an explicitly typed `assistantMsg: Message` before appending the reply to message state.
-- Commit: Pending.
+- Commit: `b86cfd6`
 - Verified: Pass 1: reran `npx tsc --noEmit -p tsconfig.web.json`; the AI Assistant error disappeared and only Subscriptions errors remained. Pass 2: reran the same command and again observed only the Subscriptions errors.
 
 ## [Subscriptions] - add form resets omit tax and hold fields
@@ -17,7 +17,7 @@
 - Actual: Two reset paths provided only four of the six state fields, causing renderer typecheck failure and risking stale checkbox state on repeat use.
 - Root cause: The form state shape was extended without updating all reset call sites.
 - Fix: Updated both form reset paths to include `taxDeductible: false` and `onHold: false`.
-- Commit: Pending.
+- Commit: `3604180`
 - Verified: Pass 1: `npx tsc --noEmit -p tsconfig.web.json` completed successfully. Pass 2: reran the same command and it completed successfully again.
 
 ## [Plugins] - version compatibility shadows Electron app
@@ -27,6 +27,6 @@
 - Expected: Plugin version compatibility should compare the Electron app version with the plugin minimum version and the full typecheck should not fail on shadowed names.
 - Actual: The local parsed-version variable shadowed the Electron import, creating TypeScript use-before-assignment errors.
 - Root cause: A local variable was named `app` inside `isVersionCompatible`, colliding with the imported Electron `app`.
-- Fix: Pending.
+- Fix: Renamed the parsed current app version variable from `app` to `current` and updated the comparisons.
 - Commit: Pending.
-- Verified: Pending.
+- Verified: Pass 1: `npm run typecheck` completed successfully. Pass 2: reran `npm run typecheck` and it completed successfully again.
