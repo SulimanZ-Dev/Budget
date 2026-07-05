@@ -23,6 +23,7 @@ import { CsvImportModal } from '@/components/transactions/csv-import-modal'
 import { TransactionDetailDrawer } from '@/components/transactions/transaction-detail-drawer'
 import { useNavigate } from 'react-router-dom'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
+import { motion, AnimatePresence } from 'framer-motion'
 
 type RecurringFilter = 'all' | 'recurring' | 'oneoff'
 
@@ -45,6 +46,7 @@ export function TransactionsPage(): JSX.Element {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [csvOpen, setCsvOpen] = useState(false)
   const [csvText, setCsvText] = useState('')
+  const [toast, setToast] = useState<{ message: string; undo?: () => void } | null>(null)
 
   useEffect(() => {
     window.api.categories.list().then((c) => setCategories(c as { id: number; name: string }[]))
@@ -112,6 +114,11 @@ export function TransactionsPage(): JSX.Element {
     )
   }
 
+  function handleDeleted(undo: () => void): void {
+    setToast({ message: 'Transaction deleted', undo })
+    setTimeout(() => setToast(null), 5000)
+  }
+
   function renderList(txs: TransactionRowData[], startIndex = 0): JSX.Element {
     return (
       <div className="space-y-2" role="list">
@@ -125,6 +132,7 @@ export function TransactionsPage(): JSX.Element {
             categories={categories}
             onUpdated={load}
             onEdit={handleEdit}
+            onDeleted={handleDeleted}
             onAskAi={(tx) => {
               openAI(`Tell me about this transaction: ${tx.description}`, 'transactions')
               navigate('/ai')
@@ -256,6 +264,23 @@ export function TransactionsPage(): JSX.Element {
         csvText={csvText}
         onImported={() => load()}
       />
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-xl border bg-muted/90 px-4 py-2 shadow-lg"
+          >
+            <span className="text-sm text-muted-foreground">{toast.message}</span>
+            {toast.undo && (
+              <Button variant="secondary" size="sm" onClick={toast.undo}>
+                Undo
+              </Button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </TransactionsShell>
   )
 }
