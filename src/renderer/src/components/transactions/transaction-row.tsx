@@ -70,6 +70,7 @@ export function TransactionRow({
   const [editingAmount, setEditingAmount] = useState(false)
   const [editingCategory, setEditingCategory] = useState(false)
   const [amount, setAmount] = useState(String(t.amount))
+  const [toast, setToast] = useState<{ message: string; undo?: () => void } | null>(null)
 
   async function saveAmount(): Promise<void> {
     const val = parseFloat(amount)
@@ -133,23 +134,25 @@ export function TransactionRow({
   }
 
   async function remove(): Promise<void> {
+    const txId = t.id
     try {
-      await window.api.transactions.delete(t.id)
+      await window.api.transactions.delete(txId)
       onUpdated()
+      setToast({
+        message: 'Transaction deleted',
+        undo: async () => {
+          await window.api.transactions.undo(txId)
+          onUpdated()
+        }
+      })
+      setTimeout(() => setToast(null), 5000)
     } catch {
       // Silently fail
     }
   }
 
-  return (
-    <motion.div
-      role="listitem"
-      initial={{ opacity: 0, x: -8 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.02 }}
-      className="flex items-center gap-3 rounded-xl border bg-card p-4 transition-colors hover:bg-accent/30"
-      onContextMenu={(e) => e.preventDefault()}
-    >
+  const rowContent = (
+    <>
       <Checkbox checked={selected} onCheckedChange={(c) => onSelect(t.id, !!c)} />
       <div
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
@@ -245,6 +248,39 @@ export function TransactionRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+    </>
+  )
+
+  if (toast) {
+    return (
+      <motion.div
+        role="listitem"
+        initial={{ opacity: 0, x: -8 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: index * 0.02 }}
+        className="flex items-center gap-3 rounded-xl border bg-muted/50 p-4 transition-colors"
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <div className="flex-1 text-sm text-muted-foreground">{toast.message}</div>
+        {toast.undo && (
+          <Button variant="secondary" size="sm" onClick={toast.undo}>
+            Undo
+          </Button>
+        )}
+      </motion.div>
+    )
+  }
+
+  return (
+    <motion.div
+      role="listitem"
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.02 }}
+      className="flex items-center gap-3 rounded-xl border bg-card p-4 transition-colors hover:bg-accent/30"
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {rowContent}
     </motion.div>
   )
 }
