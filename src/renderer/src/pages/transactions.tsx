@@ -225,6 +225,9 @@ export function TransactionsPage(): JSX.Element {
       calendarView={calendarView}
       setCalendarView={setCalendarView}
       pickCsv={pickCsv}
+      sort={sort}
+      setSort={setSort}
+      loadData={load}
     >
       {calendarView && calendarDays && (
         <div className="mb-6 grid grid-cols-7 gap-1">
@@ -276,7 +279,10 @@ function TransactionsShell({
   setSplitView,
   calendarView,
   setCalendarView,
-  pickCsv
+  pickCsv,
+  sort,
+  setSort,
+  loadData
 }: {
   children: React.ReactNode
   search: string
@@ -297,6 +303,9 @@ function TransactionsShell({
   calendarView: boolean
   setCalendarView: (v: boolean) => void
   pickCsv: () => void
+  sort: string
+  setSort: (v: string) => void
+  loadData: () => void
 }): JSX.Element {
   return (
     <div className="space-y-6 p-6">
@@ -312,7 +321,7 @@ function TransactionsShell({
             const result = await window.api.transactions.importOfx()
             if (result && result.imported > 0) {
               alert(`Imported ${result.imported} transactions from OFX.`)
-              load()
+              loadData()
             }
           }}>
             <Upload className="h-4 w-4" />

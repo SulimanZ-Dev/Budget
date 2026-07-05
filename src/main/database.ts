@@ -335,16 +335,16 @@ function runMigrations(database: Database.Database): void {
     console.log('Income source gross/net/frequency migration skipped:', e)
   }
 
-  // Migration: Add ai_summary columns to goals
+  // Migration: Drop ai_summary columns from goals (reverted feature)
   try {
     const goalColumns = database.pragma('table_info(goals)') as Array<{ name: string }>
-    if (!goalColumns.some((c) => c.name === 'ai_summary')) {
-      console.log('Adding ai_summary column to goals...')
-      database.exec('ALTER TABLE goals ADD COLUMN ai_summary TEXT')
-      database.exec('ALTER TABLE goals ADD COLUMN ai_summary_updated TEXT')
+    if (goalColumns.some((c) => c.name === 'ai_summary')) {
+      console.log('Dropping ai_summary columns from goals...')
+      database.exec('ALTER TABLE goals DROP COLUMN ai_summary')
+      database.exec('ALTER TABLE goals DROP COLUMN ai_summary_updated')
     }
   } catch (e) {
-    console.log('Goals ai_summary migration skipped:', e)
+    console.log('Goals ai_summary drop migration skipped:', e)
   }
 
   // Migration: Create categorization_rules table

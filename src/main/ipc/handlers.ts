@@ -763,23 +763,6 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return true
   })
 
-  ipcMain.handle('goals:generateSummary', async (_, id: number) => {
-    try {
-      const goal = db().prepare('SELECT * FROM goals WHERE id = ?').get(id) as Record<string, unknown> | undefined
-      if (!goal) return { success: false, error: 'Goal not found' }
-      const prompt = `Generate a concise financial summary (max 3 sentences) for the goal "${goal.name}" (type: ${goal.type}, target: ${goal.target_amount}, current: ${goal.current_amount}). Include progress assessment and recommendation.`
-      const summary = await chatWithAI([{ role: 'user', content: prompt }])
-      if (summary) {
-        const now = new Date().toISOString()
-        db().prepare('UPDATE goals SET ai_summary = ?, ai_summary_updated = ? WHERE id = ?').run(summary, now, id)
-        return { success: true, summary, updated: now }
-      }
-      return { success: false, error: 'No summary generated' }
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
-    }
-  })
-
   // Wealth
   ipcMain.handle('wealth:list', () =>
     db().prepare('SELECT * FROM wealth_snapshots ORDER BY date').all()
