@@ -255,9 +255,12 @@ function AppContent(): JSX.Element {
         />
       )}
       <TooltipProvider>
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded focus:bg-background focus:p-2 focus:text-sm focus:font-medium focus:outline-none focus:ring-2">
+        Skip to content
+      </a>
       <div className="flex h-screen overflow-hidden bg-background">
         <Sidebar />
-        <main className="flex flex-1 flex-col overflow-hidden">
+        <main id="main-content" className="flex flex-1 flex-col overflow-hidden">
           <header className="flex h-10 shrink-0 items-center justify-end gap-4 border-b px-4 pt-10 md:pt-0 md:pl-4 app-drag-region">
             <div className="app-no-drag"><ThemeToggle /></div>
             <div className="app-no-drag">

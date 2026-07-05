@@ -28,6 +28,14 @@ export function useKeyboardShortcuts(): void {
       // Let all keystrokes through when focus is inside an input-like element
       if (isInputField(target)) return
 
+      // Skip when a modal/dialog/drawer is open
+      if (
+        document.querySelector('[role="dialog"][aria-modal="true"]') ||
+        document.querySelector('[data-state="open"][role="dialog"]')
+      ) {
+        return
+      }
+
       const mod = e.ctrlKey || e.metaKey
       if (!mod) return
 
