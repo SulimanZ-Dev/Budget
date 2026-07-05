@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { AppLocale } from '@/lib/format'
 
 export type DisplayCurrency = 'SEK' | 'EUR' | 'USD'
 
@@ -16,6 +17,7 @@ export interface Profile {
   grossIncomeToggle: boolean
   savingsRateTarget: number
   colorBlindMode: boolean
+  locale: AppLocale
 }
 
 interface AppState {
@@ -66,7 +68,8 @@ const defaultProfile: Profile = {
   notificationsEnabled: true,
   grossIncomeToggle: false,
   savingsRateTarget: 20,
-  colorBlindMode: false
+  colorBlindMode: false,
+  locale: 'sv-SE'
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -92,7 +95,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
   openDrawer: (content) => set({ drawerOpen: true, drawerContent: content }),
   closeDrawer: () => set({ drawerOpen: false, drawerContent: null }),
-  setSelectedMonth: (m) => set({ selectedMonth: m }),
+  setSelectedMonth: (m) => {
+    set({ selectedMonth: m })
+    window.api.settings.set('selectedMonth', m).catch(() => {})
+  },
   setYear: (y) => set({ profile: { ...get().profile, year: y } }),
   setCommandOpen: (v) => set({ commandOpen: v }),
   setTransactionModalOpen: (v) => set({ transactionModalOpen: v }),

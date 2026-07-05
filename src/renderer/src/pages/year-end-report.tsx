@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppStore } from '@/store/app-store'
-import { formatMoney, MONTH_NAMES } from '@/lib/utils'
+import { formatMoney, formatDate, getMonthNames } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Printer } from 'lucide-react'
 
@@ -62,7 +62,7 @@ export function YearEndReportPage(): JSX.Element {
           <h1 className="text-4xl font-bold mt-2">
             {report.profile.name ? `${report.profile.name}'s` : 'Your'} {report.year} Budget
           </h1>
-          <p className="text-muted-foreground mt-2">Generated {new Date().toLocaleDateString('sv-SE')}</p>
+          <p className="text-muted-foreground mt-2">Generated {formatDate(new Date(), profile.locale)}</p>
         </header>
 
         <section className="grid grid-cols-2 gap-6 mb-10 sm:grid-cols-4">
@@ -90,7 +90,7 @@ export function YearEndReportPage(): JSX.Element {
             <tbody>
               {(report.monthly ?? []).map((m) => (
                 <tr key={m.month} className="border-b border-muted/30">
-                  <td className="py-2">{MONTH_NAMES[m.month - 1]}</td>
+                  <td className="py-2">{getMonthNames(profile.locale)[m.month - 1]}</td>
                   <td className="text-right py-2 tabular-nums">
                     {formatMoney(m.income, profile.displayCurrency, rates)}
                   </td>

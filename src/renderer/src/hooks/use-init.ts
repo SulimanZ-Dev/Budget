@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useAppStore } from '@/store/app-store'
 
 export function useAppInit(): void {
-  const { setProfile, setRates, setOnboardingComplete, setLoading } = useAppStore()
+  const { setProfile, setRates, setOnboardingComplete, setLoading, setSelectedMonth } = useAppStore()
 
   useEffect(() => {
     async function init(): Promise<void> {
@@ -12,6 +12,11 @@ export function useAppInit(): void {
 
         const onboarding = await window.api.settings.get('onboardingComplete')
         setOnboardingComplete(!!onboarding)
+
+        const savedMonth = await window.api.settings.get('selectedMonth')
+        if (savedMonth && typeof savedMonth === 'number') {
+          setSelectedMonth(savedMonth)
+        }
 
         const rates = await window.api.currency.fetch()
         if (rates?.rates) setRates(rates.rates)
@@ -25,5 +30,5 @@ export function useAppInit(): void {
       }
     }
     init()
-  }, [setProfile, setRates, setOnboardingComplete, setLoading])
+  }, [setProfile, setRates, setOnboardingComplete, setLoading, setSelectedMonth])
 }

@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { formatMoney } from '@/lib/utils'
+import { formatMoney, formatDate } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 import { addMonths } from 'date-fns'
 
@@ -176,7 +176,7 @@ export function GoalsPage(): JSX.Element {
                 ? Math.ceil(remaining / g.monthly_payment)
                 : null
             const projected =
-              monthsLeft != null ? addMonths(new Date(), monthsLeft).toLocaleDateString('sv-SE') : null
+              monthsLeft != null ? formatDate(addMonths(new Date(), monthsLeft), profile.locale) : null
 
             return (
               <motion.div
