@@ -44,7 +44,8 @@ export function AiAssistantPage(): JSX.Element {
         [...messages, userMsg],
         aiScreenContext || undefined
       )
-      setMessages((m) => [...m, { role: 'assistant', content: reply }].slice(-50))
+      const assistantMsg: Message = { role: 'assistant', content: reply }
+      setMessages((m) => [...m, assistantMsg].slice(-50))
     } catch (e) {
       const err = e as Error
       setMessages((m) => [
