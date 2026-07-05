@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -15,11 +16,14 @@ import {
   Heart,
   Banknote,
   PiggyBank,
-  HelpCircle
+  HelpCircle,
+  Lock,
+  LockOpen
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -38,6 +42,11 @@ const navItems = [
 
 export function Sidebar(): JSX.Element {
   const { sidebarCollapsed, setSidebarCollapsed, setShowHelp } = useAppStore()
+  const [isEncrypted, setIsEncrypted] = useState(false)
+
+  useEffect(() => {
+    window.api.encryption.isUnlocked().then(setIsEncrypted)
+  }, [])
 
   return (
     <motion.aside
@@ -76,6 +85,21 @@ export function Sidebar(): JSX.Element {
         ))}
       </nav>
       <div className="space-y-1 p-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              className={cn("w-full justify-start", sidebarCollapsed && "justify-center")}
+              title={isEncrypted ? 'Database encrypted' : 'Database unlocked'}
+            >
+              {isEncrypted ? <Lock className="h-5 w-5 shrink-0 text-success" /> : <LockOpen className="h-5 w-5 shrink-0 text-muted-foreground" />}
+              {!sidebarCollapsed && <span className="ml-3">{isEncrypted ? 'Encrypted' : 'Unlocked'}</span>}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p className="text-xs">{isEncrypted ? 'Database is encrypted and unlocked' : 'Database encryption status unknown'}</p>
+          </TooltipContent>
+        </Tooltip>
         <Button
           variant="ghost"
           className={cn("w-full justify-start", sidebarCollapsed && "justify-center")}
