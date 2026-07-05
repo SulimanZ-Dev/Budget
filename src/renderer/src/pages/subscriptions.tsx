@@ -361,13 +361,25 @@ export function SubscriptionsPage(): JSX.Element {
                           <Pencil className="h-3 w-3" />
                           Edit
                         </Button>
-                        {item.transaction_id && (
+                        {item.transaction_id ? (
                           <Button variant="secondary" size="sm" onClick={async () => {
                             if (!confirm('Unlink this subscription and make the transaction non-recurring?')) return
                             await window.api.subscriptions.unlink(item.id)
                             load()
                           }}>
                             Unlink
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" onClick={async () => {
+                            const result = await window.api.subscriptions.link(item.id)
+                            if (result.success) {
+                              load()
+                            } else {
+                              alert(result.error || 'Failed to link')
+                            }
+                          }}>
+                            <ExternalLink className="h-3 w-3" />
+                            Link
                           </Button>
                         )}
                         <Button variant="destructive" size="sm" onClick={() => remove(item.id, 'subscription')}>

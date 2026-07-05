@@ -856,6 +856,25 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     db().prepare('DELETE FROM subscriptions WHERE id = ?').run(id)
     return true
   })
+  ipcMain.handle('subscriptions:link', (_, id: number) => {
+    const sub = db().prepare('SELECT * FROM subscriptions WHERE id = ?').get(id) as Record<string, unknown> | undefined
+    if (!sub) return { success: false, error: 'Subscription not found' }
+    const tx = sub.transaction_id
+      ? { success: false, error: 'Already linked to a transaction' }
+      : (() => {
+          const result = createTransaction({
+            description: sub.name as string,
+            amount: sub.amount as number,
+            type: 'expense',
+            date: new Date().toISOString().slice(0, 10),
+            is_recurring: 1
+          })
+          db().prepare('UPDATE subscriptions SET transaction_id = ? WHERE id = ?').run(result.id, id)
+          return { success: true, transactionId: result.id }
+        })()
+    return tx
+  })
+
   ipcMain.handle('subscriptions:unlink', (_, id: number) => {
     const sub = db().prepare('SELECT transaction_id FROM subscriptions WHERE id = ?').get(id) as
       | { transaction_id: number }

@@ -122,6 +122,7 @@ const api = {
     create: (sub: unknown) => ipcRenderer.invoke('subscriptions:create', sub),
     update: (id: number, sub: unknown) => ipcRenderer.invoke('subscriptions:update', id, sub),
     delete: (id: number) => ipcRenderer.invoke('subscriptions:delete', id),
+    link: (id: number) => ipcRenderer.invoke('subscriptions:link', id),
     unlink: (id: number) => ipcRenderer.invoke('subscriptions:unlink', id),
     checkBilling: () => ipcRenderer.invoke('subscriptions:checkBilling'),
     upcoming: () => ipcRenderer.invoke('subscriptions:upcoming')
