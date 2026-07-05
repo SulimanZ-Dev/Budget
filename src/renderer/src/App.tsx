@@ -28,6 +28,7 @@ import { AiAssistantPage } from '@/pages/ai-assistant'
 import { SettingsPage } from '@/pages/settings'
 import { YearEndReportPage } from '@/pages/year-end-report'
 import { CoachMarks } from '@/components/shared/coach-marks'
+import { AppDialogProvider } from '@/components/shared/app-dialog'
 import {
   Select,
   SelectContent,
@@ -257,6 +258,7 @@ function AppContent(): JSX.Element {
         />
       )}
       <TooltipProvider>
+      <AppDialogProvider>
       <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded focus:bg-background focus:p-2 focus:text-sm focus:font-medium focus:outline-none focus:ring-2">
         Skip to content
       </a>
@@ -312,6 +314,7 @@ function AppContent(): JSX.Element {
           onSaved={() => triggerRefresh()}
         />
       </div>
+      </AppDialogProvider>
       </TooltipProvider>
     </>
   )

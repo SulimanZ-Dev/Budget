@@ -13,15 +13,43 @@ import {
 } from '@/components/ui/select'
 import { useAppStore, type DisplayCurrency } from '@/store/app-store'
 import { SUPPORTED_LOCALES, LOCALE_LABELS, type AppLocale } from '@/lib/utils'
-import { Download, Upload, Trash2, Key, Printer, Lock, RotateCcw } from 'lucide-react'
+import { Download, Upload, Trash2, Key, Printer, Lock, RotateCcw, Play } from 'lucide-react'
 import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { IntegrityPanel } from '@/components/integrity/integrity-panel'
 import { PluginRegistry } from '@/components/plugins/plugin-registry'
 import { SchedulerCard } from '@/components/shared/scheduler-card'
 import { RuleEditor } from '@/components/shared/rule-editor'
+import { useAppDialog } from '@/components/shared/app-dialog'
+
+interface DemoResult {
+  subscriptions: number
+  transactions: number
+  goals: number
+}
+
+function randomInt(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min
+}
+
+function pick<T>(items: T[]): T {
+  return items[randomInt(0, items.length - 1)]
+}
+
+function randomDateWithinMonths(monthsBack: number): string {
+  const date = new Date()
+  date.setDate(date.getDate() - randomInt(0, monthsBack * 30))
+  return date.toISOString().slice(0, 10)
+}
+
+function randomFutureDateWithinMonths(monthsAhead: number): string {
+  const date = new Date()
+  date.setDate(date.getDate() + randomInt(30, monthsAhead * 30))
+  return date.toISOString().slice(0, 10)
+}
 
 export function SettingsPage(): JSX.Element {
-  const { profile, setProfile } = useAppStore()
+  const { profile, setProfile, triggerRefresh } = useAppStore()
+  const dialog = useAppDialog()
   const [apiKey, setApiKey] = useState('')
   const [members, setMembers] = useState<{ id: number; name: string }[]>([])
   const [newMember, setNewMember] = useState('')
@@ -46,6 +74,90 @@ export function SettingsPage(): JSX.Element {
     const now = new Date().toISOString().slice(0, 10)
     await window.api.settings.set('lastDbBackup', now)
     setLastBackup(now)
+  }
+
+  async function generateDemoData(): Promise<DemoResult> {
+    const categories = await window.api.categories.list() as { id: number; name: string }[]
+    const expenseCategories = categories.length > 0 ? categories : [{ id: undefined as unknown as number, name: 'Demo' }]
+    const subscriptions = ['Netflix', 'Spotify', 'Gym', 'Rent', 'Phone Plan', 'Cloud Storage', 'Transit Pass', 'Meal Kit']
+    const merchants = [
+      'ICA groceries',
+      'Coop market',
+      'Espresso House',
+      'Apotek purchase',
+      'Train ticket',
+      'Bookstore',
+      'Hardware store',
+      'Lunch cafe',
+      'Electric bill',
+      'Freelance invoice'
+    ]
+    const goalNames = ['Vacation fund', 'New laptop', 'Emergency boost', 'Moving fund']
+    const subCount = randomInt(5, 8)
+    const txCount = randomInt(30, 50)
+    const goalCount = randomInt(1, 2)
+
+    for (let i = 0; i < subCount; i++) {
+      const name = `${pick(subscriptions)} ${randomInt(1, 99)}`
+      await window.api.subscriptions.create({
+        name,
+        amount: randomInt(79, 14900),
+        frequency: pick(['monthly', 'monthly', 'yearly']),
+        nextBillingDate: randomFutureDateWithinMonths(2),
+        websiteUrl: '',
+        icon: 'credit-card',
+        color: pick(['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']),
+        notes: 'Demo data',
+        taxDeductible: false,
+        onHold: false
+      })
+    }
+
+    for (let i = 0; i < txCount; i++) {
+      const type = Math.random() < 0.12 ? 'income' : Math.random() < 0.2 ? 'savings' : 'expense'
+      const category = pick(expenseCategories)
+      await window.api.transactions.create({
+        description: type === 'income' ? pick(['Salary payout', 'Freelance invoice', 'Refund received']) : pick(merchants),
+        amount: type === 'income' ? randomInt(12000, 42000) : randomInt(45, 3200),
+        type,
+        categoryId: type === 'expense' ? category.id : undefined,
+        date: randomDateWithinMonths(randomInt(3, 6)),
+        isRecurring: false,
+        notes: 'Demo data'
+      })
+    }
+
+    for (let i = 0; i < goalCount; i++) {
+      const target = randomInt(10000, 120000)
+      await window.api.goals.create({
+        name: `${pick(goalNames)} ${randomInt(1, 99)}`,
+        type: `demo-${Date.now()}-${i}`,
+        targetAmount: target,
+        currentAmount: randomInt(500, Math.floor(target * 0.45)),
+        targetDate: randomFutureDateWithinMonths(12),
+        interestRate: 0,
+        monthlyPayment: randomInt(500, 3000),
+        notes: 'Demo data'
+      })
+    }
+
+    triggerRefresh()
+    return { subscriptions: subCount, transactions: txCount, goals: goalCount }
+  }
+
+  async function handleRunDemo(): Promise<void> {
+    try {
+      const result = await generateDemoData()
+      await dialog.alert(
+        `Added ${result.subscriptions} subscriptions, ${result.transactions} transactions, and ${result.goals} goals.`,
+        'Demo data added'
+      )
+    } catch (error) {
+      await dialog.alert(
+        error instanceof Error ? error.message : 'Failed to generate demo data.',
+        'Demo data failed'
+      )
+    }
   }
 
   async function saveProfile(): Promise<void> {
@@ -387,7 +499,7 @@ export function SettingsPage(): JSX.Element {
             onClick={async () => {
               const result = await window.api.data.importDb()
               if (result) {
-                alert('Database imported. Restart the app to apply changes.')
+                await dialog.alert('Database imported. Restart the app to apply changes.', 'Import complete')
               }
             }}
           >
@@ -397,13 +509,16 @@ export function SettingsPage(): JSX.Element {
           <Button
             variant="outline"
             onClick={async () => {
-              if (confirm('Rebuild the transactions table from event history? Data loss is possible if events are incomplete.')) {
+              if (await dialog.confirm('Rebuild the transactions table from event history? Data loss is possible if events are incomplete.', {
+                title: 'Repair from events',
+                confirmLabel: 'Repair'
+              })) {
                 const result = await window.api.data.repairFromEvents()
                 if (result.success) {
-                  alert(`Repair complete. Rebuilt ${result.count} transactions from events.`)
+                  await dialog.alert(`Repair complete. Rebuilt ${result.count} transactions from events.`, 'Repair complete')
                   window.location.reload()
                 } else {
-                  alert('Repair failed: ' + (result.error || 'Unknown error'))
+                  await dialog.alert('Repair failed: ' + (result.error || 'Unknown error'), 'Repair failed')
                 }
               }
             }}
@@ -415,7 +530,7 @@ export function SettingsPage(): JSX.Element {
             variant="outline"
             onClick={async () => {
               await window.api.currency.fetch()
-              alert('Exchange rates refreshed.')
+              await dialog.alert('Exchange rates refreshed.', 'Rates refreshed')
             }}
           >
             <RotateCcw className="h-4 w-4" />
@@ -441,7 +556,11 @@ export function SettingsPage(): JSX.Element {
           <Button
             variant="destructive"
             onClick={async () => {
-              if (confirm('Delete ALL data and start fresh? This cannot be undone.')) {
+              if (await dialog.confirm('Delete ALL data and start fresh? This cannot be undone.', {
+                title: 'Wipe data',
+                confirmLabel: 'Wipe data',
+                destructive: true
+              })) {
                 await window.api.data.wipe()
                 window.location.reload()
               }
@@ -449,6 +568,10 @@ export function SettingsPage(): JSX.Element {
           >
             <Trash2 className="h-4 w-4" />
             Wipe data & restart
+          </Button>
+          <Button variant="outline" onClick={handleRunDemo}>
+            <Play className="h-4 w-4" />
+            Run Demo
           </Button>
         </CardContent>
       </Card>

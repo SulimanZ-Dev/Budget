@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Trash2, Play } from 'lucide-react'
+import { useAppDialog } from '@/components/shared/app-dialog'
 
 interface Rule {
   id: number
@@ -14,6 +15,7 @@ interface Rule {
 }
 
 export function RuleEditor(): JSX.Element {
+  const dialog = useAppDialog()
   const [rules, setRules] = useState<Rule[]>([])
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [pattern, setPattern] = useState('')
@@ -42,11 +44,18 @@ export function RuleEditor(): JSX.Element {
   }
 
   async function applyAll(): Promise<void> {
-    const updated = await window.api.rules.apply()
-    if (updated.length > 0) {
-      alert(`Auto-categorized ${updated.length} transactions.`)
-    } else {
-      alert('No uncategorized transactions matched existing rules.')
+    try {
+      const updated = await window.api.rules.apply()
+      if (updated.length > 0) {
+        await dialog.alert(`Auto-categorized ${updated.length} transactions.`, 'Rules applied')
+      } else {
+        await dialog.alert('No uncategorized transactions matched existing rules.', 'Rules applied')
+      }
+    } catch (error) {
+      await dialog.alert(
+        error instanceof Error ? error.message : 'Failed to apply categorization rules.',
+        'Rules failed'
+      )
     }
   }
 
