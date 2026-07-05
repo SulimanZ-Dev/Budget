@@ -1496,7 +1496,9 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         'income_sources',
         'monthly_mood',
         'ai_insights',
-        'household_members'
+        'household_members',
+        'currency_cache',
+        'integrity_warnings'
       ]
       for (const t of tables) database.prepare(`DELETE FROM ${t}`).run()
       // Reset onboarding
@@ -1736,10 +1738,13 @@ function exportAllTables(): Record<string, unknown[]> {
     'investments',
     'investment_holdings',
     'subscriptions',
+    'savings_sources',
     'income_sources',
     'income_entries',
     'monthly_mood',
-    'ai_insights'
+    'ai_insights',
+    'currency_cache',
+    'integrity_warnings'
   ]
   const dump: Record<string, unknown[]> = {}
   for (const t of tables) {
@@ -1759,12 +1764,15 @@ function importAllTables(data: Record<string, unknown[]>): void {
       'investments',
       'investment_holdings',
       'subscriptions',
+      'savings_sources',
       'income_sources',
       'income_entries',
       'monthly_mood',
       'ai_insights',
       'transactions',
       'transaction_events',
+      'currency_cache',
+      'integrity_warnings',
       'settings'
     ]
     for (const table of order) {
