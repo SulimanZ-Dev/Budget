@@ -155,14 +155,17 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
   ipcMain.handle('rules:apply', () => {
     const rules = db().prepare('SELECT * FROM categorization_rules').all() as { pattern: string; category_id: number }[]
+    const txs = db().prepare(
+      "SELECT id, description FROM transactions WHERE category_id IS NULL"
+    ).all() as { id: number; description: string }[]
     const updated: number[] = []
-    for (const rule of rules) {
-      const txs = db().prepare(
-        "SELECT id, description FROM transactions WHERE description LIKE ? AND category_id IS NULL"
-      ).all(`%${rule.pattern}%`) as { id: number; description: string }[]
-      for (const tx of txs) {
-        db().prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(rule.category_id, tx.id)
-        updated.push(tx.id)
+    for (const tx of txs) {
+      for (const rule of rules) {
+        if (tx.description.includes(rule.pattern)) {
+          db().prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(rule.category_id, tx.id)
+          updated.push(tx.id)
+          break
+        }
       }
     }
     return updated
