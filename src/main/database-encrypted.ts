@@ -397,7 +397,7 @@ function runMigrations(database: SqlCipher.Database): void {
     database
       .prepare(
         `INSERT OR IGNORE INTO settings (key, value) VALUES
-        ('profile', '{"name":"","currency":"SEK","displayCurrency":"SEK","cpiPercent":2.5,"taxWithheldPercent":30,"theme":"system","year":${new Date().getFullYear()},"autoHideZeroCategories":false,"notificationsEnabled":true,"grossIncomeToggle":false}'),
+        ('profile', '{"name":"","currency":"SEK","displayCurrency":"SEK","baseCurrency":"SEK","cpiPercent":2.5,"taxWithheldPercent":30,"theme":"system","year":${new Date().getFullYear()},"autoHideZeroCategories":false,"notificationsEnabled":true,"grossIncomeToggle":false}'),
         ('spendingStreak', '{"current":0,"longest":0,"lastDate":null}')`
       )
       .run()

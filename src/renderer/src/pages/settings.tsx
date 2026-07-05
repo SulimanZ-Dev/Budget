@@ -146,7 +146,24 @@ export function SettingsPage(): JSX.Element {
           <CardTitle>Currency</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">Default: SEK. Display toggle:</p>
+          <p className="text-sm text-muted-foreground">Base currency (how amounts are stored):</p>
+          <Select
+            value={profile.baseCurrency || 'SEK'}
+            onValueChange={(v) => {
+              setProfile({ baseCurrency: v as DisplayCurrency })
+              saveProfile()
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="SEK">SEK (kr)</SelectItem>
+              <SelectItem value="EUR">EUR (€)</SelectItem>
+              <SelectItem value="USD">USD ($)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-sm text-muted-foreground">Display toggle:</p>
           <Select
             value={profile.displayCurrency}
             onValueChange={(v) => {

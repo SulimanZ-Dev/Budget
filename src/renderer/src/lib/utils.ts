@@ -51,7 +51,8 @@ export function formatMoney(
   rates?: Record<string, number>
 ): string {
   let value = Number.isFinite(amount) ? amount : 0
-  if (currency !== 'SEK' && rates?.[currency]) {
+  const base = Object.entries(rates || {}).find(([, v]) => v === 1)?.[0] || 'SEK'
+  if (currency !== base && rates?.[currency]) {
     value = amount * rates[currency]
   }
   const formatted = formatCurrency(value)

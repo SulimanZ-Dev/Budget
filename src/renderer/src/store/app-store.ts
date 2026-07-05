@@ -6,6 +6,7 @@ export interface Profile {
   name: string
   currency: DisplayCurrency
   displayCurrency: DisplayCurrency
+  baseCurrency: DisplayCurrency
   cpiPercent: number
   taxWithheldPercent: number
   theme: 'system' | 'light' | 'dark'
@@ -56,6 +57,7 @@ const defaultProfile: Profile = {
   name: '',
   currency: 'SEK',
   displayCurrency: 'SEK',
+  baseCurrency: 'SEK',
   cpiPercent: 2.5,
   taxWithheldPercent: 30,
   theme: 'dark', // Dark mode by default
