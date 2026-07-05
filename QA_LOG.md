@@ -30,3 +30,14 @@
 - Fix: Renamed the parsed current app version variable from `app` to `current` and updated the comparisons.
 - Commit: `3fa29be`
 - Verified: Pass 1: `npm run typecheck` completed successfully. Pass 2: reran `npm run typecheck` and it completed successfully again.
+
+## [Encryption tests] - keyManager tests fail outside Electron app context
+- Type: bug fix
+- Age: pre-existing (before this session)
+- Repro: Pass 1: ran `npm test`; 4 of 8 `src/main/crypto/__tests__/keyManager.test.ts` tests failed with `Cannot read properties of undefined (reading 'getPath')` at `keyManager.ts:62`. Pass 2: reran `npm test` after the typecheck fixes; the same 4 tests failed in the same place.
+- Expected: The key manager tests should either mock Electron `app.getPath` or run in a context where Electron's `app` object exists.
+- Actual: The test environment imports key-manager encryption code without a usable Electron `app`, so machine-key encryption tests fail before exercising the assertions.
+- Root cause: FLAGGED FOR REVIEW - likely missing Electron app mock/test setup, but investigation touches encryption/security code.
+- Fix: FLAGGED FOR REVIEW under the no-touch rule for encryption/security code.
+- Commit: None.
+- Verified: Not fixed; confirmed repeat failure across both test passes.
