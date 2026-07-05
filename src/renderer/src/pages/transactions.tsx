@@ -38,6 +38,7 @@ export function TransactionsPage(): JSX.Element {
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [recurringFilter, setRecurringFilter] = useState<RecurringFilter>('all')
+  const [sort, setSort] = useState<string>('date-desc')
   const [weeklyView, setWeeklyView] = useState(false)
   const [splitView, setSplitView] = useState(false)
   const [calendarView, setCalendarView] = useState(false)
@@ -135,7 +136,13 @@ export function TransactionsPage(): JSX.Element {
     )
   }
 
-  const filteredForViews = transactions
+  const filteredForViews = [...transactions].sort((a, b) => {
+    if (sort === 'amount-desc') return b.amount - a.amount
+    if (sort === 'amount-asc') return a.amount - b.amount
+    if (sort === 'category') return (a.category_name ?? '').localeCompare(b.category_name ?? '')
+    if (sort === 'date-asc') return a.date.localeCompare(b.date)
+    return b.date.localeCompare(a.date) // date-desc default
+  })
 
   const grouped = weeklyView
     ? filteredForViews.reduce<Record<string, TransactionRowData[]>>((acc, t) => {
@@ -344,6 +351,18 @@ function TransactionsShell({
             <SelectItem value="all">All</SelectItem>
             <SelectItem value="recurring">Recurring</SelectItem>
             <SelectItem value="oneoff">One-off</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={sort} onValueChange={setSort}>
+          <SelectTrigger className="w-36">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="date-desc">Newest first</SelectItem>
+            <SelectItem value="date-asc">Oldest first</SelectItem>
+            <SelectItem value="amount-desc">Highest amount</SelectItem>
+            <SelectItem value="amount-asc">Lowest amount</SelectItem>
+            <SelectItem value="category">Category</SelectItem>
           </SelectContent>
         </Select>
       </div>
