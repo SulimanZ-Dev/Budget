@@ -13,7 +13,8 @@ import {
   requiresMigration,
   performMigration,
   initDatabase,
-  isDatabaseInitialized
+  isDatabaseInitialized,
+  getDatabase
 } from '../database-encrypted'
 import {
   scanDatabaseIntegrity,
@@ -21,6 +22,44 @@ import {
   clearIntegrityWarnings,
   backfillHMACs
 } from '../crypto/integrity'
+
+const UNLOCK_ATTEMPTS_KEY = 'unlockAttempts'
+
+function getUnlockAttempts(): number {
+  try {
+    const db = getDatabase()
+    const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(UNLOCK_ATTEMPTS_KEY) as { value: string } | undefined
+    if (row) return parseInt(row.value, 10) || 0
+  } catch {
+    // DB not initialized yet — use in-memory fallback
+  }
+  return 0
+}
+
+function incrementUnlockAttempts(): void {
+  try {
+    const db = getDatabase()
+    const attempts = getUnlockAttempts() + 1
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(UNLOCK_ATTEMPTS_KEY, String(attempts))
+  } catch {
+    // DB not available yet
+  }
+}
+
+function resetUnlockAttempts(): void {
+  try {
+    const db = getDatabase()
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(UNLOCK_ATTEMPTS_KEY, '0')
+  } catch {
+    // DB not available yet
+  }
+}
+
+const MAX_UNLOCK_ATTEMPTS = 5
+const LOCKOUT_DURATION_MS = 5 * 60 * 1000 // 5 minutes
+const ATTEMPT_WINDOW_MS = 60 * 1000 // 1 minute
+
+const attemptHistory: number[] = []
 
 // Zod schemas for input validation
 const SetupPasswordSchema = z.object({
@@ -106,6 +145,23 @@ export function registerEncryptionHandlers(): void {
   // Unlock the keystore with master password
   ipcMain.handle('encryption:unlock', async (_, data: unknown) => {
     try {
+      // Rate limiting: check attempt frequency
+      const now = Date.now()
+      while (attemptHistory.length > 0 && attemptHistory[0] < now - ATTEMPT_WINDOW_MS) {
+        attemptHistory.shift()
+      }
+      if (attemptHistory.length >= MAX_UNLOCK_ATTEMPTS) {
+        const oldestAttempt = attemptHistory[0]
+        const waitMs = LOCKOUT_DURATION_MS - (now - oldestAttempt)
+        if (waitMs > 0) {
+          return { 
+            success: false, 
+            error: `Too many failed attempts. Please wait ${Math.ceil(waitMs / 1000)} seconds.` 
+          }
+        }
+        attemptHistory.length = 0
+      }
+
       const { password } = validateInput(UnlockSchema, data)
       
       if (!isKeystoreInitialized()) {
@@ -115,8 +171,11 @@ export function registerEncryptionHandlers(): void {
       const unlocked = await unlockKeystore(password)
       
       if (!unlocked) {
+        attemptHistory.push(now)
         return { success: false, error: 'Incorrect password' }
       }
+      
+      attemptHistory.length = 0
       
       // Initialize database after successful unlock
       initDatabase()
@@ -126,7 +185,7 @@ export function registerEncryptionHandlers(): void {
       console.error('Unlock failed:', error)
       return { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+        error: 'Incorrect password'
       }
     }
   })

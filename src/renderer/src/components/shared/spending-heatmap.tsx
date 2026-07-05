@@ -49,7 +49,7 @@ export function SpendingHeatmap({ data, year, month }: SpendingHeatmapProps): JS
   // Get color intensity based on spending
   const getIntensity = (amount: number): string => {
     if (amount === 0) return 'bg-muted/30'
-    const intensity = Math.min(amount / maxSpending, 1)
+    const intensity = maxSpending > 0 ? Math.min(amount / maxSpending, 1) : 0
     
     if (intensity < 0.2) return 'bg-primary/20'
     if (intensity < 0.4) return 'bg-primary/40'

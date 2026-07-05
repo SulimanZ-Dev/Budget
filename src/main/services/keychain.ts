@@ -72,7 +72,17 @@ export async function getApiKey(): Promise<string | null> {
   } catch {
     // Fall back to old base64 format for backward compatibility
     try {
-      return Buffer.from(row.value, 'base64').toString('utf8')
+      const legacyKey = Buffer.from(row.value, 'base64').toString('utf8')
+      // Re-encrypt with new format on read to migrate away from base64
+      try {
+        const encrypted = encryptWithMachineKey(legacyKey)
+        const { getDatabase } = await import('../database-encrypted')
+        const db = getDatabase()
+        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('encryptedApiKey', ?)").run(encrypted)
+      } catch {
+        // Migration is best-effort — old key remains usable
+      }
+      return legacyKey
     } catch {
       return null
     }

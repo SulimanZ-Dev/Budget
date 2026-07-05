@@ -9,7 +9,14 @@ export function buildFinancialContext(): string {
   const profile = db.prepare("SELECT value FROM settings WHERE key = 'profile'").get() as
     | { value: string }
     | undefined
-  const profileData = profile ? JSON.parse(profile.value) : {}
+  let profileData: Record<string, unknown> = {}
+  if (profile) {
+    try {
+      profileData = JSON.parse(profile.value)
+    } catch {
+      profileData = {}
+    }
+  }
 
   const monthSpending = db
     .prepare(

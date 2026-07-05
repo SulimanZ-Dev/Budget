@@ -62,32 +62,44 @@ export function CategoryDrawerContent({
   }, [categoryId, profile.year, selectedMonth])
 
   async function saveNotes(): Promise<void> {
-    await window.api.budget.setEntry({
-      categoryId,
-      year: profile.year,
-      month: selectedMonth,
-      amount: budgetAmount,
-      notes
-    })
+    try {
+      await window.api.budget.setEntry({
+        categoryId,
+        year: profile.year,
+        month: selectedMonth,
+        amount: budgetAmount,
+        notes
+      })
+    } catch (error) {
+      console.error('Failed to save notes:', error)
+    }
   }
 
   async function deleteCategory(): Promise<void> {
     if (!confirm(`Delete category "${categoryName}"? This will also remove all budget entries for this category.`)) return
-    await window.api.categories.delete(categoryId)
-    closeDrawer()
-    onRefresh()
+    try {
+      await window.api.categories.delete(categoryId)
+      closeDrawer()
+      onRefresh()
+    } catch (error) {
+      console.error('Failed to delete category:', error)
+    }
   }
 
   async function saveBudgetAmount(): Promise<void> {
-    await window.api.budget.setEntry({
-      categoryId,
-      year: profile.year,
-      month: selectedMonth,
-      amount: parseFloat(editAmount) || 0,
-      notes
-    })
-    setIsEditing(false)
-    onRefresh()
+    try {
+      await window.api.budget.setEntry({
+        categoryId,
+        year: profile.year,
+        month: selectedMonth,
+        amount: parseFloat(editAmount) || 0,
+        notes
+      })
+      setIsEditing(false)
+      onRefresh()
+    } catch (error) {
+      console.error('Failed to save budget:', error)
+    }
   }
 
   if (loading || !detail) {

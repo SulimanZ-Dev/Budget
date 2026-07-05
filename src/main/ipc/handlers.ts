@@ -1,7 +1,7 @@
 import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import { copyFileSync, readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
-import { getDatabase, getDbPath } from '../database-encrypted'
+import { getDatabase, getDbPath, isDatabaseInitialized } from '../database-encrypted'
 import { fetchExchangeRates, getCachedRates } from '../services/currency'
 import { saveApiKey, getApiKey, deleteApiKey, hasApiKey } from '../services/keychain'
 import {
@@ -43,8 +43,47 @@ import {
 
 type GetWindow = () => BrowserWindow | null
 
+function parseDateToLocalYearMonth(dateStr: string): { year: number; month: number } {
+  const parts = dateStr.split('-')
+  return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10) }
+}
+
+function addMonths(dateStr: string, months: number): string {
+  const parts = dateStr.split('-')
+  const y = parseInt(parts[0], 10)
+  const m = parseInt(parts[1], 10)
+  const d = parseInt(parts[2], 10)
+  const totalMonths = y * 12 + (m - 1) + months
+  const newYear = Math.floor(totalMonths / 12)
+  const newMonth = (totalMonths % 12) + 1
+  const lastDay = new Date(newYear, newMonth, 0).getDate()
+  const newDay = Math.min(d, lastDay)
+  return `${newYear}-${String(newMonth).padStart(2, '0')}-${String(newDay).padStart(2, '0')}`
+}
+
+function getNow(): Date {
+  const now = new Date()
+  return now
+}
+
 export function registerIpcHandlers(getWindow: GetWindow): void {
   const db = () => getDatabase()
+
+  // Wrap ipcMain.handle with a guard that catches "not initialized" errors for DB handlers
+  const originalHandle = ipcMain.handle.bind(ipcMain)
+  ipcMain.handle = ((channel: string, listener: any) => {
+    originalHandle(channel, async (event: any, ...args: any[]) => {
+      try {
+        return await listener(event, ...args)
+      } catch (err: any) {
+        if (err?.message?.includes('Database not initialized')) {
+          console.warn(`Handler "${channel}" skipped — database not initialized`)
+          return null
+        }
+        throw err
+      }
+    }) as any
+  }) as any
 
   // Settings & profile
   ipcMain.handle('settings:get', (_, key: string) => {
@@ -216,24 +255,24 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const history = db()
       .prepare(
         `SELECT CAST(strftime('%m', t.date) AS INTEGER) as month,
-         COALESCE(SUM(t.amount), 0) as spent
+         COALESCE(SUM(CASE WHEN t.type='income' THEN -t.amount ELSE t.amount END), 0) as spent
          FROM transactions t
-         WHERE t.category_id = ? AND t.type = 'expense' AND strftime('%Y', t.date) = ?
+         WHERE t.category_id = ? AND t.type IN ('expense','income','transfer') AND strftime('%Y', t.date) = ?
          GROUP BY month ORDER BY month`
       )
       .all(categoryId, String(year)) as { month: number; spent: number }[]
 
     const currentSpent = db()
       .prepare(
-        `SELECT COALESCE(SUM(amount), 0) as v FROM transactions
-         WHERE category_id = ? AND type = 'expense' AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`
+        `SELECT COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END), 0) as v FROM transactions
+         WHERE category_id = ? AND type IN ('expense','income','transfer') AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`
       )
       .get(categoryId, String(year), ym) as { v: number }
 
     const prevSpent = db()
       .prepare(
-        `SELECT COALESCE(SUM(amount), 0) as v FROM transactions
-         WHERE category_id = ? AND type = 'expense' AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`
+        `SELECT COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END), 0) as v FROM transactions
+         WHERE category_id = ? AND type IN ('expense','income','transfer') AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`
       )
       .get(categoryId, String(prevYear), prevYm) as { v: number }
 
@@ -243,8 +282,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const ytdAvg = db()
       .prepare(
         `SELECT COALESCE(AVG(monthly), 0) as avg FROM (
-           SELECT SUM(amount) as monthly FROM transactions
-           WHERE category_id = ? AND type = 'expense' AND strftime('%Y', date) = ?
+           SELECT SUM(CASE WHEN type='income' THEN -amount ELSE amount END) as monthly FROM transactions
+           WHERE category_id = ? AND type IN ('expense','income','transfer') AND strftime('%Y', date) = ?
            GROUP BY strftime('%m', date)
          )`
       )
@@ -252,8 +291,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
     const prevYearSpent = db()
       .prepare(
-        `SELECT COALESCE(SUM(amount), 0) as v FROM transactions
-         WHERE category_id = ? AND type = 'expense' AND strftime('%Y', date) = ?`
+        `SELECT COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END), 0) as v FROM transactions
+         WHERE category_id = ? AND type IN ('expense','income','transfer') AND strftime('%Y', date) = ?`
       )
       .get(categoryId, String(year - 1)) as { v: number }
 
@@ -283,43 +322,49 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     }
   })
   ipcMain.handle('budget:setEntry', (_, data) => {
-    // Compute HMAC signature
-    const hmac = signBudgetEntry({
-      category_id: data.categoryId,
-      year: data.year,
-      month: data.month,
-      amount: data.amount
-    })
-    
-    db()
-      .prepare(
+    const database = db()
+    const tx = database.transaction((txData) => {
+      // Compute HMAC signature
+      const hmac = signBudgetEntry({
+        category_id: txData.categoryId,
+        year: txData.year,
+        month: txData.month,
+        amount: txData.amount
+      })
+      
+      database.prepare(
         `INSERT INTO budget_entries (category_id, year, month, amount, notes, hmac)
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(category_id, year, month) DO UPDATE SET amount=excluded.amount, notes=excluded.notes, hmac=excluded.hmac`
-      )
-      .run(data.categoryId, data.year, data.month, data.amount, data.notes ?? null, hmac)
+      ).run(txData.categoryId, txData.year, txData.month, txData.amount, txData.notes ?? null, hmac)
 
-    // Propagate to future months (same year) — always update future, never touch past
-    const now = new Date()
-    const currentMonthNum = now.getFullYear() * 12 + (now.getMonth() + 1)
-    const inputMonthNum = data.year * 12 + data.month
+      // Propagate to future months — always update future, never touch past
+      const now = getNow()
+      const currentMonthNum = now.getFullYear() * 12 + (now.getMonth() + 1)
+      const inputMonthNum = txData.year * 12 + txData.month
 
-    if (inputMonthNum >= currentMonthNum) {
-      for (let m = data.month + 1; m <= 12; m++) {
-        const futureHmac = signBudgetEntry({
-          category_id: data.categoryId,
-          year: data.year,
-          month: m,
-          amount: data.amount
-        })
-        db().prepare(
-          `INSERT INTO budget_entries (category_id, year, month, amount, notes, hmac)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(category_id, year, month) DO UPDATE SET amount=excluded.amount, notes=excluded.notes, hmac=excluded.hmac`
-        ).run(data.categoryId, data.year, m, data.amount, data.notes ?? null, futureHmac)
+      if (inputMonthNum >= currentMonthNum) {
+        for (let offset = 1; offset <= 24 - txData.month; offset++) {
+          const targetMonth = txData.month + offset
+          const targetYear = txData.year + Math.floor((targetMonth - 1) / 12)
+          const m = ((targetMonth - 1) % 12) + 1
+          if (m < txData.month && targetYear <= txData.year) continue
+          const futureHmac = signBudgetEntry({
+            category_id: txData.categoryId,
+            year: targetYear,
+            month: m,
+            amount: txData.amount
+          })
+          database.prepare(
+            `INSERT INTO budget_entries (category_id, year, month, amount, notes, hmac)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(category_id, year, month) DO UPDATE SET amount=excluded.amount, notes=excluded.notes, hmac=excluded.hmac`
+          ).run(txData.categoryId, targetYear, m, txData.amount, txData.notes ?? null, futureHmac)
+        }
       }
-    }
-    return true
+      return true
+    })
+    return tx(data)
   })
 
   // Transactions
@@ -401,19 +446,18 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         db().prepare('UPDATE transactions SET notes = ? WHERE id = ?').run(newNotes, result.id)
       } else {
         // Start next billing one month from now — the current transaction is the first bill
-        const nextDate = new Date(tx.date)
-        nextDate.setMonth(nextDate.getMonth() + 1)
+        const nextDate = addMonths(tx.date, 1)
         db().prepare(
           `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
-           VALUES (?, ?, 'monthly', ?, ?)`
-        ).run(tx.description, tx.amount, nextDate.toISOString().slice(0, 10), result.id)
+           VALUES (?, ?, ?, ?, ?)`
+        ).run(tx.description, tx.amount, 'monthly', nextDate, result.id)
       }
     }
     
     updateSpendingStreak(tx.date)
-    const txDate = new Date(tx.date)
+    const { year: txYear, month: txMonth } = parseDateToLocalYearMonth(tx.date)
     if (tx.categoryId) {
-      checkBudgetAlerts(tx.categoryId, txDate.getFullYear(), txDate.getMonth() + 1)
+      checkBudgetAlerts(tx.categoryId, txYear, txMonth)
     }
     return result
   })
@@ -467,12 +511,11 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
           const newNotes = currentNotes ? currentNotes + ' | ' + marker : marker
           db().prepare('UPDATE transactions SET notes = ? WHERE id = ?').run(newNotes, id)
         } else {
-          const nextDate = new Date(date)
-          nextDate.setMonth(nextDate.getMonth() + 1)
+          const nextDate = addMonths(date, 1)
           db().prepare(
             `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
              VALUES (?, ?, 'monthly', ?, ?)`
-          ).run(description, amount, nextDate.toISOString().slice(0, 10), id)
+          ).run(description, amount, nextDate, id)
         }
       } else if (wasRecurring && isRecurring) {
         if (txType === 'savings') {
@@ -490,8 +533,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     
     // Check budget alerts if category changed
     if (tx.categoryId) {
-      const d = new Date(date)
-      checkBudgetAlerts(tx.categoryId, d.getFullYear(), d.getMonth() + 1)
+      const { year: dYear, month: dMonth } = parseDateToLocalYearMonth(date)
+      checkBudgetAlerts(tx.categoryId, dYear, dMonth)
     }
     return result
   })
@@ -508,9 +551,17 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       return bulkRecategorizeTransactions(ids, catId)
     }
     if (action === 'delete') {
-      const delSub = db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?')
-      for (const id of ids) delSub.run(id)
-      return bulkDeleteTransactions(ids)
+      const database = db()
+      const tx = database.transaction((txIds: number[]) => {
+        const delSub = database.prepare('DELETE FROM subscriptions WHERE transaction_id = ?')
+        const delSavings = database.prepare('DELETE FROM savings_sources WHERE transaction_id = ?')
+        for (const id of txIds) {
+          delSub.run(id)
+          delSavings.run(id)
+        }
+        return bulkDeleteTransactions(txIds)
+      })
+      return tx(ids)
     }
     if (action === 'flag') {
       return bulkFlagTransactions(ids)
@@ -800,7 +851,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
   // Check subscriptions with past-due billing dates and auto-create transactions
   ipcMain.handle('subscriptions:checkBilling', () => {
-    const today = new Date().toISOString().slice(0, 10)
+    const now = getNow()
+    const today = now.toISOString().slice(0, 10)
     const due = db().prepare(
       `SELECT * FROM subscriptions WHERE next_billing_date IS NOT NULL AND next_billing_date <= ?`
     ).all(today) as Array<{
@@ -811,25 +863,52 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       next_billing_date: string
     }>
     const created: number[] = []
+
+    function advanceDate(dateStr: string, frequency: string): string {
+      const [y, m, d] = dateStr.split('-').map(Number)
+      if (frequency === 'yearly') {
+        return `${y + 1}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      }
+      if (frequency === 'weekly') {
+        const dt = new Date(y, m - 1, d + 7)
+        return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+      }
+      if (frequency === 'fortnightly') {
+        const dt = new Date(y, m - 1, d + 14)
+        return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+      }
+      return addMonths(dateStr, 1)
+    }
+
     for (const sub of due) {
-      const result = createTransaction({
-        description: sub.name,
-        amount: sub.amount,
-        type: 'expense',
-        date: today,
-        is_recurring: true
-      })
-      // Advance next_billing_date by frequency so it fires again next period
-      const nextDate = new Date(sub.next_billing_date)
-      if (sub.frequency === 'yearly') nextDate.setFullYear(nextDate.getFullYear() + 1)
-      else if (sub.frequency === 'weekly') nextDate.setDate(nextDate.getDate() + 7)
-      else if (sub.frequency === 'fortnightly') nextDate.setDate(nextDate.getDate() + 14)
-      else nextDate.setMonth(nextDate.getMonth() + 1)
+      // Check if a transaction already exists for this billing period
+      const existingTx = db().prepare(
+        `SELECT id FROM transactions WHERE description = ? AND date = ? AND amount = ? AND type = 'expense'`
+      ).get(sub.name, sub.next_billing_date, sub.amount) as { id: number } | undefined
+
+      if (!existingTx) {
+        const result = createTransaction({
+          description: sub.name,
+          amount: sub.amount,
+          type: 'expense',
+          date: sub.next_billing_date,
+          is_recurring: true
+        })
+        created.push(result.id)
+      }
+
+      // Advance next_billing_date by frequency — keep advancing if still past due
+      let nextDate = sub.next_billing_date
+      for (let i = 0; i < 12; i++) {
+        nextDate = advanceDate(nextDate, sub.frequency)
+        if (nextDate > today) break
+      }
+
       db().prepare(
         'UPDATE subscriptions SET next_billing_date = ? WHERE id = ?'
-      ).run(nextDate.toISOString().slice(0, 10), sub.id)
-      created.push(result.id)
+      ).run(nextDate, sub.id)
     }
+
     return created
   })
 
@@ -877,9 +956,10 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
 
   ipcMain.handle('savings:checkBilling', () => {
-    const today = new Date().toISOString().slice(0, 10)
-    const year = new Date().getFullYear()
-    const month = new Date().getMonth() + 1
+    const now = getNow()
+    const today = now.toISOString().slice(0, 10)
+    const year = now.getFullYear()
+    const month = now.getMonth() + 1
     const sources = db().prepare('SELECT * FROM savings_sources').all() as Array<{
       id: number
       description: string
@@ -894,7 +974,12 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         `SELECT id FROM transactions WHERE notes LIKE ? AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`
       ).get(notePattern, String(year), String(month).padStart(2, '0')) as { id: number } | undefined
       if (!existing) {
-        const catId = source.category_id ?? getSavingsCategoryId(db())
+        let catId = source.category_id ?? getSavingsCategoryId(db())
+        // Validate that the category still exists (savings_sources has no FK)
+        if (catId !== null) {
+          const catExists = db().prepare('SELECT 1 FROM categories WHERE id = ?').get(catId)
+          if (!catExists) catId = getSavingsCategoryId(db())
+        }
         const result = createTransaction({
           description: source.description,
           amount: source.amount,
@@ -1051,24 +1136,36 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
 
   ipcMain.handle('income:checkBilling', () => {
-    const today = new Date().toISOString().slice(0, 10)
-    const year = new Date().getFullYear()
-    const month = new Date().getMonth() + 1
+    const now = getNow()
+    const today = now.toISOString().slice(0, 10)
+    const year = now.getFullYear()
+    const month = now.getMonth() + 1
     const sources = db().prepare('SELECT * FROM income_sources WHERE is_recurring = 1').all() as Array<{
       id: number
       name: string
       amount: number
+      frequency: string
     }>
     const created: number[] = []
+
+    function getOccurrencesForMonth(frequency: string): number {
+      if (frequency === 'weekly') return 4
+      if (frequency === 'fortnightly') return 2
+      if (frequency === 'yearly') return 1
+      return 1 // monthly
+    }
+
     for (const source of sources) {
       const existingEntry = db().prepare(
         'SELECT id FROM income_entries WHERE source_id = ? AND year = ? AND month = ?'
       ).get(source.id, year, month) as { id: number } | undefined
       if (!existingEntry) {
+        const occurrences = getOccurrencesForMonth(source.frequency)
+        const monthlyAmount = Math.round(source.amount * occurrences * 100) / 100
         const noteMarker = 'income_source:' + source.id
         const result = createTransaction({
           description: source.name,
-          amount: source.amount,
+          amount: monthlyAmount,
           type: 'income',
           date: today,
           is_recurring: false,
@@ -1076,7 +1173,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         })
         db().prepare(
           'INSERT OR IGNORE INTO income_entries (source_id, year, month, amount, is_irregular) VALUES (?, ?, ?, ?, 0)'
-        ).run(source.id, year, month, source.amount)
+        ).run(source.id, year, month, monthlyAmount)
         created.push(result.id)
       }
     }
@@ -1329,13 +1426,15 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Backup
   ipcMain.handle('data:exportDb', async () => {
     const win = getWindow()
+    // Snapshot DB path before yielding to event loop
+    const dbPath = getDbPath()
     const result = await dialog.showSaveDialog(win!, {
       title: 'Export database',
       defaultPath: `budget-backup-${Date.now()}.db`,
       filters: [{ name: 'SQLite', extensions: ['db'] }]
     })
     if (!result.canceled && result.filePath) {
-      copyFileSync(getDbPath(), result.filePath)
+      copyFileSync(dbPath, result.filePath)
       return result.filePath
     }
     return null
@@ -1364,41 +1463,74 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       properties: ['openFile']
     })
     if (!result.canceled && result.filePaths[0]) {
-      const data = JSON.parse(readFileSync(result.filePaths[0], 'utf8'))
-      importAllTables(data)
-      return true
+      try {
+        const data = JSON.parse(readFileSync(result.filePaths[0], 'utf8'))
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+          throw new Error('Invalid backup format: expected an object with table keys')
+        }
+        importAllTables(data)
+        return true
+      } catch (error) {
+        console.error('Failed to import JSON backup:', error)
+        throw error
+      }
     }
     return false
   })
 
   ipcMain.handle('data:wipe', () => {
-    const tables = [
-      'transactions',
-      'transaction_events',
-      'budget_entries',
-      'categories',
-      'goals',
-      'wealth_snapshots',
-      'investments',
-      'investment_holdings',
-      'subscriptions',
-      'income_entries',
-      'income_sources',
-      'monthly_mood',
-      'ai_insights',
-      'household_members'
-    ]
-    for (const t of tables) db().prepare(`DELETE FROM ${t}`).run()
-    // Reset onboarding
-    db().prepare("DELETE FROM settings WHERE key = 'onboardingComplete'").run()
-    db()
-      .prepare(
-        `INSERT OR REPLACE INTO settings (key, value) VALUES
-        ('profile', '{"name":"","currency":"SEK","displayCurrency":"SEK","cpiPercent":2.5,"taxWithheldPercent":30,"theme":"system","year":${new Date().getFullYear()},"autoHideZeroCategories":false,"notificationsEnabled":true,"grossIncomeToggle":false}'),
-        ('spendingStreak', '{"current":0,"longest":0,"lastDate":null}')`
-      )
-      .run()
-    return true
+    const database = db()
+    const tx = database.transaction(() => {
+      const tables = [
+        'transactions',
+        'transaction_events',
+        'budget_entries',
+        'categories',
+        'goals',
+        'wealth_snapshots',
+        'investments',
+        'investment_holdings',
+        'subscriptions',
+        'savings_sources',
+        'income_entries',
+        'income_sources',
+        'monthly_mood',
+        'ai_insights',
+        'household_members'
+      ]
+      for (const t of tables) database.prepare(`DELETE FROM ${t}`).run()
+      // Reset onboarding
+      database.prepare("DELETE FROM settings WHERE key = 'onboardingComplete'").run()
+      const currentYear = new Date().getFullYear()
+      database
+        .prepare(
+          `INSERT OR REPLACE INTO settings (key, value) VALUES
+          ('profile', ?),
+          ('spendingStreak', ?)`
+        )
+        .run(
+          JSON.stringify({
+            name: '', currency: 'SEK', displayCurrency: 'SEK', cpiPercent: 2.5,
+            taxWithheldPercent: 30, theme: 'system', year: currentYear,
+            autoHideZeroCategories: false, notificationsEnabled: true, grossIncomeToggle: false
+          }),
+          JSON.stringify({ current: 0, longest: 0, lastDate: null })
+        )
+      // Recreate default categories so the app doesn't break
+      const defaultCategories = [
+        { name: 'Savings', icon: 'piggy-bank', color: '#22c55e', goal_type: 'savings', sort_order: 100 },
+        { name: 'Emergency Fund', icon: 'shield', color: '#3b82f6', goal_type: 'emergency', sort_order: 101 },
+        { name: 'Debt Payoff', icon: 'credit-card', color: '#ef4444', goal_type: 'debt', sort_order: 102 },
+        { name: 'FIRE Number', icon: 'flame', color: '#f59e0b', goal_type: 'fire', sort_order: 103 },
+        { name: 'Investments', icon: 'trending-up', color: '#8b5cf6', goal_type: 'investment', sort_order: 104 }
+      ]
+      const insert = database.prepare('INSERT INTO categories (name, icon, color, goal_type, sort_order) VALUES (?, ?, ?, ?, ?)')
+      for (const cat of defaultCategories) {
+        insert.run(cat.name, cat.icon, cat.color, cat.goal_type, cat.sort_order)
+      }
+      return true
+    })
+    return tx()
   })
 
   ipcMain.handle('ai:saveInsight', (_, content: string, year: number, month: number) => {
@@ -1521,7 +1653,7 @@ function updateSpendingStreak(date: string): void {
   const today = date.slice(0, 10)
   const last = streak.lastDate
   if (last) {
-    const diff = (new Date(today).getTime() - new Date(last).getTime()) / 86400000
+    const diff = (Date.parse(today) - Date.parse(last)) / 86400000
     if (diff === 1) streak.current += 1
     else if (diff > 1) streak.current = 1
   } else {
@@ -1553,7 +1685,7 @@ function calculateBudgetHealth(
 
   if (goals.length) {
     const progress =
-      goals.reduce((s, g) => s + Math.min(g.current_amount / g.target_amount, 1), 0) /
+      goals.reduce((s, g) => s + Math.min(g.target_amount > 0 ? g.current_amount / g.target_amount : 0, 1), 0) /
       goals.length
     score += progress * 10
   }
@@ -1618,33 +1750,36 @@ function exportAllTables(): Record<string, unknown[]> {
 
 function importAllTables(data: Record<string, unknown[]>): void {
   const database = getDatabase()
-  const order = [
-    'household_members',
-    'categories',
-    'transactions',
-    'budget_entries',
-    'goals',
-    'wealth_snapshots',
-    'investments',
-    'investment_holdings',
-    'subscriptions',
-    'income_sources',
-    'income_entries',
-    'monthly_mood',
-    'ai_insights',
-    'settings'
-  ]
-  for (const table of order) {
-    const rows = data[table]
-    if (!rows?.length) continue
-    database.prepare(`DELETE FROM ${table}`).run()
-    const cols = Object.keys(rows[0] as object)
-    const placeholders = cols.map(() => '?').join(',')
-    const insert = database.prepare(
-      `INSERT INTO ${table} (${cols.join(',')}) VALUES (${placeholders})`
-    )
-    for (const row of rows) {
-      insert.run(...cols.map((c) => (row as Record<string, unknown>)[c]))
+  const tx = database.transaction((txData: Record<string, unknown[]>) => {
+    const order = [
+      'household_members',
+      'categories',
+      'goals',
+      'wealth_snapshots',
+      'investments',
+      'investment_holdings',
+      'subscriptions',
+      'income_sources',
+      'income_entries',
+      'monthly_mood',
+      'ai_insights',
+      'transactions',
+      'transaction_events',
+      'settings'
+    ]
+    for (const table of order) {
+      const rows = txData[table]
+      if (!rows?.length) continue
+      database.prepare(`DELETE FROM ${table}`).run()
+      const cols = Object.keys(rows[0] as object)
+      const placeholders = cols.map(() => '?').join(',')
+      const insert = database.prepare(
+        `INSERT INTO ${table} (${cols.join(',')}) VALUES (${placeholders})`
+      )
+      for (const row of rows) {
+        insert.run(...cols.map((c) => (row as Record<string, unknown>)[c]))
+      }
     }
-  }
+  })
+  tx(data)
 }

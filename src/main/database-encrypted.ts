@@ -14,7 +14,7 @@ import {
   needsMigration,
   migrateToEncrypted
 } from './db/migration'
-import { backfillHMACs } from './crypto/integrity'
+import { backfillHMACs, clearTableSigningKeys } from './crypto/integrity'
 import { initializeEventStore } from './events/event-store'
 
 let db: SqlCipher.Database | null = null
@@ -71,6 +71,7 @@ export function closeDatabase(): void {
     db.close()
     db = null
   }
+  clearTableSigningKeys()
   lockKeystore()
 }
 

@@ -146,10 +146,10 @@ export function IntegrityPanel() {
               </div>
             )}
 
-            {Object.keys(scanResults.tables).length > 0 && (
+            {scanResults.tables && Object.keys(scanResults.tables).length > 0 && (
               <div className="space-y-2">
                 <h4 className="text-sm font-medium text-foreground">By Table</h4>
-                {Object.entries(scanResults.tables).map(([table, stats]: [string, any]) => (
+                {Object.entries(scanResults.tables ?? {}).map(([table, stats]: [string, any]) => (
                   <div
                     key={table}
                     className="flex items-center justify-between p-3 rounded-lg bg-muted/50"

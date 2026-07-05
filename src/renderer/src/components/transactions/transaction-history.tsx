@@ -70,8 +70,20 @@ export function TransactionHistory({ transactionId, onUndo }: TransactionHistory
   }
 
   function getEventDescription(event: HistoryEvent): string {
-    const eventData = JSON.parse(event.event_data)
-    const previousValues = event.previous_values ? JSON.parse(event.previous_values) : null
+    let eventData: Record<string, unknown>
+    try {
+      eventData = JSON.parse(event.event_data)
+    } catch {
+      eventData = {}
+    }
+    let previousValues: Record<string, unknown> | null = null
+    if (event.previous_values) {
+      try {
+        previousValues = JSON.parse(event.previous_values)
+      } catch {
+        previousValues = null
+      }
+    }
 
     switch (event.event_type) {
       case 'CREATED':
@@ -110,7 +122,7 @@ export function TransactionHistory({ transactionId, onUndo }: TransactionHistory
   function formatTimestamp(timestamp: string): string {
     const date = new Date(timestamp)
     const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
+    const diffMs = Math.max(0, now.getTime() - date.getTime())
     const diffMins = Math.floor(diffMs / 60000)
     const diffHours = Math.floor(diffMs / 3600000)
     const diffDays = Math.floor(diffMs / 86400000)
@@ -185,7 +197,7 @@ export function TransactionHistory({ transactionId, onUndo }: TransactionHistory
                     {getEventDescription(event)}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    by {event.actor}
+                    by {event.actor || 'system'}
                   </p>
                   {index === 0 && (
                     <span className="inline-block mt-2 px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary rounded">

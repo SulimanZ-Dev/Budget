@@ -27,52 +27,56 @@ export interface CreateTransactionCommand {
 export function createTransaction(command: CreateTransactionCommand): { id: number } {
   const db = getDatabase()
   
-  // Compute HMAC for the transaction
-  const hmac = signTransaction({
-    description: command.description,
-    amount: command.amount,
-    type: command.type,
-    category_id: command.category_id ?? null,
-    date: command.date,
-    member_id: command.member_id ?? null
-  })
-  
-  // Insert into materialized view (transactions table)
-  const result = db.prepare(`
-    INSERT INTO transactions (
-      description, amount, type, category_id, date, 
-      is_recurring, is_unnecessary, member_id, notes, hmac
+  const tx = db.transaction((cmd: CreateTransactionCommand) => {
+    // Compute HMAC for the transaction
+    const hmac = signTransaction({
+      description: cmd.description,
+      amount: cmd.amount,
+      type: cmd.type,
+      category_id: cmd.category_id ?? null,
+      date: cmd.date,
+      member_id: cmd.member_id ?? null
+    })
+    
+    // Insert into materialized view (transactions table)
+    const result = db.prepare(`
+      INSERT INTO transactions (
+        description, amount, type, category_id, date, 
+        is_recurring, is_unnecessary, member_id, notes, hmac
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      cmd.description,
+      cmd.amount,
+      cmd.type,
+      cmd.category_id ?? null,
+      cmd.date,
+      cmd.is_recurring ? 1 : 0,
+      cmd.is_unnecessary ? 1 : 0,
+      cmd.member_id ?? null,
+      cmd.notes ?? null,
+      hmac
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    command.description,
-    command.amount,
-    command.type,
-    command.category_id ?? null,
-    command.date,
-    command.is_recurring ? 1 : 0,
-    command.is_unnecessary ? 1 : 0,
-    command.member_id ?? null,
-    command.notes ?? null,
-    hmac
-  )
-  
-  const transactionId = Number(result.lastInsertRowid)
-  
-  // Append event to event store
-  appendEvent(transactionId, TransactionEventType.CREATED, {
-    description: command.description,
-    amount: command.amount,
-    type: command.type,
-    category_id: command.category_id ?? null,
-    date: command.date,
-    is_recurring: command.is_recurring ?? false,
-    is_unnecessary: command.is_unnecessary ?? false,
-    member_id: command.member_id ?? null,
-    notes: command.notes ?? null
+    
+    const transactionId = Number(result.lastInsertRowid)
+    
+    // Append event to event store
+    appendEvent(transactionId, TransactionEventType.CREATED, {
+      description: cmd.description,
+      amount: cmd.amount,
+      type: cmd.type,
+      category_id: cmd.category_id ?? null,
+      date: cmd.date,
+      is_recurring: cmd.is_recurring ?? false,
+      is_unnecessary: cmd.is_unnecessary ?? false,
+      member_id: cmd.member_id ?? null,
+      notes: cmd.notes ?? null
+    })
+    
+    return { id: transactionId }
   })
   
-  return { id: transactionId }
+  return tx(command)
 }
 
 /**
@@ -94,122 +98,126 @@ export interface UpdateTransactionCommand {
 export function updateTransaction(command: UpdateTransactionCommand): boolean {
   const db = getDatabase()
   
-  // Get current state for event history
-  const current = db.prepare('SELECT * FROM transactions WHERE id = ?').get(command.id) as any
-  
-  if (!current) {
-    throw new Error(`Transaction ${command.id} not found`)
-  }
-  
-  // Build update payload with only changed fields
-  const updates: Partial<CreateTransactionCommand> = {}
-  const previousValues: Partial<CreateTransactionCommand> = {}
-  
-  if (command.description !== undefined && command.description !== current.description) {
-    updates.description = command.description
-    previousValues.description = current.description
-  }
-  if (command.amount !== undefined && command.amount !== current.amount) {
-    updates.amount = command.amount
-    previousValues.amount = current.amount
-  }
-  if (command.type !== undefined && command.type !== current.type) {
-    updates.type = command.type
-    previousValues.type = current.type
-  }
-  if (command.category_id !== undefined && command.category_id !== current.category_id) {
-    updates.category_id = command.category_id
-    previousValues.category_id = current.category_id
-  }
-  if (command.date !== undefined && command.date !== current.date) {
-    updates.date = command.date
-    previousValues.date = current.date
-  }
-  if (command.is_recurring !== undefined && (command.is_recurring ? 1 : 0) !== current.is_recurring) {
-    updates.is_recurring = command.is_recurring
-    previousValues.is_recurring = current.is_recurring === 1
-  }
-  if (command.is_unnecessary !== undefined && (command.is_unnecessary ? 1 : 0) !== current.is_unnecessary) {
-    updates.is_unnecessary = command.is_unnecessary
-    previousValues.is_unnecessary = current.is_unnecessary === 1
-  }
-  if (command.member_id !== undefined && command.member_id !== current.member_id) {
-    updates.member_id = command.member_id
-    previousValues.member_id = current.member_id
-  }
-  if (command.notes !== undefined && command.notes !== current.notes) {
-    updates.notes = command.notes
-    previousValues.notes = current.notes
-  }
-  
-  if (Object.keys(updates).length === 0) {
-    return true // No changes
-  }
-  
-  // Compute new HMAC
-  const hmac = signTransaction({
-    description: command.description ?? current.description,
-    amount: command.amount ?? current.amount,
-    type: command.type ?? current.type,
-    category_id: command.category_id !== undefined ? command.category_id : current.category_id,
-    date: command.date ?? current.date,
-    member_id: command.member_id !== undefined ? command.member_id : current.member_id
+  const tx = db.transaction((cmd: UpdateTransactionCommand) => {
+    // Get current state for event history
+    const current = db.prepare('SELECT * FROM transactions WHERE id = ?').get(cmd.id) as any
+    
+    if (!current) {
+      throw new Error(`Transaction ${cmd.id} not found`)
+    }
+    
+    // Build update payload with only changed fields
+    const updates: Partial<CreateTransactionCommand> = {}
+    const previousValues: Partial<CreateTransactionCommand> = {}
+    
+    if (cmd.description !== undefined && cmd.description !== current.description) {
+      updates.description = cmd.description
+      previousValues.description = current.description
+    }
+    if (cmd.amount !== undefined && cmd.amount !== current.amount) {
+      updates.amount = cmd.amount
+      previousValues.amount = current.amount
+    }
+    if (cmd.type !== undefined && cmd.type !== current.type) {
+      updates.type = cmd.type
+      previousValues.type = current.type
+    }
+    if (cmd.category_id !== undefined && cmd.category_id !== current.category_id) {
+      updates.category_id = cmd.category_id
+      previousValues.category_id = current.category_id
+    }
+    if (cmd.date !== undefined && cmd.date !== current.date) {
+      updates.date = cmd.date
+      previousValues.date = current.date
+    }
+    if (cmd.is_recurring !== undefined && (cmd.is_recurring ? 1 : 0) !== current.is_recurring) {
+      updates.is_recurring = cmd.is_recurring
+      previousValues.is_recurring = current.is_recurring === 1
+    }
+    if (cmd.is_unnecessary !== undefined && (cmd.is_unnecessary ? 1 : 0) !== current.is_unnecessary) {
+      updates.is_unnecessary = cmd.is_unnecessary
+      previousValues.is_unnecessary = current.is_unnecessary === 1
+    }
+    if (cmd.member_id !== undefined && cmd.member_id !== current.member_id) {
+      updates.member_id = cmd.member_id
+      previousValues.member_id = current.member_id
+    }
+    if (cmd.notes !== undefined && cmd.notes !== current.notes) {
+      updates.notes = cmd.notes
+      previousValues.notes = current.notes
+    }
+    
+    if (Object.keys(updates).length === 0) {
+      return true // No changes
+    }
+    
+    // Compute new HMAC
+    const hmac = signTransaction({
+      description: cmd.description ?? current.description,
+      amount: cmd.amount ?? current.amount,
+      type: cmd.type ?? current.type,
+      category_id: cmd.category_id !== undefined ? cmd.category_id : current.category_id,
+      date: cmd.date ?? current.date,
+      member_id: cmd.member_id !== undefined ? cmd.member_id : current.member_id
+    })
+    
+    // Update materialized view
+    const setClauses: string[] = []
+    const values: any[] = []
+    
+    if (cmd.description !== undefined) {
+      setClauses.push('description = ?')
+      values.push(cmd.description)
+    }
+    if (cmd.amount !== undefined) {
+      setClauses.push('amount = ?')
+      values.push(cmd.amount)
+    }
+    if (cmd.type !== undefined) {
+      setClauses.push('type = ?')
+      values.push(cmd.type)
+    }
+    if (cmd.category_id !== undefined) {
+      setClauses.push('category_id = ?')
+      values.push(cmd.category_id)
+    }
+    if (cmd.date !== undefined) {
+      setClauses.push('date = ?')
+      values.push(cmd.date)
+    }
+    if (cmd.is_recurring !== undefined) {
+      setClauses.push('is_recurring = ?')
+      values.push(cmd.is_recurring ? 1 : 0)
+    }
+    if (cmd.is_unnecessary !== undefined) {
+      setClauses.push('is_unnecessary = ?')
+      values.push(cmd.is_unnecessary ? 1 : 0)
+    }
+    if (cmd.member_id !== undefined) {
+      setClauses.push('member_id = ?')
+      values.push(cmd.member_id)
+    }
+    if (cmd.notes !== undefined) {
+      setClauses.push('notes = ?')
+      values.push(cmd.notes)
+    }
+    
+    setClauses.push('hmac = ?')
+    values.push(hmac)
+    values.push(cmd.id)
+    
+    db.prepare(`UPDATE transactions SET ${setClauses.join(', ')} WHERE id = ?`).run(...values)
+    
+    // Append event
+    appendEvent(cmd.id, TransactionEventType.UPDATED, {
+      ...updates,
+      previous_values: previousValues
+    })
+    
+    return true
   })
   
-  // Update materialized view
-  const setClauses: string[] = []
-  const values: any[] = []
-  
-  if (command.description !== undefined) {
-    setClauses.push('description = ?')
-    values.push(command.description)
-  }
-  if (command.amount !== undefined) {
-    setClauses.push('amount = ?')
-    values.push(command.amount)
-  }
-  if (command.type !== undefined) {
-    setClauses.push('type = ?')
-    values.push(command.type)
-  }
-  if (command.category_id !== undefined) {
-    setClauses.push('category_id = ?')
-    values.push(command.category_id)
-  }
-  if (command.date !== undefined) {
-    setClauses.push('date = ?')
-    values.push(command.date)
-  }
-  if (command.is_recurring !== undefined) {
-    setClauses.push('is_recurring = ?')
-    values.push(command.is_recurring ? 1 : 0)
-  }
-  if (command.is_unnecessary !== undefined) {
-    setClauses.push('is_unnecessary = ?')
-    values.push(command.is_unnecessary ? 1 : 0)
-  }
-  if (command.member_id !== undefined) {
-    setClauses.push('member_id = ?')
-    values.push(command.member_id)
-  }
-  if (command.notes !== undefined) {
-    setClauses.push('notes = ?')
-    values.push(command.notes)
-  }
-  
-  setClauses.push('hmac = ?')
-  values.push(hmac)
-  values.push(command.id)
-  
-  db.prepare(`UPDATE transactions SET ${setClauses.join(', ')} WHERE id = ?`).run(...values)
-  
-  // Append event
-  appendEvent(command.id, TransactionEventType.UPDATED, {
-    ...updates,
-    previous_values: previousValues
-  })
-  
-  return true
+  return tx(command)
 }
 
 /**
@@ -218,19 +226,23 @@ export function updateTransaction(command: UpdateTransactionCommand): boolean {
 export function deleteTransaction(id: number): boolean {
   const db = getDatabase()
   
-  // Check if exists
-  const exists = db.prepare('SELECT id FROM transactions WHERE id = ?').get(id)
-  if (!exists) {
-    return false
-  }
+  const tx = db.transaction((txId: number) => {
+    // Check if exists
+    const exists = db.prepare('SELECT id FROM transactions WHERE id = ?').get(txId)
+    if (!exists) {
+      return false
+    }
+    
+    // Delete from materialized view
+    db.prepare('DELETE FROM transactions WHERE id = ?').run(txId)
+    
+    // Append event
+    appendEvent(txId, TransactionEventType.DELETED, {})
+    
+    return true
+  })
   
-  // Delete from materialized view
-  db.prepare('DELETE FROM transactions WHERE id = ?').run(id)
-  
-  // Append event
-  appendEvent(id, TransactionEventType.DELETED, {})
-  
-  return true
+  return tx(id)
 }
 
 /**
@@ -239,10 +251,13 @@ export function deleteTransaction(id: number): boolean {
 export function flagTransaction(id: number): boolean {
   const db = getDatabase()
   
-  db.prepare('UPDATE transactions SET is_unnecessary = 1 WHERE id = ?').run(id)
-  appendEvent(id, TransactionEventType.FLAGGED, { is_unnecessary: true })
+  const tx = db.transaction((txId: number) => {
+    db.prepare('UPDATE transactions SET is_unnecessary = 1 WHERE id = ?').run(txId)
+    appendEvent(txId, TransactionEventType.FLAGGED, { is_unnecessary: true })
+    return true
+  })
   
-  return true
+  return tx(id)
 }
 
 /**
@@ -251,10 +266,13 @@ export function flagTransaction(id: number): boolean {
 export function unflagTransaction(id: number): boolean {
   const db = getDatabase()
   
-  db.prepare('UPDATE transactions SET is_unnecessary = 0 WHERE id = ?').run(id)
-  appendEvent(id, TransactionEventType.UNFLAGGED, { is_unnecessary: false })
+  const tx = db.transaction((txId: number) => {
+    db.prepare('UPDATE transactions SET is_unnecessary = 0 WHERE id = ?').run(txId)
+    appendEvent(txId, TransactionEventType.UNFLAGGED, { is_unnecessary: false })
+    return true
+  })
   
-  return true
+  return tx(id)
 }
 
 /**
@@ -263,21 +281,25 @@ export function unflagTransaction(id: number): boolean {
 export function recategorizeTransaction(id: number, categoryId: number | null): boolean {
   const db = getDatabase()
   
-  // Get current category for event history
-  const current = db.prepare('SELECT category_id FROM transactions WHERE id = ?').get(id) as any
-  
-  if (!current) {
-    return false
-  }
-  
-  db.prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(categoryId, id)
-  
-  appendEvent(id, TransactionEventType.RECATEGORIZED, {
-    category_id: categoryId,
-    previous_values: { category_id: current.category_id }
+  const tx = db.transaction((txId: number, catId: number | null) => {
+    // Get current category for event history
+    const current = db.prepare('SELECT category_id FROM transactions WHERE id = ?').get(txId) as any
+    
+    if (!current) {
+      return false
+    }
+    
+    db.prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(catId, txId)
+    
+    appendEvent(txId, TransactionEventType.RECATEGORIZED, {
+      category_id: catId,
+      previous_values: { category_id: current.category_id }
+    })
+    
+    return true
   })
   
-  return true
+  return tx(id, categoryId)
 }
 
 /**
@@ -286,44 +308,48 @@ export function recategorizeTransaction(id: number, categoryId: number | null): 
 export function undoLastChange(id: number): boolean {
   const db = getDatabase()
   
-  // Get the state before the last event
-  const previousState = undoLastEvents(id, 1)
-  
-  if (!previousState) {
-    return false // Nothing to undo or transaction would be deleted
-  }
-  
-  // Recompute HMAC
-  const hmac = signTransaction({
-    description: previousState.description || '',
-    amount: previousState.amount || 0,
-    type: previousState.type || 'expense',
-    category_id: previousState.category_id || null,
-    date: previousState.date || new Date().toISOString().split('T')[0],
-    member_id: previousState.member_id || null
+  const tx = db.transaction((txId: number) => {
+    // Get the state before the last event
+    const previousState = undoLastEvents(txId, 1)
+    
+    if (!previousState) {
+      return false // Nothing to undo or transaction would be deleted
+    }
+    
+    // Recompute HMAC
+    const hmac = signTransaction({
+      description: previousState.description || '',
+      amount: previousState.amount || 0,
+      type: previousState.type || 'expense',
+      category_id: previousState.category_id || null,
+      date: previousState.date || new Date().toISOString().split('T')[0],
+      member_id: previousState.member_id || null
+    })
+    
+    // Update materialized view to previous state
+    db.prepare(`
+      UPDATE transactions 
+      SET description = ?, amount = ?, type = ?, category_id = ?, date = ?,
+          is_recurring = ?, is_unnecessary = ?, member_id = ?, notes = ?, hmac = ?
+      WHERE id = ?
+    `).run(
+      previousState.description,
+      previousState.amount,
+      previousState.type,
+      previousState.category_id,
+      previousState.date,
+      previousState.is_recurring ? 1 : 0,
+      previousState.is_unnecessary ? 1 : 0,
+      previousState.member_id,
+      previousState.notes,
+      hmac,
+      txId
+    )
+    
+    return true
   })
   
-  // Update materialized view to previous state
-  db.prepare(`
-    UPDATE transactions 
-    SET description = ?, amount = ?, type = ?, category_id = ?, date = ?,
-        is_recurring = ?, is_unnecessary = ?, member_id = ?, notes = ?, hmac = ?
-    WHERE id = ?
-  `).run(
-    previousState.description,
-    previousState.amount,
-    previousState.type,
-    previousState.category_id,
-    previousState.date,
-    previousState.is_recurring ? 1 : 0,
-    previousState.is_unnecessary ? 1 : 0,
-    previousState.member_id,
-    previousState.notes,
-    hmac,
-    id
-  )
-  
-  return true
+  return tx(id)
 }
 
 /**
@@ -332,11 +358,14 @@ export function undoLastChange(id: number): boolean {
 export function bulkRecategorizeTransactions(ids: number[], categoryId: number | null): boolean {
   const db = getDatabase()
   
-  for (const id of ids) {
-    recategorizeTransaction(id, categoryId)
-  }
+  const tx = db.transaction((txIds: number[], catId: number | null) => {
+    for (const id of txIds) {
+      recategorizeTransaction(id, catId)
+    }
+    return true
+  })
   
-  return true
+  return tx(ids, categoryId)
 }
 
 /**
@@ -345,11 +374,14 @@ export function bulkRecategorizeTransactions(ids: number[], categoryId: number |
 export function bulkDeleteTransactions(ids: number[]): boolean {
   const db = getDatabase()
   
-  for (const id of ids) {
-    deleteTransaction(id)
-  }
+  const tx = db.transaction((txIds: number[]) => {
+    for (const id of txIds) {
+      deleteTransaction(id)
+    }
+    return true
+  })
   
-  return true
+  return tx(ids)
 }
 
 /**
@@ -358,33 +390,39 @@ export function bulkDeleteTransactions(ids: number[]): boolean {
 export function bulkFlagTransactions(ids: number[]): boolean {
   const db = getDatabase()
   
-  for (const id of ids) {
-    flagTransaction(id)
-  }
+  const tx = db.transaction((txIds: number[]) => {
+    for (const id of txIds) {
+      flagTransaction(id)
+    }
+    return true
+  })
   
-  return true
+  return tx(ids)
 }
 
 /**
  * Command: Import transactions from CSV with event sourcing
  */
 export function importTransactionsFromCsvWithEvents(
-  rows: Array<{ description: string; amount: number; date: string }>
+  rows: Array<{ description: string; amount: number; date: string; type?: string }>
 ): { imported: number } {
   const db = getDatabase()
   
-  let imported = 0
-  for (const row of rows) {
-    createTransaction({
-      description: row.description,
-      amount: row.amount,
-      type: 'expense',
-      date: row.date
-    })
-    imported++
-  }
+  const tx = db.transaction((txRows: Array<{ description: string; amount: number; date: string; type?: string }>) => {
+    let imported = 0
+    for (const row of txRows) {
+      createTransaction({
+        description: row.description,
+        amount: row.amount,
+        type: (row.type === 'income' || row.type === 'transfer') ? row.type : 'expense',
+        date: row.date
+      })
+      imported++
+    }
+    return { imported }
+  })
   
-  return { imported }
+  return tx(rows)
 }
 
 /**
@@ -394,47 +432,51 @@ export function importTransactionsFromCsvWithEvents(
 export function rebuildTransactionsProjection(): number {
   const db = getDatabase()
   
-  // Get current state from events
-  const eventState = replayAllEvents()
-  
-  // Clear and rebuild transactions table
-  db.prepare('DELETE FROM transactions').run()
-  
-  let count = 0
-  for (const [transactionId, state] of eventState.entries()) {
-    const hmac = signTransaction({
-      description: state.description || '',
-      amount: state.amount || 0,
-      type: state.type || 'expense',
-      category_id: state.category_id || null,
-      date: state.date || new Date().toISOString().split('T')[0],
-      member_id: state.member_id || null
-    })
+  const tx = db.transaction(() => {
+    // Get current state from events
+    const eventState = replayAllEvents()
     
-    db.prepare(`
-      INSERT INTO transactions (
-        id, description, amount, type, category_id, date,
-        is_recurring, is_unnecessary, member_id, notes, hmac
+    // Clear and rebuild transactions table
+    db.prepare('DELETE FROM transactions').run()
+    
+    let count = 0
+    for (const [transactionId, state] of eventState.entries()) {
+      const hmac = signTransaction({
+        description: state.description || '',
+        amount: state.amount || 0,
+        type: state.type || 'expense',
+        category_id: state.category_id || null,
+        date: state.date || new Date().toISOString().split('T')[0],
+        member_id: state.member_id || null
+      })
+      
+      db.prepare(`
+        INSERT INTO transactions (
+          id, description, amount, type, category_id, date,
+          is_recurring, is_unnecessary, member_id, notes, hmac
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        transactionId,
+        state.description,
+        state.amount,
+        state.type,
+        state.category_id,
+        state.date,
+        state.is_recurring ? 1 : 0,
+        state.is_unnecessary ? 1 : 0,
+        state.member_id,
+        state.notes,
+        hmac
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      transactionId,
-      state.description,
-      state.amount,
-      state.type,
-      state.category_id,
-      state.date,
-      state.is_recurring ? 1 : 0,
-      state.is_unnecessary ? 1 : 0,
-      state.member_id,
-      state.notes,
-      hmac
-    )
+      
+      count++
+    }
     
-    count++
-  }
+    return count
+  })
   
-  return count
+  return tx()
 }
 
 // Made with Bob

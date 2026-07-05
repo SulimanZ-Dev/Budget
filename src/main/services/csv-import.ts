@@ -2,6 +2,7 @@ export interface CsvMapping {
   descriptionCol: number
   amountCol: number
   dateCol: number
+  typeCol?: number
   delimiter?: string
   hasHeader?: boolean
 }
@@ -10,6 +11,7 @@ export interface ParsedCsvRow {
   description: string
   amount: number
   date: string
+  type: 'expense' | 'income' | 'transfer'
 }
 
 export function detectDelimiter(firstLine: string): string {
@@ -99,7 +101,21 @@ function parseAmount(raw: string): number {
   } else if (s.includes(',')) {
     s = s.replace(',', '.')
   }
-  return Math.abs(parseFloat(s.replace(/[^\d.-]/g, '')) || 0)
+  return parseFloat(s.replace(/[^\d.-]/g, '')) || 0
+}
+
+function detectTypeFromColumns(cols: string[], mapping: CsvMapping, signedAmount: number): 'expense' | 'income' | 'transfer' {
+  // If type column is specified, use it
+  if (mapping.typeCol !== undefined && mapping.typeCol < cols.length) {
+    const val = cols[mapping.typeCol].toLowerCase().trim()
+    if (val.includes('income') || val.includes('inkomst') || val.includes('salary') || val === 'credit') return 'income'
+    if (val.includes('expense') || val.includes('utgift') || val.includes('debit')) return 'expense'
+    if (val.includes('transfer') || val.includes('överföring')) return 'transfer'
+  }
+  // Detect from sign: positive amounts are typically income, negative are expenses
+  if (signedAmount > 0) return 'income'
+  if (signedAmount < 0) return 'expense'
+  return 'expense'
 }
 
 export function importTransactionsFromCsv(csv: string, mapping: CsvMapping): ParsedCsvRow[] {
@@ -112,10 +128,14 @@ export function importTransactionsFromCsv(csv: string, mapping: CsvMapping): Par
   for (let i = startIdx; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i], delimiter)
     if (cols.length < 2) continue
-    const amount = parseAmount(cols[mapping.amountCol] ?? '0')
+    const signedAmount = parseAmount(cols[mapping.amountCol] ?? '0')
+    const amount = Math.abs(signedAmount)
     const description = (cols[mapping.descriptionCol] ?? 'Imported').trim() || 'Imported'
     const date = normalizeDate(cols[mapping.dateCol] ?? '')
-    if (amount > 0) result.push({ description, amount, date })
+    if (amount > 0) {
+      const type = detectTypeFromColumns(cols, mapping, signedAmount)
+      result.push({ description, amount, date, type })
+    }
   }
   return result
 }

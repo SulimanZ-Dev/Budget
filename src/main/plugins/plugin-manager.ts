@@ -123,6 +123,16 @@ export class PluginManager {
         }
       }
 
+      // Validate the plugin path is within the plugin directory
+      const normalizedMain = require('path').resolve(mainPath)
+      const normalizedPlugin = require('path').resolve(pluginMeta.path)
+      if (!normalizedMain.startsWith(normalizedPlugin)) {
+        return {
+          success: false,
+          error: `Plugin entry point is outside plugin directory: ${pluginMeta.manifest.main}`
+        }
+      }
+
       // Dynamic import of plugin
       const pluginModule = require(mainPath) as { default?: Plugin; plugin?: Plugin }
       const plugin = pluginModule.default || pluginModule.plugin
@@ -402,8 +412,22 @@ export class PluginManager {
 
   private isVersionCompatible(manifest: PluginManifest): boolean {
     const appVersion = app.getVersion()
-    // Simple version check - in production, use semver library
-    return appVersion >= manifest.minAppVersion
+
+    function parseSemver(v: string): { major: number; minor: number; patch: number } {
+      const parts = v.split('.')
+      return {
+        major: parseInt(parts[0], 10) || 0,
+        minor: parseInt(parts[1], 10) || 0,
+        patch: parseInt(parts[2], 10) || 0
+      }
+    }
+
+    const app = parseSemver(appVersion)
+    const min = parseSemver(manifest.minAppVersion)
+
+    if (app.major !== min.major) return app.major > min.major
+    if (app.minor !== min.minor) return app.minor > min.minor
+    return app.patch >= min.patch
   }
 
   private async isPluginEnabled(pluginId: string): Promise<boolean> {

@@ -231,9 +231,25 @@ export async function migrateToEncrypted(): Promise<void> {
     sourceDb.close()
     targetDb.close()
     
+    // Step 8: Verify the encrypted database can be opened before deleting backup
+    console.log('Verifying encrypted database...')
+    const verifyDb = new SqlCipher(encryptedPath)
+    verifyDb.pragma(`key = "x'${dekHex}'"`)
+    verifyDb.pragma('cipher_page_size = 4096')
+    verifyDb.pragma('kdf_iter = 256000')
+    verifyDb.pragma('cipher_hmac_algorithm = HMAC_SHA512')
+    verifyDb.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512')
+    try {
+      verifyDb.prepare('SELECT count(*) FROM sqlite_master').get()
+    } catch (error) {
+      verifyDb.close()
+      throw new Error('Encrypted database verification failed - backup retained')
+    }
+    verifyDb.close()
+    
     console.log('Migration completed successfully!')
     
-    // Step 8: Securely delete the backup (original unencrypted database)
+    // Step 9: Securely delete the backup (original unencrypted database)
     console.log('Securely deleting unencrypted backup...')
     secureDelete(backupPath)
     

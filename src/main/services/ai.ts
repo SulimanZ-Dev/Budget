@@ -8,12 +8,13 @@ export async function chatWithAI(
   messages: { role: 'user' | 'assistant'; content: string }[],
   screenContext?: string
 ): Promise<string> {
-  const apiKey = await getApiKey()
+  let apiKey: string | null = await getApiKey()
   if (!apiKey) {
     throw new Error('API_KEY_MISSING')
   }
 
   const client = new Anthropic({ apiKey })
+  apiKey = null
   const context = buildFinancialContext()
   const systemPrompt = `You are a helpful personal financial assistant inside a desktop budget app. The user's default currency is SEK. Be concise, actionable, and specific to their actual numbers. Never suggest spreadsheets.
 
@@ -35,11 +36,14 @@ ${screenContext ? `Current screen context: ${screenContext}` : ''}`
   return block && block.type === 'text' ? block.text : 'No response generated.'
 }
 
+
+
 export async function suggestCategory(description: string): Promise<string | null> {
-  const apiKey = await getApiKey()
+  let apiKey = await getApiKey()
   if (!apiKey) return null
 
   const client = new Anthropic({ apiKey })
+  apiKey = null
   const context = buildFinancialContext()
 
   const response = await client.messages.create({
@@ -57,10 +61,11 @@ export async function suggestCategory(description: string): Promise<string | nul
 }
 
 export async function generateInsight(): Promise<string> {
-  const apiKey = await getApiKey()
+  let apiKey = await getApiKey()
   if (!apiKey) return 'Connect your Claude API key in Settings to unlock AI insights.'
 
   const client = new Anthropic({ apiKey })
+  apiKey = null
   const context = buildFinancialContext()
 
   const response = await client.messages.create({
@@ -78,10 +83,11 @@ export async function generateInsight(): Promise<string> {
 }
 
 export async function generateWeeklyTip(): Promise<string> {
-  const apiKey = await getApiKey()
+  let apiKey = await getApiKey()
   if (!apiKey) return 'Add your API key in Settings for personalized budget coaching.'
 
   const client = new Anthropic({ apiKey })
+  apiKey = null
   const context = buildFinancialContext()
 
   const response = await client.messages.create({

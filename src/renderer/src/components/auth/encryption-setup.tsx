@@ -21,7 +21,7 @@ export function EncryptionSetup({ onComplete }: EncryptionSetupProps) {
   const passwordsMatch = password === confirmPassword && password.length > 0
 
   async function handleSetup() {
-    if (password.length < 8) {
+    if (password.length < 12) {
       setError('Password must be at least 8 characters')
       return
     }
@@ -230,7 +230,7 @@ export function EncryptionSetup({ onComplete }: EncryptionSetupProps) {
           <div className="space-y-3">
             <Button
               onClick={handleSetup}
-              disabled={!passwordsMatch || password.length < 8 || isLoading}
+              disabled={!passwordsMatch || password.length < 12 || isLoading}
               className="w-full disabled:opacity-50"
               size="lg"
             >

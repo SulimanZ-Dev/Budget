@@ -70,7 +70,7 @@ export function WealthPage(): JSX.Element {
     setInvestments(await window.api.investments.list())
     setHoldings(await window.api.investmentHoldings.list())
     // Load total savings from past transactions (exclude future auto-created ones)
-    const transactions = await window.api.transactions.list()
+    const transactions = await window.api.transactions.list({ type: 'savings' })
     const today = new Date().toISOString().slice(0, 10)
     const savingsTotal = transactions
       .filter((t: any) => t.type === 'savings' && t.date <= today)
@@ -362,7 +362,7 @@ export function WealthPage(): JSX.Element {
         </CardHeader>
         <CardContent className="space-y-3">
           {investments.map((inv) => {
-            const gain = ((inv.current_value - inv.purchase_price) / inv.purchase_price) * 100
+            const gain = inv.purchase_price > 0 ? ((inv.current_value - inv.purchase_price) / inv.purchase_price) * 100 : 0
             return (
               <div key={inv.id} className="rounded-lg border p-4">
                 <div className="flex justify-between">

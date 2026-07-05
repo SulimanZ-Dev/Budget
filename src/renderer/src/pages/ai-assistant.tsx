@@ -22,7 +22,7 @@ export function AiAssistantPage(): JSX.Element {
   const navigate = useNavigate()
 
   useEffect(() => {
-    window.api.ai.hasKey().then(setHasKey)
+    window.api.ai.hasKey().then(setHasKey).catch(() => setHasKey(false))
     if (aiPrefill) {
       setInput(aiPrefill)
     }
@@ -34,7 +34,8 @@ export function AiAssistantPage(): JSX.Element {
 
   async function send(): Promise<void> {
     if (!input.trim() || loading) return
-    const userMsg: Message = { role: 'user', content: input.trim() }
+    const sanitized = input.trim().slice(0, 5000)
+    const userMsg: Message = { role: 'user', content: sanitized }
     setMessages((m) => [...m, userMsg])
     setInput('')
     setLoading(true)
@@ -43,7 +44,7 @@ export function AiAssistantPage(): JSX.Element {
         [...messages, userMsg],
         aiScreenContext || undefined
       )
-      setMessages((m) => [...m, { role: 'assistant', content: reply }])
+      setMessages((m) => [...m, { role: 'assistant', content: reply }].slice(-50))
     } catch (e) {
       const err = e as Error
       setMessages((m) => [
