@@ -313,7 +313,7 @@ export function undoLastChange(id: number): boolean {
     const previousState = undoLastEvents(txId, 1)
     
     if (!previousState) {
-      return false // Nothing to undo or transaction would be deleted
+      return false // Nothing to undo
     }
     
     // Recompute HMAC
@@ -326,25 +326,49 @@ export function undoLastChange(id: number): boolean {
       member_id: previousState.member_id || null
     })
     
-    // Update materialized view to previous state
-    db.prepare(`
-      UPDATE transactions 
-      SET description = ?, amount = ?, type = ?, category_id = ?, date = ?,
-          is_recurring = ?, is_unnecessary = ?, member_id = ?, notes = ?, hmac = ?
-      WHERE id = ?
-    `).run(
-      previousState.description,
-      previousState.amount,
-      previousState.type,
-      previousState.category_id,
-      previousState.date,
-      previousState.is_recurring ? 1 : 0,
-      previousState.is_unnecessary ? 1 : 0,
-      previousState.member_id,
-      previousState.notes,
-      hmac,
-      txId
-    )
+    // Determine if we need to INSERT (undoing a delete) or UPDATE
+    const exists = db.prepare('SELECT id FROM transactions WHERE id = ?').get(txId)
+    
+    if (!exists) {
+      // Undoing a delete – re-insert the row
+      db.prepare(`
+        INSERT INTO transactions (id, description, amount, type, category_id, date,
+            is_recurring, is_unnecessary, member_id, notes, hmac)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        txId,
+        previousState.description,
+        previousState.amount,
+        previousState.type,
+        previousState.category_id,
+        previousState.date,
+        previousState.is_recurring ? 1 : 0,
+        previousState.is_unnecessary ? 1 : 0,
+        previousState.member_id,
+        previousState.notes,
+        hmac
+      )
+    } else {
+      // Normal undo – update existing row
+      db.prepare(`
+        UPDATE transactions 
+        SET description = ?, amount = ?, type = ?, category_id = ?, date = ?,
+            is_recurring = ?, is_unnecessary = ?, member_id = ?, notes = ?, hmac = ?
+        WHERE id = ?
+      `).run(
+        previousState.description,
+        previousState.amount,
+        previousState.type,
+        previousState.category_id,
+        previousState.date,
+        previousState.is_recurring ? 1 : 0,
+        previousState.is_unnecessary ? 1 : 0,
+        previousState.member_id,
+        previousState.notes,
+        hmac,
+        txId
+      )
+    }
     
     return true
   })
