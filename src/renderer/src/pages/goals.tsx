@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Target, Plus, MoreHorizontal, Trash2, Pencil } from 'lucide-react'
+import { Target, Plus, MoreHorizontal, Trash2, Pencil, Sparkles } from 'lucide-react'
 import { InfoTooltip } from '@/components/shared/info-tooltip'
 import {
   DropdownMenu,
@@ -31,6 +31,8 @@ interface Goal {
   interest_rate?: number
   monthly_payment?: number
   notes?: string
+  ai_summary?: string
+  ai_summary_updated?: string
 }
 
 function statusLabel(progress: number): { text: string; color: string } {
@@ -44,6 +46,7 @@ export function GoalsPage(): JSX.Element {
   const [goals, setGoals] = useState<Goal[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
+  const [generatingSummaryId, setGeneratingSummaryId] = useState<number | null>(null)
   const [form, setForm] = useState({
     name: '',
     type: 'savings',
@@ -259,12 +262,44 @@ export function GoalsPage(): JSX.Element {
                           : 'set expenses'}
                       </p>
                     )}
-                    <div className="mt-4">
-                      <AskAiButton
-                        context={`goal ${g.name}`}
-                        prefill={`How can I reach my ${g.name} goal faster?`}
-                        variant="ghost"
-                      />
+                    <div className="mt-3 space-y-2">
+                      {g.ai_summary && (
+                        <div className="rounded bg-muted/50 p-2 text-xs text-muted-foreground">
+                          <p>{g.ai_summary}</p>
+                          {g.ai_summary_updated && (
+                            <p className="mt-1 text-[10px] text-muted-foreground/60">
+                              Generated {new Date(g.ai_summary_updated).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={generatingSummaryId === g.id}
+                          onClick={async () => {
+                            setGeneratingSummaryId(g.id)
+                            try {
+                              const result = await window.api.goals.generateSummary(g.id)
+                              if (result.success) {
+                                const updated = await window.api.goals.list()
+                                setGoals(updated as Goal[])
+                              }
+                            } finally {
+                              setGeneratingSummaryId(null)
+                            }
+                          }}
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          {generatingSummaryId === g.id ? 'Generating...' : g.ai_summary ? 'Regenerate' : 'AI Summary'}
+                        </Button>
+                        <AskAiButton
+                          context={`goal ${g.name}`}
+                          prefill={`How can I reach my ${g.name} goal faster?`}
+                          variant="ghost"
+                        />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

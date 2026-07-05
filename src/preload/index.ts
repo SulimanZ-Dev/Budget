@@ -84,7 +84,8 @@ const api = {
     update: (id: number, goal: unknown) => ipcRenderer.invoke('goals:update', id, goal),
     delete: (id: number) => ipcRenderer.invoke('goals:delete', id),
     emergencyTarget: () => ipcRenderer.invoke('goals:emergencyTarget'),
-    autoCreateFromCategories: () => ipcRenderer.invoke('goals:autoCreateFromCategories')
+    autoCreateFromCategories: () => ipcRenderer.invoke('goals:autoCreateFromCategories'),
+    generateSummary: (id: number) => ipcRenderer.invoke('goals:generateSummary', id)
   },
 
   wealth: {
