@@ -1,6 +1,57 @@
 # Implementation Log
 
-## Session: 2026-07-05 — Post-crash recovery + 6-item completion pass
+## Session: 2026-07-05 — Bug 2 & Bug 3 Fixes
+
+### Bug 2: Delete Toast State Fix
+- **Problem**: Toast state was scoped inside `TransactionRow` component, so when a transaction was deleted, the row unmounted and the toast disappeared immediately.
+- **Fix**: Moved toast state to `TransactionsPage` level, rendered in a fixed-position container, and passed `onDeleted(undo)` callback down to `TransactionRow`.
+- **Status**: ✅ Fixed and committed (commit `3cbf748`)
+- **Files changed**: `src/renderer/src/pages/transactions.tsx`, `src/renderer/src/components/transactions/transaction-row.tsx`
+
+### Bug 3: Scheduler Duplicate Prevention Fix
+- **Problem**: 
+  1. `scheduler.ts` used raw SQL INSERT statements that bypassed event sourcing
+  2. `subscriptions:checkBilling` guard checked `description/date/amount` instead of subscription-specific marker
+- **Fix**: 
+  1. Updated `scheduler.ts` to use `createTransaction()` command for all billing types (ensures event sourcing)
+  2. Added `subscription:{id}` notes marker and updated guard to check by this marker
+  3. Wrapped entire `runBillingChecks()` in a transaction for atomicity
+- **Status**: ✅ Fixed and committed (commit `de861cd`)
+- **Files changed**: `src/main/ipc/handlers.ts`, `src/main/services/scheduler.ts`
+
+### Bug 4: Scheduler SQL Parameter Mismatch
+- **Problem**: Previous fix in commit `de861cd` only updated `ipc/handlers.ts` but missed `scheduler.ts`. The scheduler still used `description/date/amount` guard, causing duplicate transactions on subscription rename, leading to `RangeError: Too many parameter values` crashes.
+- **Fix**: Updated `scheduler.ts` to use `notes = ?` guard with `subscription:{id}` marker, matching `handlers.ts`.
+- **Status**: ✅ Fixed and committed (commit `a5fc00f`)
+- **Files changed**: `src/main/services/scheduler.ts`
+
+### Bug 5: Undo doesn't restore deleted transaction
+- **Problem**: 
+  1. `scheduler.ts` `subscriptions:checkBilling` guard still used `description/date/amount` instead of `notes` marker, causing duplicate transactions on subscription rename → `RangeError: Too many parameter values`
+  2. `handlers.ts` `subscriptions:checkBilling` passed 3 SQL parameters but query only had 2 placeholders (notes/date)
+  3. `transaction-commands.ts` `undoLastChange()` only ran UPDATE even when undoing a delete — but the row was already deleted, so UPDATE silently did nothing
+- **Fix**:
+  1. `scheduler.ts`: changed guard to `WHERE notes = ? AND date = ?` with `subscription:{id}`
+  2. `handlers.ts`: removed extra `'expense'` parameter from `.get()`
+  3. `transaction-commands.ts`: `undoLastChange()` now checks if row exists — if missing, INSERTs to restore deleted transaction
+- **Verification**: `npm run build` succeeds. No automated tests exist in this repo, so runtime behavior was not executed end-to-end.
+- **Status**: ✅ Fixed and committed (commit `688ce76`)
+- **Files changed**: `src/main/services/scheduler.ts`, `src/main/ipc/handlers.ts`, `src/main/commands/transaction-commands.ts`
+
+### Bug 6: Undo works once, fails on second delete+undo cycle
+- **Problem**: After first undo, the `DELETED` event remains in `transaction_events`. On second delete+undo, there are two `DELETED` events. `undoLastEvents()` stripped only one, leaving the earlier `DELETED` at the end of replay, which set `state=null`, so undo returned `null` and did nothing.
+- **Root cause**: `undoLastEvents()` only skipped the last event. Repeated delete→undo cycles accumulated trailing `DELETED` events that broke subsequent undos.
+- **Fix**: In `event-store.ts`, `undoLastEvents()` now strips ALL trailing `DELETED` events before replaying, so undo never ends on a delete. Also added `RESTORED` event type for explicitly logging undo of deletes.
+- **Verification**: `npm run build` succeeds. No automated tests exist in this repo, so runtime behavior was not executed end-to-end.
+- **Status**: ✅ Fixed and committed (commit `f93336f`)
+- **Files changed**: `src/main/events/event-store.ts`, `src/main/commands/transaction-commands.ts`
+
+### Guard Analysis Summary
+- **subscriptions:checkBilling**: Now uses `notes = 'subscription:{id}'` for guard (good - prevents duplicates on name changes)
+- **savings:checkBilling**: Uses `notes LIKE '%savings_source:{id}%'` with year/month (good)
+- **income:checkBilling**: Uses `income_entries` table with source_id/year/month (good)
+
+## Previous Session (for reference)
 Base: c3a2f83 (crash-revert commit)
 
 <summary_status>
@@ -21,11 +72,14 @@ Base: c3a2f83 (crash-revert commit)
 </summary_status>
 
 ### Commit history produced during this session
+- `688ce76` fix: undoLastChange re-inserts deleted rows
+- `3d14122` fix: handlers.ts - remove extra SQL parameter for subscriptions:checkBilling
+- `a5fc00f` fix: scheduler.ts - use subscription notes marker for duplicate prevention
+- `de861cd` fix: scheduler duplicate prevention - use subscription notes marker and createTransaction
+- `3cbf748` fix: move delete toast state to TransactionsPage to prevent unmount on row removal
 - `21a251a` feat: Q1 undo toast on transaction delete (transaction-row)
 - `0eaf3f8` feat: A1 analytics 'What changed?' month comparison button
 - `1be4415` feat: A2 spending trend sparklines on budget category cards
 - `c17c7f6` feat: A5 year-over-year comparison chart on analytics page
 - TODO: D3 backup reminder (settings)
 
-</parameter>
-</write_to_file>
