@@ -215,6 +215,7 @@ export function TransactionRow({
         >
           {t.type === 'income' ? '+' : t.type === 'savings' || t.type === 'transfer' ? '→' : '-'}
           {formatMoney(t.amount, profile.displayCurrency, rates)}
+          <span className="ml-1 text-[10px] text-muted-foreground/50">{profile.displayCurrency}</span>
         </button>
       )}
       <DropdownMenu>
