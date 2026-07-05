@@ -28,5 +28,5 @@
 - Actual: The local parsed-version variable shadowed the Electron import, creating TypeScript use-before-assignment errors.
 - Root cause: A local variable was named `app` inside `isVersionCompatible`, colliding with the imported Electron `app`.
 - Fix: Renamed the parsed current app version variable from `app` to `current` and updated the comparisons.
-- Commit: Pending.
+- Commit: `3fa29be`
 - Verified: Pass 1: `npm run typecheck` completed successfully. Pass 2: reran `npm run typecheck` and it completed successfully again.
