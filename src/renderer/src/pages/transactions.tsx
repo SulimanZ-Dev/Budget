@@ -317,6 +317,23 @@ function TransactionsShell({
             <Upload className="h-4 w-4" />
             Import CSV
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              const csv = await window.api.transactions.exportCsv()
+              if (!csv) return
+              const blob = new Blob([csv], { type: 'text/csv' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`
+              a.click()
+              URL.revokeObjectURL(url)
+            }}
+          >
+            Export CSV
+          </Button>
           <Button variant="outline" size="sm" onClick={async () => {
             const result = await window.api.transactions.importOfx()
             if (result && result.imported > 0) {

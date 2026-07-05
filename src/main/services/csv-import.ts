@@ -139,3 +139,27 @@ export function importTransactionsFromCsv(csv: string, mapping: CsvMapping): Par
   }
   return result
 }
+
+export interface TransactionRow {
+  description: string
+  amount: number
+  date: string
+  type: 'expense' | 'income' | 'transfer'
+  category_name?: string
+}
+
+export function exportTransactionsToCsv(rows: TransactionRow[]): string {
+  if (!rows.length) return ''
+  const delimiter = ','
+  const header = ['Description', 'Amount', 'Date', 'Type', 'Category']
+  const lines = [header.join(delimiter)]
+  for (const r of rows) {
+    const desc = r.description.includes(',') ? `"${r.description}"` : r.description
+    const amount = r.amount.toString()
+    const date = r.date || ''
+    const type = r.type
+    const category = r.category_name || ''
+    lines.push([desc, amount, date, type, category].join(delimiter))
+  }
+  return lines.join('\n') + '\n'
+}

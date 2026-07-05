@@ -524,7 +524,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       type: tx.type,
       category_id: tx.categoryId !== undefined ? tx.categoryId : undefined,
       date: tx.date,
-      is_recurring: tx.isRecurring,
+      is_recurring: tx.isRecurring ? true : tx.isRecurring === false ? false : undefined,
       is_unnecessary: tx.isUnnecessary,
       member_id: tx.memberId !== undefined ? tx.memberId : undefined,
       notes: tx.notes !== undefined ? tx.notes : undefined
@@ -617,6 +617,20 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const preview = parseCsvPreview(csv)
     const guessed = guessColumnIndexes(preview.headers)
     return { ...preview, guessed }
+  })
+
+  // CSV export
+  ipcMain.handle('transactions:exportCsv', () => {
+    const rows = db()
+      .prepare(
+        `SELECT t.description, t.amount, t.date, t.type, c.name as category_name
+         FROM transactions t
+         LEFT JOIN categories c ON t.category_id = c.id
+         ORDER BY t.date DESC, t.id DESC`
+      )
+      .all() as { description: string; amount: number; date: string; type: string; category_name?: string }[]
+    const { exportTransactionsToCsv } = require('../services/csv-import')
+    return exportTransactionsToCsv(rows)
   })
 
   // Use command pattern for CSV import
@@ -909,7 +923,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
             amount: sub.amount as number,
             type: 'expense',
             date: new Date().toISOString().slice(0, 10),
-            is_recurring: 1
+            is_recurring: true
           })
           db().prepare('UPDATE subscriptions SET transaction_id = ? WHERE id = ?').run(result.id, id)
           return { success: true, transactionId: result.id }
