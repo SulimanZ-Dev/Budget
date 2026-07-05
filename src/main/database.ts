@@ -347,6 +347,20 @@ function runMigrations(database: Database.Database): void {
     console.log('Goals ai_summary migration skipped:', e)
   }
 
+  // Migration: Create categorization_rules table
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS categorization_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pattern TEXT NOT NULL,
+        category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `)
+  } catch (e) {
+    console.log('Categorization rules migration skipped:', e)
+  }
+
   const onboardingDone = database
     .prepare("SELECT value FROM settings WHERE key = 'onboardingComplete'")
     .get() as { value: string } | undefined

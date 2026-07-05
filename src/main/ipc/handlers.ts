@@ -134,6 +134,39 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return true
   })
 
+  ipcMain.handle('rules:list', () => {
+    return db()
+      .prepare('SELECT r.*, c.name as category_name FROM categorization_rules r LEFT JOIN categories c ON r.category_id = c.id ORDER BY r.id')
+      .all()
+  })
+
+  ipcMain.handle('rules:create', (_, rule: { pattern: string; categoryId: number }) => {
+    const r = db()
+      .prepare('INSERT INTO categorization_rules (pattern, category_id) VALUES (?, ?)')
+      .run(rule.pattern, rule.categoryId)
+    return { id: Number(r.lastInsertRowid) }
+  })
+
+  ipcMain.handle('rules:delete', (_, id: number) => {
+    db().prepare('DELETE FROM categorization_rules WHERE id = ?').run(id)
+    return true
+  })
+
+  ipcMain.handle('rules:apply', () => {
+    const rules = db().prepare('SELECT * FROM categorization_rules').all() as { pattern: string; category_id: number }[]
+    const updated: number[] = []
+    for (const rule of rules) {
+      const txs = db().prepare(
+        "SELECT id, description FROM transactions WHERE description LIKE ? AND category_id IS NULL"
+      ).all(`%${rule.pattern}%`) as { id: number; description: string }[]
+      for (const tx of txs) {
+        db().prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(rule.category_id, tx.id)
+        updated.push(tx.id)
+      }
+    }
+    return updated
+  })
+
   // Years
   ipcMain.handle('years:list', () => {
     const transactionYears = db()

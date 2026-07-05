@@ -17,6 +17,7 @@ import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { IntegrityPanel } from '@/components/integrity/integrity-panel'
 import { PluginRegistry } from '@/components/plugins/plugin-registry'
 import { SchedulerCard } from '@/components/shared/scheduler-card'
+import { RuleEditor } from '@/components/shared/rule-editor'
 
 export function SettingsPage(): JSX.Element {
   const { profile, setProfile } = useAppStore()
@@ -427,6 +428,15 @@ export function SettingsPage(): JSX.Element {
           <Button onClick={handleChangePassword} disabled={changePasswordLoading}>
             {changePasswordLoading ? 'Changing...' : 'Change password'}
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Categorization Rules</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <RuleEditor />
         </CardContent>
       </Card>
 

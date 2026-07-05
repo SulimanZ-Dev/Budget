@@ -29,6 +29,13 @@ const api = {
     setConfig: (config: unknown) => ipcRenderer.invoke('scheduler:setConfig', config)
   },
 
+  rules: {
+    list: () => ipcRenderer.invoke('rules:list'),
+    create: (rule: { pattern: string; categoryId: number }) => ipcRenderer.invoke('rules:create', rule),
+    delete: (id: number) => ipcRenderer.invoke('rules:delete', id),
+    apply: () => ipcRenderer.invoke('rules:apply')
+  },
+
   currency: {
     fetch: () => ipcRenderer.invoke('currency:fetch'),
     cached: () => ipcRenderer.invoke('currency:cached')
