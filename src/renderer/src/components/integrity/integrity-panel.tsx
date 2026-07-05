@@ -139,32 +139,62 @@ export function IntegrityPanel() {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-4"
           >
-            <div className="grid grid-cols-4 gap-4">
-              <div className="p-4 rounded-lg bg-muted">
-                <div className="text-2xl font-bold text-foreground">
-                  {scanResults.total}
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">Total Records</div>
-              </div>
-              <div className="p-4 rounded-lg bg-success/10 border border-success/20">
-                <div className="text-2xl font-bold text-success">
-                  {scanResults.verified}
-                </div>
-                <Badge variant="secondary" className="mt-1 bg-success/20 text-success hover:bg-success/20">Verified</Badge>
-              </div>
-              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
-                <div className="text-2xl font-bold text-destructive">
-                  {scanResults.failed}
-                </div>
-                <Badge variant="destructive" className="mt-1">Failed</Badge>
-              </div>
-              <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
-                <div className="text-2xl font-bold text-warning">
-                  {scanResults.missing}
-                </div>
-                <Badge variant="outline" className="mt-1 border-warning/50 text-warning">Missing HMAC</Badge>
-              </div>
-            </div>
+            {(() => {
+              const total = scanResults.total || 1
+              const score = Math.round(((total - scanResults.failed - scanResults.missing) / total) * 100)
+              return (
+                <>
+                  <div className="mb-4 p-4 rounded-lg bg-primary/5 border border-primary/20">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Integrity Score</p>
+                        <p className="text-3xl font-bold text-primary">{score}%</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">
+                          {scanResults.verified} of {total} records verified intact
+                        </p>
+                        {score === 100 ? (
+                          <Badge className="bg-success/10 text-success border-success/20 mt-1">Perfect</Badge>
+                        ) : score >= 95 ? (
+                          <Badge className="bg-success/10 text-success border-success/20 mt-1">Good</Badge>
+                        ) : score >= 80 ? (
+                          <Badge className="bg-warning/10 text-warning border-warning/20 mt-1">Needs Attention</Badge>
+                        ) : (
+                          <Badge variant="destructive" className="mt-1">Critical</Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="p-4 rounded-lg bg-muted">
+                      <div className="text-2xl font-bold text-foreground">
+                        {scanResults.total}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">Total Records</div>
+                    </div>
+                    <div className="p-4 rounded-lg bg-success/10 border border-success/20">
+                      <div className="text-2xl font-bold text-success">
+                        {scanResults.verified}
+                      </div>
+                      <Badge variant="secondary" className="mt-1 bg-success/20 text-success hover:bg-success/20">Verified</Badge>
+                    </div>
+                    <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+                      <div className="text-2xl font-bold text-destructive">
+                        {scanResults.failed}
+                      </div>
+                      <Badge variant="destructive" className="mt-1">Failed</Badge>
+                    </div>
+                    <div className="p-4 rounded-lg bg-warning/10 border border-warning/20">
+                      <div className="text-2xl font-bold text-warning">
+                        {scanResults.missing}
+                      </div>
+                      <Badge variant="outline" className="mt-1 border-warning/50 text-warning">Missing HMAC</Badge>
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
 
             {scanResults.failed === 0 && scanResults.missing === 0 ? (
               <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/20">
