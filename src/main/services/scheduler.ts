@@ -1,4 +1,5 @@
 import { getDatabase } from '../database-encrypted'
+import { createTransaction } from '../commands/transaction-commands'
 
 interface SchedulerConfig {
   enabled: boolean
@@ -46,76 +47,98 @@ function runBillingChecks(): void {
       return `${ny}-${String(nm).padStart(2, '0')}-${String(nd).padStart(2, '0')}`
     }
 
-    for (const sub of due) {
-      const existingTx = db.prepare(
-        `SELECT id FROM transactions WHERE description = ? AND date = ? AND amount = ? AND type = 'expense'`
-      ).get(sub.name, sub.next_billing_date, sub.amount) as { id: number } | undefined
+    // Run all billing checks within a single transaction for atomicity
+    const tx = db.transaction(() => {
+      for (const sub of due) {
+        // Check if a transaction already exists for this billing period
+        const existingTx = db.prepare(
+          `SELECT id FROM transactions WHERE description = ? AND date = ? AND amount = ? AND type = 'expense'`
+        ).get(sub.name, sub.next_billing_date, sub.amount) as { id: number } | undefined
 
-      if (!existingTx) {
+        if (!existingTx) {
+          // Store subscription reference in notes to prevent duplicates on name change
+          createTransaction({
+            description: sub.name,
+            amount: sub.amount,
+            type: 'expense',
+            date: sub.next_billing_date,
+            is_recurring: true,
+            notes: `subscription:${sub.id}`
+          })
+        }
+
+        // Advance next_billing_date by frequency — keep advancing if still past due
+        let nextDate = sub.next_billing_date
+        for (let i = 0; i < 12; i++) {
+          nextDate = advanceDate(nextDate, sub.frequency)
+          if (nextDate > today) break
+        }
         db.prepare(
-          `INSERT INTO transactions (description, amount, type, date, is_recurring)
-           VALUES (?, ?, 'expense', ?, 1)`
-        ).run(sub.name, sub.amount, sub.next_billing_date)
+          'UPDATE subscriptions SET next_billing_date = ? WHERE id = ?'
+        ).run(nextDate, sub.id)
       }
 
-      let nextDate = sub.next_billing_date
-      for (let i = 0; i < 12; i++) {
-        nextDate = advanceDate(nextDate, sub.frequency)
-        if (nextDate > today) break
-      }
-      db.prepare('UPDATE subscriptions SET next_billing_date = ? WHERE id = ?').run(nextDate, sub.id)
-    }
+      const savingsSources = db.prepare('SELECT * FROM savings_sources').all() as Array<{
+        id: number; description: string; amount: number; category_id: number | null
+      }>
 
-    const savingsSources = db.prepare('SELECT * FROM savings_sources').all() as Array<{
-      id: number; description: string; amount: number; category_id: number | null
-    }>
+      for (const source of savingsSources) {
+        const noteMarker = `savings_source:${source.id}`
+        const existing = db.prepare(
+          `SELECT id FROM transactions WHERE notes LIKE ? AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`
+        ).get(`%${noteMarker}%`, String(year), String(month).padStart(2, '0')) as { id: number } | undefined
 
-    for (const source of savingsSources) {
-      const existing = db.prepare(
-        `SELECT id FROM transactions WHERE notes LIKE ? AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`
-      ).get(`%savings_source:${source.id}%`, String(year), String(month).padStart(2, '0')) as { id: number } | undefined
-
-      if (!existing) {
-        let catId = source.category_id
-        if (catId) {
-          const catExists = db.prepare('SELECT 1 FROM categories WHERE id = ?').get(catId)
-          if (!catExists) {
+        if (!existing) {
+          let catId = source.category_id
+          if (catId) {
+            const catExists = db.prepare('SELECT 1 FROM categories WHERE id = ?').get(catId)
+            if (!catExists) {
+              const defaultCat = db.prepare("SELECT id FROM categories WHERE goal_type = 'savings' LIMIT 1").get() as { id: number } | undefined
+              catId = defaultCat?.id ?? null
+            }
+          }
+          if (!catId) {
             const defaultCat = db.prepare("SELECT id FROM categories WHERE goal_type = 'savings' LIMIT 1").get() as { id: number } | undefined
             catId = defaultCat?.id ?? null
           }
+          createTransaction({
+            description: source.description,
+            amount: source.amount,
+            type: 'savings',
+            category_id: catId,
+            date: today,
+            notes: noteMarker
+          })
         }
-        if (!catId) {
-          const defaultCat = db.prepare("SELECT id FROM categories WHERE goal_type = 'savings' LIMIT 1").get() as { id: number } | undefined
-          catId = defaultCat?.id ?? null
+      }
+
+      const incomeSources = db.prepare('SELECT * FROM income_sources WHERE is_recurring = 1').all() as Array<{
+        id: number; name: string; amount: number; frequency: string
+      }>
+
+      for (const source of incomeSources) {
+        const existingEntry = db.prepare(
+          'SELECT id FROM income_entries WHERE source_id = ? AND year = ? AND month = ?'
+        ).get(source.id, year, month) as { id: number } | undefined
+
+        if (!existingEntry) {
+          const occurrences = source.frequency === 'weekly' ? 4 : source.frequency === 'fortnightly' ? 2 : 1
+          const monthlyAmount = Math.round(source.amount * occurrences * 100) / 100
+          createTransaction({
+            description: source.name,
+            amount: monthlyAmount,
+            type: 'income',
+            date: today,
+            notes: `income_source:${source.id}`
+          })
+          db.prepare(
+            'INSERT OR IGNORE INTO income_entries (source_id, year, month, amount, is_irregular) VALUES (?, ?, ?, ?, 0)'
+          ).run(source.id, year, month, monthlyAmount)
         }
-        db.prepare(
-          `INSERT INTO transactions (description, amount, type, category_id, date, notes)
-           VALUES (?, ?, 'savings', ?, ?, ?)`
-        ).run(source.description, source.amount, catId, today, `savings_source:${source.id}`)
       }
-    }
+    })
 
-    const incomeSources = db.prepare('SELECT * FROM income_sources WHERE is_recurring = 1').all() as Array<{
-      id: number; name: string; amount: number; frequency: string
-    }>
-
-    for (const source of incomeSources) {
-      const existingEntry = db.prepare(
-        'SELECT id FROM income_entries WHERE source_id = ? AND year = ? AND month = ?'
-      ).get(source.id, year, month) as { id: number } | undefined
-
-      if (!existingEntry) {
-        const occurrences = source.frequency === 'weekly' ? 4 : source.frequency === 'fortnightly' ? 2 : 1
-        const monthlyAmount = Math.round(source.amount * occurrences * 100) / 100
-        db.prepare(
-          `INSERT INTO transactions (description, amount, type, date, notes)
-           VALUES (?, ?, 'income', ?, ?)`
-        ).run(source.name, monthlyAmount, today, `income_source:${source.id}`)
-        db.prepare(
-          'INSERT OR IGNORE INTO income_entries (source_id, year, month, amount, is_irregular) VALUES (?, ?, ?, ?, 0)'
-        ).run(source.id, year, month, monthlyAmount)
-      }
-    }
+    tx()
   } catch (error) {
     console.error('Scheduler billing check failed:', error)
   }

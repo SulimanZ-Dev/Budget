@@ -983,8 +983,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     for (const sub of due) {
       // Check if a transaction already exists for this billing period
       const existingTx = db().prepare(
-        `SELECT id FROM transactions WHERE description = ? AND date = ? AND amount = ? AND type = 'expense'`
-      ).get(sub.name, sub.next_billing_date, sub.amount) as { id: number } | undefined
+        `SELECT id FROM transactions WHERE notes = ? AND date = ? AND type = 'expense'`
+      ).get(`subscription:${sub.id}`, sub.next_billing_date, 'expense') as { id: number } | undefined
 
       if (!existingTx) {
         const result = createTransaction({
@@ -992,7 +992,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
           amount: sub.amount,
           type: 'expense',
           date: sub.next_billing_date,
-          is_recurring: true
+          is_recurring: true,
+          notes: `subscription:${sub.id}`
         })
         created.push(result.id)
       }
