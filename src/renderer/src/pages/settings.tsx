@@ -312,6 +312,18 @@ export function SettingsPage(): JSX.Element {
           <Button
             variant="outline"
             onClick={async () => {
+              const result = await window.api.data.importDb()
+              if (result) {
+                alert('Database imported. Restart the app to apply changes.')
+              }
+            }}
+          >
+            <Upload className="h-4 w-4" />
+            Import SQLite
+          </Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
               if (confirm('Rebuild the transactions table from event history? Data loss is possible if events are incomplete.')) {
                 const result = await window.api.data.repairFromEvents()
                 if (result.success) {

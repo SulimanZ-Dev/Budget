@@ -1495,6 +1495,21 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return null
   })
 
+  ipcMain.handle('data:importDb', async () => {
+    const win = getWindow()
+    const result = await dialog.showOpenDialog(win!, {
+      title: 'Import database backup',
+      filters: [{ name: 'SQLite', extensions: ['db'] }],
+      properties: ['openFile']
+    })
+    if (!result.canceled && result.filePaths[0]) {
+      const dbPath = getDbPath()
+      copyFileSync(result.filePaths[0], dbPath)
+      return true
+    }
+    return false
+  })
+
   ipcMain.handle('data:importJson', async () => {
     const win = getWindow()
     const result = await dialog.showOpenDialog(win!, {

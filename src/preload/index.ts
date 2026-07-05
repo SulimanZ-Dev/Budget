@@ -167,6 +167,7 @@ const api = {
   data: {
     exportDb: () => ipcRenderer.invoke('data:exportDb'),
     exportJson: () => ipcRenderer.invoke('data:exportJson'),
+    importDb: () => ipcRenderer.invoke('data:importDb'),
     importJson: () => ipcRenderer.invoke('data:importJson'),
     wipe: () => ipcRenderer.invoke('data:wipe'),
     repairFromEvents: () => ipcRenderer.invoke('data:repairFromEvents')
