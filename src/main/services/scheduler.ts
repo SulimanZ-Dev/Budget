@@ -50,10 +50,10 @@ function runBillingChecks(): void {
     // Run all billing checks within a single transaction for atomicity
     const tx = db.transaction(() => {
       for (const sub of due) {
-        // Check if a transaction already exists for this billing period
+        // Check if a transaction already exists for this billing period using notes marker
         const existingTx = db.prepare(
-          `SELECT id FROM transactions WHERE description = ? AND date = ? AND amount = ? AND type = 'expense'`
-        ).get(sub.name, sub.next_billing_date, sub.amount) as { id: number } | undefined
+          `SELECT id FROM transactions WHERE notes = ? AND date = ? AND type = 'expense'`
+        ).get(`subscription:${sub.id}`, sub.next_billing_date) as { id: number } | undefined
 
         if (!existingTx) {
           // Store subscription reference in notes to prevent duplicates on name change
