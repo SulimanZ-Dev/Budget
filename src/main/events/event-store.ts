@@ -8,6 +8,7 @@ export enum TransactionEventType {
   CREATED = 'CREATED',
   UPDATED = 'UPDATED',
   DELETED = 'DELETED',
+  RESTORED = 'RESTORED',
   FLAGGED = 'FLAGGED',
   UNFLAGGED = 'UNFLAGGED',
   RECATEGORIZED = 'RECATEGORIZED'
@@ -188,6 +189,13 @@ export function replayTransactionEvents(transactionId: number): TransactionEvent
         }
         break
         
+      case TransactionEventType.RESTORED:
+        // Restore clears deleted flag
+        if (state) {
+          state = { ...state, _deleted: false, _restored: true } as any
+        }
+        break
+        
       case TransactionEventType.FLAGGED:
         if (state) {
           state.is_unnecessary = true
@@ -236,6 +244,10 @@ export function replayAllEvents(): Map<number, TransactionEventPayload> {
         transactions.delete(event.transaction_id)
         break
         
+      case TransactionEventType.RESTORED:
+        // Restoration is handled by the event after restore
+        break
+        
       case TransactionEventType.FLAGGED:
         if (currentState) {
           transactions.set(event.transaction_id, { ...currentState, is_unnecessary: true })
@@ -280,9 +292,21 @@ export function undoLastEvents(transactionId: number, count: number = 1): Transa
     return null
   }
   
+  // If undoing a delete, there may be multiple trailing DELETED events from
+  // repeated delete→undo cycles. Strip all trailing DELETED events so replay
+  // does not end with state=null.
+  let cleanReplay = eventsToReplay
+  while (cleanReplay.length > 0 && cleanReplay[cleanReplay.length - 1].event_type === TransactionEventType.DELETED) {
+    cleanReplay = cleanReplay.slice(0, -1)
+  }
+  
+  if (cleanReplay.length === 0) {
+    return null
+  }
+  
   let state: TransactionEventPayload | null = null
   
-  for (const event of eventsToReplay) {
+  for (const event of cleanReplay) {
     switch (event.event_type) {
       case TransactionEventType.CREATED:
         state = { ...event.payload }
@@ -296,6 +320,12 @@ export function undoLastEvents(transactionId: number, count: number = 1): Transa
         
       case TransactionEventType.DELETED:
         state = null
+        break
+        
+      case TransactionEventType.RESTORED:
+        if (state) {
+          state = { ...state, _restored: true } as any
+        }
         break
         
       case TransactionEventType.FLAGGED:
@@ -361,6 +391,11 @@ export function getTransactionHistory(transactionId: number): Array<{
       case TransactionEventType.DELETED:
         action = 'Deleted'
         details = 'Transaction removed'
+        break
+        
+      case TransactionEventType.RESTORED:
+        action = 'Restored'
+        details = 'Transaction restored from undo'
         break
         
       case TransactionEventType.FLAGGED:

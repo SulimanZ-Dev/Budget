@@ -316,7 +316,7 @@ export function undoLastChange(id: number): boolean {
       return false // Nothing to undo
     }
     
-    // Recompute HMAC
+    // Recompute HMAC from state
     const hmac = signTransaction({
       description: previousState.description || '',
       amount: previousState.amount || 0,
@@ -348,6 +348,19 @@ export function undoLastChange(id: number): boolean {
         previousState.notes,
         hmac
       )
+      
+      // Append RESTORED event so subsequent undo operations see the correct latest event
+      appendEvent(txId, TransactionEventType.RESTORED, {
+        description: previousState.description,
+        amount: previousState.amount,
+        type: previousState.type,
+        category_id: previousState.category_id,
+        date: previousState.date,
+        is_recurring: previousState.is_recurring ?? false,
+        is_unnecessary: previousState.is_unnecessary ?? false,
+        member_id: previousState.member_id ?? null,
+        notes: previousState.notes ?? null
+      })
     } else {
       // Normal undo – update existing row
       db.prepare(`
