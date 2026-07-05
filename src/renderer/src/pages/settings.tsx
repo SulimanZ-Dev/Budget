@@ -15,6 +15,7 @@ import { useAppStore, type DisplayCurrency } from '@/store/app-store'
 import { Download, Upload, Trash2, Key, Printer, Lock, RotateCcw } from 'lucide-react'
 import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { IntegrityPanel } from '@/components/integrity/integrity-panel'
+import { PluginRegistry } from '@/components/plugins/plugin-registry'
 
 export function SettingsPage(): JSX.Element {
   const { profile, setProfile } = useAppStore()
@@ -405,6 +406,15 @@ export function SettingsPage(): JSX.Element {
       </Card>
 
       <IntegrityPanel />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Plugins</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PluginRegistry />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
