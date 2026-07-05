@@ -12,6 +12,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { useAppStore, type DisplayCurrency } from '@/store/app-store'
+import { SUPPORTED_LOCALES, LOCALE_LABELS, type AppLocale } from '@/lib/utils'
 import { Download, Upload, Trash2, Key, Printer, Lock, RotateCcw } from 'lucide-react'
 import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { IntegrityPanel } from '@/components/integrity/integrity-panel'
@@ -267,6 +268,27 @@ export function SettingsPage(): JSX.Element {
                 saveProfile()
               }}
             />
+          </div>
+          <div className="grid gap-2">
+            <Label>Locale (number/date formatting)</Label>
+            <Select
+              value={profile.locale}
+              onValueChange={(v) => {
+                setProfile({ locale: v as AppLocale })
+                saveProfile()
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_LOCALES.map((l) => (
+                  <SelectItem key={l} value={l}>
+                    {LOCALE_LABELS[l]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
