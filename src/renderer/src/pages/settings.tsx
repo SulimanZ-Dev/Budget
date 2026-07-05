@@ -266,6 +266,18 @@ export function SettingsPage(): JSX.Element {
               }}
             />
           </div>
+          <div className="grid gap-2">
+            <Label>Savings rate target (%)</Label>
+            <Input
+              type="number"
+              value={profile.savingsRateTarget}
+              onChange={(e) => {
+                const next = Number.parseFloat(e.target.value)
+                setProfile({ savingsRateTarget: Number.isFinite(next) ? next : 20 })
+              }}
+              onBlur={saveProfile}
+            />
+          </div>
         </CardContent>
       </Card>
 

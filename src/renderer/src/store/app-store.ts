@@ -13,6 +13,7 @@ export interface Profile {
   autoHideZeroCategories: boolean
   notificationsEnabled: boolean
   grossIncomeToggle: boolean
+  savingsRateTarget: number
 }
 
 interface AppState {
@@ -60,7 +61,8 @@ const defaultProfile: Profile = {
   year: new Date().getFullYear(),
   autoHideZeroCategories: false,
   notificationsEnabled: true,
-  grossIncomeToggle: false
+  grossIncomeToggle: false,
+  savingsRateTarget: 20
 }
 
 export const useAppStore = create<AppState>((set, get) => ({

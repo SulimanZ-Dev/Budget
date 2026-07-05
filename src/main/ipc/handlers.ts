@@ -1514,7 +1514,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
           JSON.stringify({
             name: '', currency: 'SEK', displayCurrency: 'SEK', cpiPercent: 2.5,
             taxWithheldPercent: 30, theme: 'system', year: currentYear,
-            autoHideZeroCategories: false, notificationsEnabled: true, grossIncomeToggle: false
+            autoHideZeroCategories: false, notificationsEnabled: true, grossIncomeToggle: false,
+            savingsRateTarget: 20
           }),
           JSON.stringify({ current: 0, longest: 0, lastDate: null })
         )

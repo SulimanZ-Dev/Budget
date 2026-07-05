@@ -123,11 +123,11 @@ export function DashboardPage(): JSX.Element {
         <StatTile label="This month spending" value={stats.spending} delay={0.05} />
         <StatTile label="This month savings" value={stats.savings} delay={0.1} color="success" />
         <StatTile
-          label="Savings rate"
+          label={`Savings rate (target ${profile.savingsRateTarget}%)`}
           value={stats.savingsRate}
           format="percent"
           delay={0.15}
-          color={stats.savingsRate >= 15 ? 'success' : stats.savingsRate >= 0 ? 'warning' : 'destructive'}
+          color={stats.savingsRate >= profile.savingsRateTarget ? 'success' : stats.savingsRate >= 0 ? 'warning' : 'destructive'}
         />
       </div>
 
