@@ -19,6 +19,7 @@ import {
   guessColumnIndexes,
   type CsvMapping
 } from '../services/csv-import'
+import { parseOfx } from '../services/ofx-import'
 import {
   signBudgetEntry,
   signGoal,
@@ -628,6 +629,21 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     }
     const rows = importTransactionsFromCsv(csv, map)
     return importTransactionsFromCsvWithEvents(rows)
+  })
+
+  ipcMain.handle('transactions:importOfx', async () => {
+    const win = getWindow()
+    const result = await dialog.showOpenDialog(win!, {
+      title: 'Import OFX/QFX file',
+      filters: [{ name: 'OFX/QFX', extensions: ['ofx', 'qfx'] }],
+      properties: ['openFile']
+    })
+    if (!result.canceled && result.filePaths[0]) {
+      const content = readFileSync(result.filePaths[0], 'utf8')
+      const rows = parseOfx(content)
+      return importTransactionsFromCsvWithEvents(rows)
+    }
+    return { imported: 0 }
   })
 
   // New transaction event sourcing handlers

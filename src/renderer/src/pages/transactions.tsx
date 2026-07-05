@@ -308,6 +308,16 @@ function TransactionsShell({
             <Upload className="h-4 w-4" />
             Import CSV
           </Button>
+          <Button variant="outline" size="sm" onClick={async () => {
+            const result = await window.api.transactions.importOfx()
+            if (result && result.imported > 0) {
+              alert(`Imported ${result.imported} transactions from OFX.`)
+              load()
+            }
+          }}>
+            <Upload className="h-4 w-4" />
+            Import OFX
+          </Button>
         </div>
       </div>
       <div className="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
