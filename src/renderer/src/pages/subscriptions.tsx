@@ -193,7 +193,7 @@ export function SubscriptionsPage(): JSX.Element {
           <Button onClick={() => {
             setEditingId(null)
             setEditingType('subscription')
-            setForm({ name: '', amount: '', url: '', date: '' })
+            setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false })
             setModalOpen(true)
           }}>
             <Plus className="h-4 w-4" />
@@ -262,7 +262,7 @@ export function SubscriptionsPage(): JSX.Element {
           onAction={() => {
             setEditingId(null)
             setEditingType('subscription')
-            setForm({ name: '', amount: '', url: '', date: '' })
+            setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false })
             setModalOpen(true)
           }}
         />
