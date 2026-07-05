@@ -19,3 +19,14 @@
 - Fix: Updated both form reset paths to include `taxDeductible: false` and `onHold: false`.
 - Commit: Pending.
 - Verified: Pass 1: `npx tsc --noEmit -p tsconfig.web.json` completed successfully. Pass 2: reran the same command and it completed successfully again.
+
+## [Plugins] - version compatibility shadows Electron app
+- Type: bug fix
+- Age: pre-existing (before this session)
+- Repro: Pass 1: ran `npm run typecheck`; TypeScript failed in `src/main/plugins/plugin-manager.ts` because `const app = parseSemver(appVersion)` shadows the imported Electron `app`, so `app.getVersion()` is treated as a use-before-declaration. Pass 2: after renderer type fixes, reran `npm run typecheck` and the same Node-side plugin-manager error remained.
+- Expected: Plugin version compatibility should compare the Electron app version with the plugin minimum version and the full typecheck should not fail on shadowed names.
+- Actual: The local parsed-version variable shadowed the Electron import, creating TypeScript use-before-assignment errors.
+- Root cause: A local variable was named `app` inside `isVersionCompatible`, colliding with the imported Electron `app`.
+- Fix: Pending.
+- Commit: Pending.
+- Verified: Pending.

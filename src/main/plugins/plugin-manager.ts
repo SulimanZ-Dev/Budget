@@ -422,12 +422,12 @@ export class PluginManager {
       }
     }
 
-    const app = parseSemver(appVersion)
+    const current = parseSemver(appVersion)
     const min = parseSemver(manifest.minAppVersion)
 
-    if (app.major !== min.major) return app.major > min.major
-    if (app.minor !== min.minor) return app.minor > min.minor
-    return app.patch >= min.patch
+    if (current.major !== min.major) return current.major > min.major
+    if (current.minor !== min.minor) return current.minor > min.minor
+    return current.patch >= min.patch
   }
 
   private async isPluginEnabled(pluginId: string): Promise<boolean> {
