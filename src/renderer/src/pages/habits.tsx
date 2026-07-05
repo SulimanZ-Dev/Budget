@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Flame } from 'lucide-react'
+import { Flame, CalendarX } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '@/store/app-store'
@@ -11,10 +11,12 @@ export function HabitsPage(): JSX.Element {
   const { profile } = useAppStore()
   const [streak, setStreak] = useState({ current: 0, longest: 0 })
   const [moods, setMoods] = useState<{ year: number; month: number; rating: number; emoji: string }[]>([])
+  const [missedDays, setMissedDays] = useState<string[]>([])
 
   useEffect(() => {
     window.api.settings.get('spendingStreak').then((s) => s && setStreak(s))
     window.api.mood.list().then(setMoods)
+    window.api.habits.missedDays().then(setMissedDays)
   }, [])
 
   async function rateMonth(rating: number): Promise<void> {
@@ -47,6 +49,21 @@ export function HabitsPage(): JSX.Element {
           </div>
         </CardContent>
       </Card>
+
+      {missedDays.length > 0 && (
+        <Card>
+          <CardContent className="flex items-start gap-4 p-6">
+            <CalendarX className="h-8 w-8 text-destructive shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Missed tracking days</p>
+              <p className="text-sm text-muted-foreground">
+                No transactions recorded on: {missedDays.slice(0, 10).join(', ')}
+                {missedDays.length > 10 && ` and ${missedDays.length - 10} more`}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

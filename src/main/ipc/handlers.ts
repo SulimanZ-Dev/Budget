@@ -1212,6 +1212,26 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return true
   })
 
+  ipcMain.handle('habits:missedDays', () => {
+    const dates = db()
+      .prepare(
+        `SELECT DISTINCT date FROM transactions
+         WHERE date >= date('now', '-30 days')
+         ORDER BY date`
+      )
+      .all() as { date: string }[]
+    const tracked = new Set(dates.map((d) => d.date))
+    const missed: string[] = []
+    const today = new Date()
+    for (let i = 1; i < 30; i++) {
+      const d = new Date(today)
+      d.setDate(d.getDate() - i)
+      const key = d.toISOString().slice(0, 10)
+      if (!tracked.has(key)) missed.push(key)
+    }
+    return missed
+  })
+
   // Analytics aggregates
   ipcMain.handle('analytics:summary', (_, year: number) => {
     const monthly = db()

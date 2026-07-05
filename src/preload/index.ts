@@ -149,6 +149,10 @@ const api = {
     set: (data: unknown) => ipcRenderer.invoke('mood:set', data)
   },
 
+  habits: {
+    missedDays: () => ipcRenderer.invoke('habits:missedDays')
+  },
+
   analytics: {
     summary: (year: number) => ipcRenderer.invoke('analytics:summary', year),
     mom: (year: number, month: number) => ipcRenderer.invoke('analytics:mom', year, month),
