@@ -295,6 +295,17 @@ function runMigrations(database: Database.Database): void {
     console.log('Subscriptions transaction_id migration skipped:', e)
   }
 
+  // Migration: Add tax_deductible column to subscriptions
+  try {
+    const subColumns = database.pragma('table_info(subscriptions)') as Array<{ name: string }>
+    if (!subColumns.some((c) => c.name === 'tax_deductible')) {
+      console.log('Adding tax_deductible column to subscriptions...')
+      database.exec('ALTER TABLE subscriptions ADD COLUMN tax_deductible INTEGER DEFAULT 0')
+    }
+  } catch (e) {
+    console.log('Subscriptions tax_deductible migration skipped:', e)
+  }
+
   try {
     const incomeSourceColumns = database.pragma('table_info(income_sources)') as Array<{ name: string }>
     const hasGrossOrNet = incomeSourceColumns.some((c) => c.name === 'gross_or_net')

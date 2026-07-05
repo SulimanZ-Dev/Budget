@@ -24,6 +24,7 @@ type RecurringItem = {
   website_url?: string
   transaction_id?: number | null
   transaction_description?: string | null
+  tax_deductible?: number
 }
 
 export function SubscriptionsPage(): JSX.Element {
@@ -33,7 +34,7 @@ export function SubscriptionsPage(): JSX.Element {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingType, setEditingType] = useState<'subscription' | 'income' | 'savings'>('subscription')
-  const [form, setForm] = useState({ name: '', amount: '', url: '', date: '' })
+  const [form, setForm] = useState({ name: '', amount: '', url: '', date: '', taxDeductible: false })
   const [filter, setFilter] = useState<'all' | 'subscription' | 'income' | 'savings'>('all')
   const [sort, setSort] = useState<'name' | 'amount' | 'date'>('amount')
 
@@ -62,7 +63,8 @@ export function SubscriptionsPage(): JSX.Element {
           next_billing_date: sub.next_billing_date,
           website_url: sub.website_url,
           transaction_id: sub.transaction_id,
-          transaction_description: sub.transaction_description
+          transaction_description: sub.transaction_description,
+          tax_deductible: sub.tax_deductible
         })),
         ...(incomeSources as IncomeSource[]).map((src) => ({
           type: 'income' as const,
@@ -133,7 +135,8 @@ export function SubscriptionsPage(): JSX.Element {
             amount,
             frequency: 'monthly',
             websiteUrl: form.url,
-            nextBillingDate: form.date || undefined
+            nextBillingDate: form.date || undefined,
+            taxDeductible: form.taxDeductible
           })
         } else {
           await window.api.subscriptions.create({
@@ -141,13 +144,14 @@ export function SubscriptionsPage(): JSX.Element {
             amount,
             frequency: 'monthly',
             websiteUrl: form.url,
-            nextBillingDate: form.date || undefined
+            nextBillingDate: form.date || undefined,
+            taxDeductible: form.taxDeductible
           })
         }
       }
       setEditingId(null)
       setEditingType('subscription')
-      setForm({ name: '', amount: '', url: '', date: '' })
+      setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false })
       setModalOpen(false)
       load()
     } catch {
@@ -305,6 +309,11 @@ export function SubscriptionsPage(): JSX.Element {
                               Linked
                             </span>
                           )}
+                          {item.tax_deductible ? (
+                            <span className="text-[10px] text-success/80 bg-success/10 px-1.5 py-0.5 rounded">
+                              Tax deductible
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     <h3 className="mt-3 font-semibold">{item.name}</h3>
@@ -336,7 +345,7 @@ export function SubscriptionsPage(): JSX.Element {
                           onClick={() => {
                             setEditingId(item.id)
                             setEditingType('subscription')
-                            setForm({ name: item.name, amount: String(item.amount), url: item.website_url ?? '', date: item.next_billing_date ?? '' })
+                            setForm({ name: item.name, amount: String(item.amount), url: item.website_url ?? '', date: item.next_billing_date ?? '', taxDeductible: !!item.tax_deductible })
                             setModalOpen(true)
                           }}
                         >
@@ -400,6 +409,16 @@ export function SubscriptionsPage(): JSX.Element {
               <Label>Next billing date</Label>
               <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="taxDeductible"
+                checked={form.taxDeductible}
+                onChange={(e) => setForm({ ...form, taxDeductible: e.target.checked })}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="taxDeductible">Tax deductible</Label>
+            </div>
             <Button onClick={save}>Save</Button>
           </div>
         </DialogContent>
@@ -418,6 +437,7 @@ interface Sub {
   color: string
   transaction_id?: number | null
   transaction_description?: string | null
+  tax_deductible?: number
 }
 
 interface IncomeSource {
