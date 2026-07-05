@@ -984,7 +984,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       // Check if a transaction already exists for this billing period
       const existingTx = db().prepare(
         `SELECT id FROM transactions WHERE notes = ? AND date = ? AND type = 'expense'`
-      ).get(`subscription:${sub.id}`, sub.next_billing_date, 'expense') as { id: number } | undefined
+      ).get(`subscription:${sub.id}`, sub.next_billing_date) as { id: number } | undefined
 
       if (!existingTx) {
         const result = createTransaction({
