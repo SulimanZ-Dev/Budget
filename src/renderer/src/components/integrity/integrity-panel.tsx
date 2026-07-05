@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Shield, AlertTriangle, CheckCircle2, RefreshCw, Trash2 } from 'lucide-react'
+import { Shield, AlertTriangle, CheckCircle2, RefreshCw, Trash2, FileSignature } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Card } from '../ui/card'
 
@@ -9,6 +9,7 @@ export function IntegrityPanel() {
   const [scanResults, setScanResults] = useState<any>(null)
   const [warnings, setWarnings] = useState<any[]>([])
   const [isLoadingWarnings, setIsLoadingWarnings] = useState(false)
+  const [isBackfilling, setIsBackfilling] = useState(false)
 
   useEffect(() => {
     loadWarnings()
@@ -55,6 +56,26 @@ export function IntegrityPanel() {
     }
   }
 
+  async function handleBackfill() {
+    setIsBackfilling(true)
+    try {
+      const result = await window.api.integrity.backfillHMACs()
+      if (result.success) {
+        await loadWarnings()
+        setScanResults(null)
+        // Re-scan to show updated state
+        const scan = await window.api.integrity.scan()
+        if (scan.success && scan.results) {
+          setScanResults(scan.results)
+        }
+      }
+    } catch (error) {
+      console.error('Backfill failed:', error)
+    } finally {
+      setIsBackfilling(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Card className="p-6 bg-card border-border">
@@ -83,6 +104,24 @@ export function IntegrityPanel() {
               <>
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Scan Database
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={handleBackfill}
+            disabled={isBackfilling}
+            size="sm"
+            variant="outline"
+          >
+            {isBackfilling ? (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                Signing...
+              </>
+            ) : (
+              <>
+                <FileSignature className="w-4 h-4 mr-2" />
+                Backfill HMACs
               </>
             )}
           </Button>
