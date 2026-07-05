@@ -138,6 +138,8 @@ export function SavingsPage(): JSX.Element {
           icon={PiggyBank}
           title="No savings recorded"
           description="Add a savings transaction above. It will reduce your available budget balance automatically."
+          actionLabel="Add savings"
+          onAction={() => useAppStore.getState().setTransactionModalOpen(true)}
         />
       ) : (
         <div className="space-y-2">

@@ -193,12 +193,14 @@ export function WealthPage(): JSX.Element {
               icon={Landmark}
               title="No wealth snapshots"
               description="Add your first monthly snapshot below to track net worth over time."
+              actionLabel="Take your first snapshot"
+              onAction={() => document.getElementById('snapshot-form')?.scrollIntoView({ behavior: 'smooth' })}
             />
           )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="snapshot-form">
         <CardHeader>
           <CardTitle>Monthly snapshot</CardTitle>
         </CardHeader>
