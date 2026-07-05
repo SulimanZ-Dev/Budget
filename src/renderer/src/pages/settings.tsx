@@ -33,11 +33,20 @@ export function SettingsPage(): JSX.Element {
   const [changePasswordSuccess, setChangePasswordSuccess] = useState(false)
   const [changePasswordLoading, setChangePasswordLoading] = useState(false)
   const [appVersion, setAppVersion] = useState('')
+  const [lastBackup, setLastBackup] = useState<string | null>(null)
 
   useEffect(() => {
     window.api.members.list().then(setMembers)
     window.api.getVersion().then(setAppVersion)
+    window.api.settings.get('lastDbBackup').then((v: string | null) => setLastBackup(v))
   }, [])
+
+  async function handleExportBackup(): Promise<void> {
+    await window.api.data.exportDb()
+    const now = new Date().toISOString().slice(0, 10)
+    await window.api.settings.set('lastDbBackup', now)
+    setLastBackup(now)
+  }
 
   async function saveProfile(): Promise<void> {
     await window.api.settings.setProfile({ ...profile })
@@ -329,6 +338,29 @@ export function SettingsPage(): JSX.Element {
               }}
               onBlur={saveProfile}
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Backup</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {lastBackup
+              ? `Last backup: ${lastBackup}`
+              : 'No backup yet. Schedule regular backups to protect your data.'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={handleExportBackup}>
+              <Download className="h-4 w-4" />
+              Backup now (SQLite)
+            </Button>
+            <Button variant="outline" onClick={() => window.api.data.exportJson()}>
+              <Download className="h-4 w-4" />
+              Export JSON
+            </Button>
           </div>
         </CardContent>
       </Card>
