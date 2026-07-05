@@ -22,6 +22,12 @@ export function SettingsPage(): JSX.Element {
   const [members, setMembers] = useState<{ id: number; name: string }[]>([])
   const [newMember, setNewMember] = useState('')
   const [saved, setSaved] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [changePasswordError, setChangePasswordError] = useState('')
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState(false)
+  const [changePasswordLoading, setChangePasswordLoading] = useState(false)
 
   useEffect(() => {
     window.api.members.list().then(setMembers)
@@ -37,6 +43,40 @@ export function SettingsPage(): JSX.Element {
     if (apiKey) {
       await window.api.ai.saveKey(apiKey)
       setApiKey('')
+    }
+  }
+
+  async function handleChangePassword(): Promise<void> {
+    setChangePasswordError('')
+    setChangePasswordSuccess(false)
+    if (!currentPassword) {
+      setChangePasswordError('Current password is required')
+      return
+    }
+    if (!newPassword || newPassword.length < 8) {
+      setChangePasswordError('New password must be at least 8 characters')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setChangePasswordError('Passwords do not match')
+      return
+    }
+    setChangePasswordLoading(true)
+    try {
+      const result = await window.api.encryption.changePassword(currentPassword, newPassword)
+      if (result.success) {
+        setChangePasswordSuccess(true)
+        setCurrentPassword('')
+        setNewPassword('')
+        setConfirmPassword('')
+        setTimeout(() => setChangePasswordSuccess(false), 3000)
+      } else {
+        setChangePasswordError(result.error || 'Failed to change password')
+      }
+    } catch {
+      setChangePasswordError('Failed to change password')
+    } finally {
+      setChangePasswordLoading(false)
     }
   }
 
@@ -272,6 +312,53 @@ export function SettingsPage(): JSX.Element {
           >
             <Trash2 className="h-4 w-4" />
             Wipe data & restart
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Lock className="h-4 w-4" />
+            Encryption
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label>Current password</Label>
+            <Input
+              type="password"
+              placeholder="Enter current master password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label>New password</Label>
+            <Input
+              type="password"
+              placeholder="At least 8 characters"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label>Confirm new password</Label>
+            <Input
+              type="password"
+              placeholder="Repeat new password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+          </div>
+          {changePasswordError && (
+            <p className="text-sm text-destructive">{changePasswordError}</p>
+          )}
+          {changePasswordSuccess && (
+            <p className="text-sm text-success">Password changed successfully.</p>
+          )}
+          <Button onClick={handleChangePassword} disabled={changePasswordLoading}>
+            {changePasswordLoading ? 'Changing...' : 'Change password'}
           </Button>
         </CardContent>
       </Card>
