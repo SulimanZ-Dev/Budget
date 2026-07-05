@@ -33,7 +33,8 @@ import {
   bulkDeleteTransactions,
   bulkFlagTransactions,
   undoLastChange,
-  importTransactionsFromCsvWithEvents
+  importTransactionsFromCsvWithEvents,
+  rebuildTransactionsProjection
 } from '../commands/transaction-commands'
 import {
   getTransactions,
@@ -1534,6 +1535,16 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       return true
     })
     return tx()
+  })
+
+  ipcMain.handle('data:repairFromEvents', () => {
+    try {
+      const count = rebuildTransactionsProjection()
+      return { success: true, count }
+    } catch (error) {
+      console.error('Repair failed:', error)
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
   })
 
   ipcMain.handle('ai:saveInsight', (_, content: string, year: number, month: number) => {

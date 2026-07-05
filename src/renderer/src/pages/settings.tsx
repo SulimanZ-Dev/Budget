@@ -12,7 +12,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { useAppStore, type DisplayCurrency } from '@/store/app-store'
-import { Download, Upload, Trash2, Key, Printer, Lock } from 'lucide-react'
+import { Download, Upload, Trash2, Key, Printer, Lock, RotateCcw } from 'lucide-react'
 import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { IntegrityPanel } from '@/components/integrity/integrity-panel'
 
@@ -307,6 +307,23 @@ export function SettingsPage(): JSX.Element {
           <Button variant="outline" onClick={() => window.api.data.importJson()}>
             <Upload className="h-4 w-4" />
             Import JSON
+          </Button>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              if (confirm('Rebuild the transactions table from event history? Data loss is possible if events are incomplete.')) {
+                const result = await window.api.data.repairFromEvents()
+                if (result.success) {
+                  alert(`Repair complete. Rebuilt ${result.count} transactions from events.`)
+                  window.location.reload()
+                } else {
+                  alert('Repair failed: ' + (result.error || 'Unknown error'))
+                }
+              }
+            }}
+          >
+            <RotateCcw className="h-4 w-4" />
+            Repair from events
           </Button>
           <Button
             variant="outline"
