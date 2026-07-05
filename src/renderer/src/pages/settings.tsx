@@ -16,6 +16,7 @@ import { Download, Upload, Trash2, Key, Printer, Lock, RotateCcw } from 'lucide-
 import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { IntegrityPanel } from '@/components/integrity/integrity-panel'
 import { PluginRegistry } from '@/components/plugins/plugin-registry'
+import { SchedulerCard } from '@/components/shared/scheduler-card'
 
 export function SettingsPage(): JSX.Element {
   const { profile, setProfile } = useAppStore()
@@ -379,6 +380,8 @@ export function SettingsPage(): JSX.Element {
           </Button>
         </CardContent>
       </Card>
+
+      <SchedulerCard />
 
       <Card>
         <CardHeader>

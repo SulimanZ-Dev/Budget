@@ -24,6 +24,11 @@ const api = {
       ipcRenderer.invoke('settings:setProfile', profile)
   },
 
+  scheduler: {
+    getConfig: () => ipcRenderer.invoke('scheduler:getConfig'),
+    setConfig: (config: unknown) => ipcRenderer.invoke('scheduler:setConfig', config)
+  },
+
   currency: {
     fetch: () => ipcRenderer.invoke('currency:fetch'),
     cached: () => ipcRenderer.invoke('currency:cached')

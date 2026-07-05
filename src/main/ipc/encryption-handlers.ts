@@ -22,6 +22,7 @@ import {
   clearIntegrityWarnings,
   backfillHMACs
 } from '../crypto/integrity'
+import { start as startScheduler } from '../services/scheduler'
 
 const UNLOCK_ATTEMPTS_KEY = 'unlockAttempts'
 
@@ -130,6 +131,7 @@ export function registerEncryptionHandlers(): void {
       } else {
         // Initialize new encrypted database
         initDatabase()
+        startScheduler()
       }
       
       return { success: true }
@@ -179,6 +181,7 @@ export function registerEncryptionHandlers(): void {
       
       // Initialize database after successful unlock
       initDatabase()
+      startScheduler()
       
       return { success: true }
     } catch (error) {

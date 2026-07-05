@@ -12,6 +12,7 @@ import {
   detectAnomalies
 } from '../services/ai'
 import { checkBudgetAlerts } from '../services/budget-alerts'
+import { getSchedulerConfig, setSchedulerConfig } from '../services/scheduler'
 import {
   importTransactionsFromCsv,
   parseCsvPreview,
@@ -124,6 +125,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       .prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('profile', ?)")
       .run(JSON.stringify(profile))
     return profile
+  })
+
+  ipcMain.handle('scheduler:getConfig', () => getSchedulerConfig())
+
+  ipcMain.handle('scheduler:setConfig', (_, config) => {
+    setSchedulerConfig(config)
+    return true
   })
 
   // Years
