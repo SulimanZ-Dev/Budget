@@ -328,6 +328,16 @@ export function SettingsPage(): JSX.Element {
           </Button>
           <Button
             variant="outline"
+            onClick={async () => {
+              await window.api.currency.fetch()
+              alert('Exchange rates refreshed.')
+            }}
+          >
+            <RotateCcw className="h-4 w-4" />
+            Refresh rates
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => window.location.hash = '#/report?print=1'}
           >
             <Printer className="h-4 w-4" />
