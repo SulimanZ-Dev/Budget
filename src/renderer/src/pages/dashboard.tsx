@@ -135,6 +135,11 @@ export function DashboardPage(): JSX.Element {
         />
       </div>
 
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatTile label="Tracking streak" value={stats.streak.current} delay={0.2} format="number" color="info" />
+        <StatTile label="Longest streak" value={stats.streak.longest} delay={0.25} format="number" color="info" />
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-3">
         <motion.div
           className="lg:col-span-2"
