@@ -1668,7 +1668,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
          CAST(strftime('%m', date) AS INTEGER) as month,
          COALESCE(SUM(amount), 0) as spent
          FROM transactions
-         WHERE category_id = ? AND type = 'expense'
+         WHERE category_id = ? AND type IN ('expense', 'savings')
            AND (CAST(strftime('%Y', date) AS INTEGER) * 12 + (CAST(strftime('%m', date) AS INTEGER) - 1)) BETWEEN ? AND ?
          GROUP BY period, month ORDER BY period`
       )

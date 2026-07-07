@@ -36,6 +36,67 @@ interface CategoryVariance {
   drivers: string[]
 }
 
+interface CategoryBaseline {
+  lower: number
+  upper: number
+  median: number
+  status: 'below' | 'normal' | 'above'
+  markerPercent: number
+  lowerPercent: number
+  upperPercent: number
+}
+
+function roundedCurrency(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle]
+}
+
+function categoryBaseline(trend: { month: number; spent: number }[] | undefined, currentSpent: number): CategoryBaseline | null {
+  if (!trend || trend.length < 4) return null
+  const history = trend.slice(0, -1).map((point) => point.spent)
+  if (history.length < 3 || history.every((value) => value === 0)) return null
+
+  const center = median(history)
+  const deviations = history.map((value) => Math.abs(value - center))
+  const robustSpread = median(deviations) * 1.4826
+  const observedSpread = Math.max(...history) - Math.min(...history)
+  const spread = robustSpread > 0 ? robustSpread : observedSpread / 2
+  const lower = Math.max(0, center - spread)
+  const upper = Math.max(center + spread, center, 1)
+  const maxScale = Math.max(upper, currentSpent, 1)
+  const status = currentSpent > upper ? 'above' : currentSpent < lower ? 'below' : 'normal'
+
+  return {
+    lower: roundedCurrency(lower),
+    upper: roundedCurrency(upper),
+    median: roundedCurrency(center),
+    status,
+    markerPercent: Math.min(99, Math.max(1, (currentSpent / maxScale) * 100)),
+    lowerPercent: Math.min(100, (lower / maxScale) * 100),
+    upperPercent: Math.min(100, (upper / maxScale) * 100)
+  }
+}
+
+const baselineLabelClass: Record<CategoryBaseline['status'], string> = {
+  below: 'text-info',
+  normal: 'text-success',
+  above: 'text-warning'
+}
+
+const baselineLabel: Record<CategoryBaseline['status'], string> = {
+  below: 'Below usual',
+  normal: 'In usual range',
+  above: 'Above usual'
+}
+
 export function BudgetPage(): JSX.Element {
   const {
     profile,
@@ -110,12 +171,12 @@ export function BudgetPage(): JSX.Element {
       )
       setSubscriptionMonthly(monthlySubs)
 
-      // Load 6-month trends for freshly-loaded visible categories.
+      // Load one extra month so the current month can be compared against a prior-month baseline.
       const loadedVisible = profile.autoHideZeroCategories
         ? loadedEntries.filter((e) => e.amount > 0 || (map[e.category_id] || 0) > 0)
         : loadedEntries
       const trendRequests = loadedVisible.map(cat =>
-        window.api.transactions.categoryTrend(cat.category_id, profile.year, selectedMonth, 6)
+        window.api.transactions.categoryTrend(cat.category_id, profile.year, selectedMonth, 7)
       )
       const varianceRequests = loadedVisible.map(cat =>
         window.api.transactions.categoryVariance(cat.category_id, profile.year, selectedMonth)
@@ -236,6 +297,7 @@ export function BudgetPage(): JSX.Element {
             const budget = cat.amount * cpi
             const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0
             const over = budget > 0 && spent > budget
+            const baseline = categoryBaseline(trends[cat.category_id], spent)
             
             return (
               <motion.div
@@ -304,6 +366,34 @@ export function BudgetPage(): JSX.Element {
                     />
                   </div>
                 ) : null}
+                {baseline && (
+                  <div className="mt-3 rounded-md border bg-muted/20 p-3">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className={`font-medium ${baselineLabelClass[baseline.status]}`}>
+                        {baselineLabel[baseline.status]}
+                      </span>
+                      <span className="text-muted-foreground">
+                        Normal {formatMoney(baseline.lower, profile.displayCurrency, rates)} - {formatMoney(baseline.upper, profile.displayCurrency, rates)}
+                      </span>
+                    </div>
+                    <div className="relative mt-2 h-2 rounded-full bg-muted">
+                      <div
+                        className="absolute top-0 h-2 rounded-full bg-primary/30"
+                        style={{
+                          left: `${baseline.lowerPercent}%`,
+                          width: `${Math.max(2, baseline.upperPercent - baseline.lowerPercent)}%`
+                        }}
+                      />
+                      <div
+                        className="absolute top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-foreground"
+                        style={{ left: `${baseline.markerPercent}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Median baseline: {formatMoney(baseline.median, profile.displayCurrency, rates)}
+                    </p>
+                  </div>
+                )}
                 {variances[cat.category_id] && (
                   <div
                     className="mt-3 border-t pt-3"
