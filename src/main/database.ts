@@ -62,6 +62,7 @@ function ensureMainAccount(database: Database.Database): number {
       name TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('checking', 'savings', 'cash', 'other')) DEFAULT 'checking',
       currency TEXT NOT NULL DEFAULT 'SEK',
+      opening_balance REAL DEFAULT 0,
       is_archived INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     )
@@ -88,6 +89,7 @@ function addColumnIfMissing(database: Database.Database, table: string, column: 
 function runAccountMigration(database: Database.Database): void {
   try {
     const mainAccountId = ensureMainAccount(database)
+    addColumnIfMissing(database, 'accounts', 'opening_balance', 'opening_balance REAL DEFAULT 0')
     addColumnIfMissing(database, 'transactions', 'account_id', 'account_id INTEGER')
     addColumnIfMissing(database, 'subscriptions', 'account_id', 'account_id INTEGER')
     addColumnIfMissing(database, 'savings_sources', 'account_id', 'account_id INTEGER')
@@ -170,6 +172,7 @@ function runMigrations(database: Database.Database): void {
       name TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('checking', 'savings', 'cash', 'other')) DEFAULT 'checking',
       currency TEXT NOT NULL DEFAULT 'SEK',
+      opening_balance REAL DEFAULT 0,
       is_archived INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );

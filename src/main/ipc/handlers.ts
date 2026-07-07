@@ -286,6 +286,22 @@ function normalizeAccountId(accountId: unknown, database = getDatabase()): numbe
   return getPrimaryAccountId(database)
 }
 
+function normalizeAccountOpeningBalance(value: unknown): number {
+  const parsed = typeof value === 'string' ? Number(value.replace(',', '.')) : Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return roundCurrency(parsed)
+}
+
+function accountTransactionBalanceExpression(): string {
+  return `
+    CASE
+      WHEN t.type = 'income' THEN t.amount
+      WHEN t.type = 'savings' AND a.type = 'savings' THEN t.amount
+      ELSE -t.amount
+    END
+  `
+}
+
 export function registerIpcHandlers(getWindow: GetWindow): void {
   const db = () => getDatabase()
 
@@ -346,10 +362,15 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
   // Accounts
   ipcMain.handle('accounts:list', () => {
+    const transactionBalance = accountTransactionBalanceExpression()
     return db()
       .prepare(
         `SELECT a.*,
-         COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE -t.amount END), 0) as balance,
+         COALESCE(a.opening_balance, 0) + COALESCE(SUM(${transactionBalance}), 0) as balance,
+         COALESCE(SUM(${transactionBalance}), 0) as activity_balance,
+         COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0) as income_total,
+         COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) as expense_total,
+         COALESCE(SUM(CASE WHEN t.type = 'savings' THEN t.amount ELSE 0 END), 0) as savings_total,
          COUNT(t.id) as transaction_count
          FROM accounts a
          LEFT JOIN transactions t ON t.account_id = a.id
@@ -364,9 +385,10 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (!name) throw new Error('Account name is required')
     const type = ['checking', 'savings', 'cash', 'other'].includes(account.type) ? account.type : 'checking'
     const currency = ['SEK', 'EUR', 'USD'].includes(account.currency) ? account.currency : 'SEK'
+    const openingBalance = normalizeAccountOpeningBalance(account.openingBalance ?? account.opening_balance)
     const result = db()
-      .prepare('INSERT INTO accounts (name, type, currency, is_archived) VALUES (?, ?, ?, 0)')
-      .run(name, type, currency)
+      .prepare('INSERT INTO accounts (name, type, currency, opening_balance, is_archived) VALUES (?, ?, ?, ?, 0)')
+      .run(name, type, currency, openingBalance)
     return { id: Number(result.lastInsertRowid) }
   })
 
@@ -375,9 +397,10 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (!name) throw new Error('Account name is required')
     const type = ['checking', 'savings', 'cash', 'other'].includes(account.type) ? account.type : 'checking'
     const currency = ['SEK', 'EUR', 'USD'].includes(account.currency) ? account.currency : 'SEK'
+    const openingBalance = normalizeAccountOpeningBalance(account.openingBalance ?? account.opening_balance)
     db()
-      .prepare('UPDATE accounts SET name = ?, type = ?, currency = ? WHERE id = ?')
-      .run(name, type, currency, id)
+      .prepare('UPDATE accounts SET name = ?, type = ?, currency = ?, opening_balance = ? WHERE id = ?')
+      .run(name, type, currency, openingBalance, id)
     return true
   })
 

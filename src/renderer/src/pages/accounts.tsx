@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Wallet, Plus, Pencil, Archive } from 'lucide-react'
+import { Wallet, Plus, Pencil, Archive, Landmark, PiggyBank, ReceiptText } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -14,8 +14,13 @@ type Account = {
   name: string
   type: 'checking' | 'savings' | 'cash' | 'other'
   currency: 'SEK' | 'EUR' | 'USD'
+  opening_balance: number
   is_archived: number
   balance: number
+  activity_balance: number
+  income_total: number
+  expense_total: number
+  savings_total: number
   transaction_count: number
 }
 
@@ -31,7 +36,8 @@ export function AccountsPage(): JSX.Element {
   const [form, setForm] = useState({
     name: '',
     type: 'checking' as Account['type'],
-    currency: 'SEK' as Account['currency']
+    currency: 'SEK' as Account['currency'],
+    openingBalance: ''
   })
 
   useEffect(() => {
@@ -44,13 +50,18 @@ export function AccountsPage(): JSX.Element {
 
   function openCreate(): void {
     setEditing(null)
-    setForm({ name: '', type: 'checking', currency: profile.baseCurrency })
+    setForm({ name: '', type: 'checking', currency: profile.baseCurrency, openingBalance: '' })
     setOpen(true)
   }
 
   function openEdit(account: Account): void {
     setEditing(account)
-    setForm({ name: account.name, type: account.type, currency: account.currency })
+    setForm({
+      name: account.name,
+      type: account.type,
+      currency: account.currency,
+      openingBalance: String(account.opening_balance ?? 0)
+    })
     setOpen(true)
   }
 
@@ -79,6 +90,12 @@ export function AccountsPage(): JSX.Element {
   const activeAccounts = accounts.filter((account) => account.is_archived !== 1)
   const archivedAccounts = accounts.filter((account) => account.is_archived === 1)
   const totalBalance = activeAccounts.reduce((sum, account) => sum + account.balance, 0)
+  const everydayBalance = activeAccounts
+    .filter((account) => account.type !== 'savings')
+    .reduce((sum, account) => sum + account.balance, 0)
+  const savingsBalance = activeAccounts
+    .filter((account) => account.type === 'savings')
+    .reduce((sum, account) => sum + account.balance, 0)
 
   return (
     <div className="space-y-6 p-6">
@@ -93,13 +110,32 @@ export function AccountsPage(): JSX.Element {
         </Button>
       </div>
 
-      <Card>
-        <CardContent className="p-6">
-          <p className="text-sm text-muted-foreground">Total active balance</p>
-          <p className="text-3xl font-bold">{formatMoney(totalBalance, profile.displayCurrency, rates)}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Computed from transaction history across active accounts.</p>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardContent className="p-6">
+            <Wallet className="mb-3 h-5 w-5 text-primary" />
+            <p className="text-sm text-muted-foreground">Total active balance</p>
+            <p className="text-3xl font-bold">{formatMoney(totalBalance, profile.displayCurrency, rates)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Starting balances plus account activity.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <Landmark className="mb-3 h-5 w-5 text-primary" />
+            <p className="text-sm text-muted-foreground">Everyday accounts</p>
+            <p className="text-3xl font-bold">{formatMoney(everydayBalance, profile.displayCurrency, rates)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Checking, cash, and other spendable accounts.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <PiggyBank className="mb-3 h-5 w-5 text-primary" />
+            <p className="text-sm text-muted-foreground">Savings accounts</p>
+            <p className="text-3xl font-bold">{formatMoney(savingsBalance, profile.displayCurrency, rates)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Savings transactions add here when assigned to savings.</p>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {activeAccounts.map((account) => (
@@ -118,6 +154,22 @@ export function AccountsPage(): JSX.Element {
                 <p className="text-xs text-muted-foreground">
                   {account.transaction_count} transactions - {account.currency}
                 </p>
+              </div>
+              <div className="grid gap-2 rounded-md bg-muted/40 p-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Starting balance</span>
+                  <span>{formatMoney(account.opening_balance ?? 0, profile.displayCurrency, rates)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Activity</span>
+                  <span>{formatMoney(account.activity_balance ?? 0, profile.displayCurrency, rates)}</span>
+                </div>
+                {account.savings_total > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Savings activity</span>
+                    <span>{formatMoney(account.savings_total, profile.displayCurrency, rates)}</span>
+                  </div>
+                )}
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => openEdit(account)}>
@@ -187,6 +239,24 @@ export function AccountsPage(): JSX.Element {
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Starting balance</Label>
+              <div className="relative">
+                <ReceiptText className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="number"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={form.openingBalance}
+                  onChange={(e) => setForm({ ...form, openingBalance: e.target.value })}
+                  className="pl-9"
+                  placeholder="0.00"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Use the real bank balance from before this app's transaction history starts.
+              </p>
             </div>
             <Button onClick={save}>{editing ? 'Save changes' : 'Create account'}</Button>
           </div>

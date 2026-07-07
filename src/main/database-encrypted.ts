@@ -71,6 +71,7 @@ function ensureMainAccount(database: SqlCipher.Database): number {
       name TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('checking', 'savings', 'cash', 'other')) DEFAULT 'checking',
       currency TEXT NOT NULL DEFAULT 'SEK',
+      opening_balance REAL DEFAULT 0,
       is_archived INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     )
@@ -97,6 +98,7 @@ function addColumnIfMissing(database: SqlCipher.Database, table: string, column:
 function runAccountMigration(database: SqlCipher.Database): void {
   try {
     const mainAccountId = ensureMainAccount(database)
+    addColumnIfMissing(database, 'accounts', 'opening_balance', 'opening_balance REAL DEFAULT 0')
     const transactionColumnAdded = addColumnIfMissing(database, 'transactions', 'account_id', 'account_id INTEGER')
     addColumnIfMissing(database, 'subscriptions', 'account_id', 'account_id INTEGER')
     addColumnIfMissing(database, 'savings_sources', 'account_id', 'account_id INTEGER')
@@ -261,6 +263,7 @@ function runMigrations(database: SqlCipher.Database): void {
       name TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('checking', 'savings', 'cash', 'other')) DEFAULT 'checking',
       currency TEXT NOT NULL DEFAULT 'SEK',
+      opening_balance REAL DEFAULT 0,
       is_archived INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
