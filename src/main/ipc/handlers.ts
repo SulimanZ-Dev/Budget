@@ -396,6 +396,21 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return true
   })
 
+  ipcMain.handle('privacy:auditState', () => {
+    const backupRow = db().prepare("SELECT value FROM settings WHERE key = 'lastDbBackup'").get() as
+      | { value: string }
+      | undefined
+    const warningRow = db().prepare('SELECT COUNT(*) as count FROM integrity_warnings').get() as { count: number }
+    return {
+      appDataPath: app.getPath('appData'),
+      databasePath: getDbPath(),
+      databaseReady: isDatabaseInitialized(),
+      apiKeyPresent: hasApiKey(),
+      lastBackup: backupRow ? JSON.parse(backupRow.value) : null,
+      integrityWarningCount: warningRow.count
+    }
+  })
+
   ipcMain.handle('rules:list', () => {
     return db()
       .prepare('SELECT r.*, c.name as category_name FROM categorization_rules r LEFT JOIN categories c ON r.category_id = c.id ORDER BY r.priority ASC, r.id ASC')

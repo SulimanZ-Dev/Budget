@@ -37,6 +37,10 @@ const api = {
     setConfig: (config: unknown) => ipcRenderer.invoke('scheduler:setConfig', config)
   },
 
+  privacy: {
+    auditState: () => ipcRenderer.invoke('privacy:auditState')
+  },
+
   rules: {
     list: () => ipcRenderer.invoke('rules:list'),
     create: (rule: unknown) => ipcRenderer.invoke('rules:create', rule),

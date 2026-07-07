@@ -20,7 +20,8 @@ import {
   Lock,
   LockOpen,
   Search,
-  Calculator
+  Calculator,
+  ShieldCheck
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
@@ -40,6 +41,7 @@ const navItems = [
   { to: '/savings', icon: PiggyBank, label: 'Savings' },
   { to: '/habits', icon: Heart, label: 'Habits' },
   { to: '/tax', icon: Calculator, label: 'Tax' },
+  { to: '/privacy', icon: ShieldCheck, label: 'Privacy' },
   { to: '/ai', icon: Sparkles, label: 'AI Assistant' },
   { to: '/settings', icon: Settings, label: 'Settings' }
 ]
