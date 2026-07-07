@@ -27,11 +27,14 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAppDialog } from '@/components/shared/app-dialog'
 
 type RecurringFilter = 'all' | 'recurring' | 'oneoff'
+const PAGE_SIZE = 100
 
 export function TransactionsPage(): JSX.Element {
   const { profile, selectedMonth, rates, openAI, openDrawer, closeDrawer, refreshTrigger } = useAppStore()
   const navigate = useNavigate()
   const [transactions, setTransactions] = useState<TransactionRowData[]>([])
+  const [totalTransactions, setTotalTransactions] = useState(0)
+  const [page, setPage] = useState(1)
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [accounts, setAccounts] = useState<{ id: number; name: string; is_archived: number }[]>([])
   const [importAccountId, setImportAccountId] = useState('')
@@ -61,8 +64,12 @@ export function TransactionsPage(): JSX.Element {
   }, [])
 
   useEffect(() => {
+    setPage(1)
+  }, [profile.year, selectedMonth, debouncedSearch, flaggedOnly, categoryFilter, typeFilter, recurringFilter, sort, refreshTrigger])
+
+  useEffect(() => {
     load()
-  }, [profile.year, selectedMonth, debouncedSearch, flaggedOnly, categoryFilter, typeFilter, recurringFilter, refreshTrigger])
+  }, [profile.year, selectedMonth, debouncedSearch, flaggedOnly, categoryFilter, typeFilter, recurringFilter, sort, page, refreshTrigger])
 
   async function load(): Promise<void> {
     setLoading(true)
@@ -70,15 +77,27 @@ export function TransactionsPage(): JSX.Element {
       year: profile.year,
       month: selectedMonth,
       search: debouncedSearch || undefined,
-      flagged: flaggedOnly || undefined
+      flagged: flaggedOnly || undefined,
+      sort
     }
     if (categoryFilter !== 'all') filters.categoryId = parseInt(categoryFilter)
     if (typeFilter !== 'all') filters.type = typeFilter
     if (recurringFilter === 'recurring') filters.recurring = true
     if (recurringFilter === 'oneoff') filters.recurring = false
 
-    const data = await window.api.transactions.list(filters)
+    const pagedFilters = {
+      ...filters,
+      paginate: true,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE
+    }
+    const [data, count] = await Promise.all([
+      window.api.transactions.list(pagedFilters),
+      window.api.transactions.count(filters)
+    ])
     setTransactions(data as TransactionRowData[])
+    setTotalTransactions(Number(count) || 0)
+    setSelected(new Set())
     setLoading(false)
   }
 
@@ -152,13 +171,10 @@ export function TransactionsPage(): JSX.Element {
     )
   }
 
-  const filteredForViews = [...transactions].sort((a, b) => {
-    if (sort === 'amount-desc') return b.amount - a.amount
-    if (sort === 'amount-asc') return a.amount - b.amount
-    if (sort === 'category') return (a.category_name ?? '').localeCompare(b.category_name ?? '')
-    if (sort === 'date-asc') return a.date.localeCompare(b.date)
-    return b.date.localeCompare(a.date) // date-desc default
-  })
+  const filteredForViews = transactions
+  const pageCount = Math.max(1, Math.ceil(totalTransactions / PAGE_SIZE))
+  const pageStart = totalTransactions === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+  const pageEnd = Math.min(page * PAGE_SIZE, totalTransactions)
 
   const grouped = weeklyView
     ? filteredForViews.reduce<Record<string, TransactionRowData[]>>((acc, t) => {
@@ -268,6 +284,34 @@ export function TransactionsPage(): JSX.Element {
         </div>
       )}
       {listContent}
+      {!loading && totalTransactions > PAGE_SIZE && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3 text-sm">
+          <span className="text-muted-foreground">
+            Showing {pageStart}-{pageEnd} of {totalTransactions}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              Previous
+            </Button>
+            <span className="min-w-16 text-center text-muted-foreground">
+              {page} / {pageCount}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= pageCount}
+              onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
       <BulkBar selected={selected} categories={categories} onDone={() => { setSelected(new Set()); load() }} />
       <CsvImportModal
         open={csvOpen}

@@ -46,6 +46,7 @@ import {
 } from '../queries/transaction-queries'
 
 type GetWindow = () => BrowserWindow | null
+type TransactionFilters = Record<string, unknown>
 
 function parseDateToLocalYearMonth(dateStr: string): { year: number; month: number } {
   const parts = dateStr.split('-')
@@ -68,6 +69,74 @@ function addMonths(dateStr: string, months: number): string {
 function getNow(): Date {
   const now = new Date()
   return now
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number, max?: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  const normalized = Math.max(1, Math.floor(parsed))
+  return max ? Math.min(normalized, max) : normalized
+}
+
+function normalizeOffset(value: unknown): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.floor(parsed))
+}
+
+function buildTransactionWhere(filters?: TransactionFilters): { sql: string; params: unknown[] } {
+  let sql = ' WHERE 1=1'
+  const params: unknown[] = []
+
+  const year = Number(filters?.year)
+  const month = Number(filters?.month)
+  if (Number.isInteger(year) && year > 0 && Number.isInteger(month) && month >= 1 && month <= 12) {
+    const start = `${year}-${String(month).padStart(2, '0')}-01`
+    const nextYear = month === 12 ? year + 1 : year
+    const nextMonth = month === 12 ? 1 : month + 1
+    const end = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
+    sql += ' AND t.date >= ? AND t.date < ?'
+    params.push(start, end)
+  } else if (Number.isInteger(year) && year > 0) {
+    sql += ' AND t.date >= ? AND t.date < ?'
+    params.push(`${year}-01-01`, `${year + 1}-01-01`)
+  }
+
+  if (filters?.categoryId) {
+    sql += ' AND t.category_id = ?'
+    params.push(filters.categoryId)
+  }
+  if (filters?.type) {
+    sql += ' AND t.type = ?'
+    params.push(filters.type)
+  }
+  if (filters?.accountId) {
+    sql += ' AND t.account_id = ?'
+    params.push(filters.accountId)
+  }
+  if (filters?.flagged) {
+    sql += ' AND t.is_unnecessary = 1'
+  }
+  if (filters?.search) {
+    sql += ' AND t.description LIKE ? COLLATE NOCASE'
+    params.push(`%${filters.search}%`)
+  }
+  if (filters?.recurring === true) {
+    sql += ' AND t.is_recurring = 1'
+  }
+  if (filters?.recurring === false) {
+    sql += ' AND t.is_recurring = 0'
+  }
+
+  return { sql, params }
+}
+
+function getTransactionOrderBy(sort: unknown): string {
+  if (sort === 'amount-desc') return ' ORDER BY t.amount DESC, t.date DESC, t.id DESC'
+  if (sort === 'amount-asc') return ' ORDER BY t.amount ASC, t.date DESC, t.id DESC'
+  if (sort === 'category') return ' ORDER BY c.name COLLATE NOCASE ASC, t.date DESC, t.id DESC'
+  if (sort === 'date-asc') return ' ORDER BY t.date ASC, t.id ASC'
+  return ' ORDER BY t.date DESC, t.id DESC'
 }
 
 function getPrimaryAccountId(database = getDatabase()): number {
@@ -490,44 +559,27 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
                FROM transactions t
                LEFT JOIN categories c ON t.category_id = c.id
                LEFT JOIN household_members m ON t.member_id = m.id
-               LEFT JOIN accounts a ON t.account_id = a.id WHERE 1=1`
-    const params: unknown[] = []
-    if (filters?.year) {
-      sql += ` AND strftime('%Y', t.date) = ?`
-      params.push(String(filters.year))
+               LEFT JOIN accounts a ON t.account_id = a.id`
+    const { sql: whereSql, params } = buildTransactionWhere(filters)
+    sql += whereSql
+    sql += getTransactionOrderBy(filters?.sort)
+
+    if (filters?.paginate === true || filters?.limit !== undefined) {
+      sql += ' LIMIT ? OFFSET ?'
+      params.push(normalizePositiveInteger(filters?.limit, 100, 500), normalizeOffset(filters?.offset))
     }
-    if (filters?.month) {
-      sql += ` AND strftime('%m', t.date) = ?`
-      params.push(String(filters.month).padStart(2, '0'))
-    }
-    if (filters?.categoryId) {
-      sql += ' AND t.category_id = ?'
-      params.push(filters.categoryId)
-    }
-    if (filters?.type) {
-      sql += ' AND t.type = ?'
-      params.push(filters.type)
-    }
-    if (filters?.accountId) {
-      sql += ' AND t.account_id = ?'
-      params.push(filters.accountId)
-    }
-    if (filters?.flagged) {
-      sql += ' AND t.is_unnecessary = 1'
-    }
-    if (filters?.search) {
-      sql += ' AND t.description LIKE ?'
-      params.push(`%${filters.search}%`)
-    }
-    if (filters?.recurring === true) {
-      sql += ' AND t.is_recurring = 1'
-    }
-    if (filters?.recurring === false) {
-      sql += ' AND t.is_recurring = 0'
-    }
-    sql += ' ORDER BY t.date DESC, t.id DESC'
+
     return db().prepare(sql).all(...params)
   })
+
+  ipcMain.handle('transactions:count', (_, filters?: Record<string, unknown>) => {
+    const { sql: whereSql, params } = buildTransactionWhere(filters)
+    const row = db()
+      .prepare(`SELECT COUNT(*) as count FROM transactions t${whereSql}`)
+      .get(...params) as { count: number }
+    return row.count
+  })
+
   // Use command pattern for transaction creation
   ipcMain.handle('transactions:create', (_, tx) => {
     if (!Number.isFinite(tx.amount) || tx.amount <= 0) {

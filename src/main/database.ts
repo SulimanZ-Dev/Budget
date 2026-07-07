@@ -95,6 +95,13 @@ function runAccountMigration(database: Database.Database): void {
 
     database.exec(`
       CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
+      CREATE INDEX IF NOT EXISTS idx_transactions_date_id ON transactions(date DESC, id DESC);
+      CREATE INDEX IF NOT EXISTS idx_transactions_account_date ON transactions(account_id, date DESC);
+      CREATE INDEX IF NOT EXISTS idx_transactions_category_date ON transactions(category_id, date DESC);
+      CREATE INDEX IF NOT EXISTS idx_transactions_type_date ON transactions(type, date DESC);
+      CREATE INDEX IF NOT EXISTS idx_transactions_flagged_date ON transactions(is_unnecessary, date DESC);
+      CREATE INDEX IF NOT EXISTS idx_transactions_recurring_date ON transactions(is_recurring, date DESC);
+      CREATE INDEX IF NOT EXISTS idx_transactions_description ON transactions(description COLLATE NOCASE);
       CREATE INDEX IF NOT EXISTS idx_subscriptions_account ON subscriptions(account_id);
     `)
   } catch (e) {
@@ -312,6 +319,13 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
     CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_date_id ON transactions(date DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_account_date ON transactions(account_id, date DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_category_date ON transactions(category_id, date DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_type_date ON transactions(type, date DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_flagged_date ON transactions(is_unnecessary, date DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_recurring_date ON transactions(is_recurring, date DESC);
+    CREATE INDEX IF NOT EXISTS idx_transactions_description ON transactions(description COLLATE NOCASE);
   `)
 
   // Migration: Update existing transactions table to support savings and transfer types
