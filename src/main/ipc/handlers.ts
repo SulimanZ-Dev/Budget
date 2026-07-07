@@ -77,6 +77,19 @@ function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100
 }
 
+function csvCell(value: unknown): string {
+  const text = value == null ? '' : String(value)
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`
+  return text
+}
+
+function toCsv(headers: string[], rows: unknown[][]): string {
+  return [
+    headers.map(csvCell).join(','),
+    ...rows.map((row) => row.map(csvCell).join(','))
+  ].join('\n') + '\n'
+}
+
 function monthlyAmount(amount: number, frequency?: string): number {
   if (frequency === 'weekly') return roundCurrency((amount * 52) / 12)
   if (frequency === 'fortnightly') return roundCurrency((amount * 26) / 12)
@@ -2224,6 +2237,133 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       .prepare('INSERT INTO ai_insights (type, content, year, month) VALUES (?, ?, ?, ?)')
       .run('dashboard', content, year, month)
     return true
+  })
+
+  ipcMain.handle('reports:taxReviewExport', async (_, year: number, categoryIds: number[] = []) => {
+    const database = db()
+    const selectedCategoryIds = categoryIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0)
+    const yearStart = `${year}-01-01`
+    const nextYearStart = `${year + 1}-01-01`
+    const rows: unknown[][] = []
+
+    const subscriptions = database
+      .prepare(
+        `SELECT s.name, s.amount, s.frequency, s.next_billing_date, s.website_url, s.on_hold, a.name as account_name
+         FROM subscriptions s
+         LEFT JOIN accounts a ON s.account_id = a.id
+         WHERE s.tax_deductible = 1
+         ORDER BY s.name COLLATE NOCASE`
+      )
+      .all() as Array<{
+        name: string
+        amount: number
+        frequency: string
+        next_billing_date: string | null
+        website_url: string | null
+        on_hold: number
+        account_name: string | null
+      }>
+    for (const sub of subscriptions) {
+      rows.push([
+        'Tax-deductible subscription',
+        sub.next_billing_date ?? '',
+        sub.name,
+        roundCurrency(monthlyAmount(sub.amount, sub.frequency) * 12),
+        'subscription',
+        '',
+        sub.account_name ?? '',
+        sub.frequency,
+        sub.on_hold ? 'On hold' : sub.website_url ?? ''
+      ])
+    }
+
+    const incomeAndSavings = database
+      .prepare(
+        `SELECT t.date, t.description, t.amount, t.type, c.name as category_name, a.name as account_name, t.notes
+         FROM transactions t
+         LEFT JOIN categories c ON t.category_id = c.id
+         LEFT JOIN accounts a ON t.account_id = a.id
+         WHERE t.date >= ? AND t.date < ?
+           AND t.type IN ('income', 'savings')
+         ORDER BY t.date ASC, t.id ASC`
+      )
+      .all(yearStart, nextYearStart) as Array<{
+        date: string
+        description: string
+        amount: number
+        type: string
+        category_name: string | null
+        account_name: string | null
+        notes: string | null
+      }>
+    for (const tx of incomeAndSavings) {
+      rows.push([
+        tx.type === 'income' ? 'Income' : 'Savings',
+        tx.date,
+        tx.description,
+        roundCurrency(tx.amount),
+        tx.type,
+        tx.category_name ?? '',
+        tx.account_name ?? '',
+        'transaction',
+        tx.notes ?? ''
+      ])
+    }
+
+    if (selectedCategoryIds.length > 0) {
+      const placeholders = selectedCategoryIds.map(() => '?').join(',')
+      const selectedExpenses = database
+        .prepare(
+          `SELECT t.date, t.description, t.amount, t.type, c.name as category_name, a.name as account_name, t.notes
+           FROM transactions t
+           LEFT JOIN categories c ON t.category_id = c.id
+           LEFT JOIN accounts a ON t.account_id = a.id
+           WHERE t.date >= ? AND t.date < ?
+             AND t.type = 'expense'
+             AND t.category_id IN (${placeholders})
+           ORDER BY c.name COLLATE NOCASE, t.date ASC, t.id ASC`
+        )
+        .all(yearStart, nextYearStart, ...selectedCategoryIds) as Array<{
+          date: string
+          description: string
+          amount: number
+          type: string
+          category_name: string | null
+          account_name: string | null
+          notes: string | null
+        }>
+      for (const tx of selectedExpenses) {
+        rows.push([
+          'Selected category expense',
+          tx.date,
+          tx.description,
+          roundCurrency(tx.amount),
+          tx.type,
+          tx.category_name ?? '',
+          tx.account_name ?? '',
+          'transaction',
+          tx.notes ?? ''
+        ])
+      }
+    }
+
+    const csv = toCsv(
+      ['Section', 'Date', 'Description', 'Amount', 'Type', 'Category', 'Account', 'Source', 'Notes'],
+      rows
+    )
+    const win = getWindow()
+    const result = await dialog.showSaveDialog(win!, {
+      title: 'Export tax/accountant review CSV',
+      defaultPath: `tax-review-${year}.csv`,
+      filters: [{ name: 'CSV', extensions: ['csv'] }]
+    })
+    if (!result.canceled && result.filePath) {
+      writeFileSync(result.filePath, csv, 'utf8')
+      return { filePath: result.filePath, rowCount: rows.length }
+    }
+    return { filePath: null, rowCount: rows.length }
   })
 
   ipcMain.handle('reports:yearSummary', (_, year: number) => {

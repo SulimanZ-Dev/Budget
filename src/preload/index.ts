@@ -222,7 +222,9 @@ const api = {
   },
 
   reports: {
-    yearSummary: (year: number) => ipcRenderer.invoke('reports:yearSummary', year)
+    yearSummary: (year: number) => ipcRenderer.invoke('reports:yearSummary', year),
+    taxReviewExport: (year: number, categoryIds: number[]) =>
+      ipcRenderer.invoke('reports:taxReviewExport', year, categoryIds)
   },
 
   print: {

@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import { useAppStore, type DisplayCurrency } from '@/store/app-store'
 import { SUPPORTED_LOCALES, LOCALE_LABELS, type AppLocale } from '@/lib/utils'
-import { Download, Upload, Trash2, Key, Printer, Lock, RotateCcw, Play } from 'lucide-react'
+import { Download, Upload, Trash2, Key, Printer, Lock, RotateCcw, Play, FileText } from 'lucide-react'
 import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { IntegrityPanel } from '@/components/integrity/integrity-panel'
 import { PluginRegistry } from '@/components/plugins/plugin-registry'
@@ -33,6 +33,11 @@ interface DemoResult {
   investments: number
   rules: number
   moods: number
+}
+
+interface CategoryOption {
+  id: number
+  name: string
 }
 
 function randomInt(min: number, max: number): number {
@@ -77,11 +82,17 @@ export function SettingsPage(): JSX.Element {
   const [changePasswordLoading, setChangePasswordLoading] = useState(false)
   const [appVersion, setAppVersion] = useState('')
   const [lastBackup, setLastBackup] = useState<string | null>(null)
+  const [taxExportCategories, setTaxExportCategories] = useState<CategoryOption[]>([])
+  const [selectedTaxCategoryIds, setSelectedTaxCategoryIds] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     window.api.members.list().then(setMembers)
     window.api.getVersion().then(setAppVersion)
     window.api.settings.get('lastDbBackup').then((v: string | null) => setLastBackup(v))
+    window.api.categories.list().then((rows) => {
+      const categoryRows = (rows as CategoryOption[]).filter((category) => Number.isInteger(category.id))
+      setTaxExportCategories(categoryRows)
+    })
   }, [])
 
   async function handleExportBackup(): Promise<void> {
@@ -89,6 +100,22 @@ export function SettingsPage(): JSX.Element {
     const now = new Date().toISOString().slice(0, 10)
     await window.api.settings.set('lastDbBackup', now)
     setLastBackup(now)
+  }
+
+  function toggleTaxCategory(categoryId: number): void {
+    setSelectedTaxCategoryIds((current) => {
+      const next = new Set(current)
+      if (next.has(categoryId)) next.delete(categoryId)
+      else next.add(categoryId)
+      return next
+    })
+  }
+
+  async function handleTaxReviewExport(): Promise<void> {
+    const result = await window.api.reports.taxReviewExport(profile.year, [...selectedTaxCategoryIds])
+    if (result?.filePath) {
+      await dialog.alert(`Exported ${result.rowCount} rows to ${result.filePath}.`, 'Tax export complete')
+    }
   }
 
   async function generateDemoData(): Promise<DemoResult> {
@@ -184,7 +211,7 @@ export function SettingsPage(): JSX.Element {
         icon: 'credit-card',
         color: pick(['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']),
         notes: 'Demo data',
-        taxDeductible: Math.random() < 0.35,
+        taxDeductible: i === 0 || Math.random() < 0.35,
         onHold: Math.random() < 0.2
       })
     }
@@ -757,6 +784,55 @@ export function SettingsPage(): JSX.Element {
           <Button variant="outline" onClick={handleRunDemo}>
             <Play className="h-4 w-4" />
             Run Demo
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            Tax/accountant export
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Exports {profile.year} tax-deductible subscriptions, income transactions, savings transactions, and expenses from the selected categories.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedTaxCategoryIds(new Set(taxExportCategories.map((category) => category.id)))}
+            >
+              Select all categories
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedTaxCategoryIds(new Set())}
+            >
+              Clear categories
+            </Button>
+          </div>
+          <div className="grid max-h-48 gap-2 overflow-auto rounded-md border p-3 md:grid-cols-2">
+            {taxExportCategories.map((category) => (
+              <label key={category.id} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={selectedTaxCategoryIds.has(category.id)}
+                  onChange={() => toggleTaxCategory(category.id)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <span>{category.name}</span>
+              </label>
+            ))}
+          </div>
+          <Button variant="outline" onClick={handleTaxReviewExport}>
+            <Download className="h-4 w-4" />
+            Export tax CSV
           </Button>
         </CardContent>
       </Card>
