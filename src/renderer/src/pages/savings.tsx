@@ -25,6 +25,8 @@ type SavingsTx = {
   is_unnecessary: number
   member_id?: number
   member_name?: string
+  account_id?: number
+  account_name?: string
   notes?: string
 }
 
@@ -32,10 +34,12 @@ export function SavingsPage(): JSX.Element {
   const { profile, rates, selectedMonth, openDrawer, closeDrawer, refreshTrigger, triggerRefresh } = useAppStore()
   const dialog = useAppDialog()
   const [rows, setRows] = useState<SavingsTx[]>([])
+  const [accounts, setAccounts] = useState<{ id: number; name: string; is_archived: number }[]>([])
   const [form, setForm] = useState({
     description: '',
     amount: '',
-    date: new Date().toISOString().slice(0, 10)
+    date: new Date().toISOString().slice(0, 10),
+    accountId: ''
   })
 
   useEffect(() => {
@@ -44,6 +48,9 @@ export function SavingsPage(): JSX.Element {
 
   async function load(): Promise<void> {
     await window.api.savings.checkBilling().catch(() => {})
+    const accountRows = ((await window.api.accounts.list()) as { id: number; name: string; is_archived: number }[]).filter((account) => account.is_archived !== 1)
+    setAccounts(accountRows)
+    setForm((prev) => ({ ...prev, accountId: prev.accountId || (accountRows[0] ? String(accountRows[0].id) : '') }))
     const txs = (await window.api.transactions.list({
       year: profile.year,
       month: selectedMonth,
@@ -59,6 +66,7 @@ export function SavingsPage(): JSX.Element {
       description: form.description.trim(),
       amount,
       type: 'savings',
+      accountId: form.accountId ? parseInt(form.accountId) : undefined,
       categoryId: null,
       date: form.date,
       isRecurring: false,
@@ -66,7 +74,7 @@ export function SavingsPage(): JSX.Element {
       memberId: null,
       notes: null
     })
-    setForm({ description: '', amount: '', date: new Date().toISOString().slice(0, 10) })
+    setForm({ description: '', amount: '', date: new Date().toISOString().slice(0, 10), accountId: accounts[0] ? String(accounts[0].id) : '' })
     await load()
     triggerRefresh()
   }
@@ -123,6 +131,20 @@ export function SavingsPage(): JSX.Element {
               onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
             />
           </div>
+          <div className="grid gap-2 md:col-span-4">
+            <Label>Account</Label>
+            <select
+              value={form.accountId}
+              onChange={(e) => setForm((prev) => ({ ...prev, accountId: e.target.value }))}
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              {accounts.map((account) => (
+                <option key={account.id} value={String(account.id)}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <Button className="md:col-span-4" onClick={save}>
             <Plus className="h-4 w-4" />
             Add savings transaction
@@ -154,7 +176,7 @@ export function SavingsPage(): JSX.Element {
               <CardContent className="flex items-center justify-between p-4">
                 <div>
                   <p className="font-medium">{row.description}</p>
-                  <p className="text-xs text-muted-foreground">{row.date}</p>
+                  <p className="text-xs text-muted-foreground">{row.date}{row.account_name ? ` • ${row.account_name}` : ''}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <p className="font-semibold">{formatMoney(row.amount, profile.displayCurrency, rates)}</p>

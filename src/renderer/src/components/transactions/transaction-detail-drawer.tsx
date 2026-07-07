@@ -26,14 +26,21 @@ export function TransactionDetailDrawer({
   const [amount, setAmount] = useState(String(t.amount))
   const [notes, setNotes] = useState(t.notes ?? '')
   const [categoryId, setCategoryId] = useState(String(t.category_id ?? ''))
+  const [accountId, setAccountId] = useState(String(t.account_id ?? ''))
   const [memberId, setMemberId] = useState(String(t.member_id ?? ''))
   const [isRecurring, setIsRecurring] = useState(!!t.is_recurring)
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
+  const [accounts, setAccounts] = useState<{ id: number; name: string; is_archived: number }[]>([])
   const [members, setMembers] = useState<{ id: number; name: string }[]>([])
   const [showHistory, setShowHistory] = useState(false)
 
   useEffect(() => {
     window.api.categories.list().then((c) => setCategories(c as { id: number; name: string }[]))
+    window.api.accounts.list().then((rows) => {
+      const active = (rows as { id: number; name: string; is_archived: number }[]).filter((account) => account.is_archived !== 1)
+      setAccounts(active)
+      setAccountId((current) => current || (active[0] ? String(active[0].id) : ''))
+    })
     window.api.members.list().then((m) => setMembers(m as { id: number; name: string }[]))
   }, [])
 
@@ -46,6 +53,7 @@ export function TransactionDetailDrawer({
         description,
         amount: numAmount,
         type: t.type,
+        accountId: accountId ? parseInt(accountId) : undefined,
         categoryId: categoryId ? parseInt(categoryId) : null,
         date: t.date,
         isRecurring,
@@ -83,6 +91,21 @@ export function TransactionDetailDrawer({
       <div className="grid gap-2">
         <Label>Amount (SEK)</Label>
         <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      </div>
+      <div className="grid gap-2">
+        <Label>Account</Label>
+        <Select value={accountId} onValueChange={setAccountId}>
+          <SelectTrigger>
+            <SelectValue placeholder="Main" />
+          </SelectTrigger>
+          <SelectContent>
+            {accounts.map((account) => (
+              <SelectItem key={account.id} value={String(account.id)}>
+                {account.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid gap-2">
         <Label>Category</Label>

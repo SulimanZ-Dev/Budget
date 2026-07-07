@@ -13,6 +13,12 @@ interface Category {
   name: string
 }
 
+interface Account {
+  id: number
+  name: string
+  is_archived: number
+}
+
 export function TransactionModal({
   open,
   onOpenChange,
@@ -24,11 +30,13 @@ export function TransactionModal({
 }): JSX.Element {
   const [categories, setCategories] = useState<Category[]>([])
   const [members, setMembers] = useState<{ id: number; name: string }[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
   const [notes, setNotes] = useState('')
   const [type, setType] = useState<'expense' | 'income' | 'savings' | 'transfer'>('expense')
   const [categoryId, setCategoryId] = useState<string>('')
+  const [accountId, setAccountId] = useState<string>('')
   const [memberId, setMemberId] = useState<string>('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [isRecurring, setIsRecurring] = useState(false)
@@ -39,6 +47,11 @@ export function TransactionModal({
     if (open) {
       window.api.categories.list().then(setCategories)
       window.api.members.list().then(setMembers)
+      window.api.accounts.list().then((rows) => {
+        const active = (rows as Account[]).filter((account) => account.is_archived !== 1)
+        setAccounts(active)
+        setAccountId((current) => current || (active[0] ? String(active[0].id) : ''))
+      })
     }
   }, [open])
 
@@ -64,6 +77,7 @@ export function TransactionModal({
         description,
         amount: amt,
         type,
+        accountId: accountId ? parseInt(accountId) : undefined,
         categoryId: categoryId ? parseInt(categoryId) : null,
         date,
         isRecurring,
@@ -74,6 +88,7 @@ export function TransactionModal({
       setDescription('')
       setAmount('')
       setNotes('')
+      setAccountId(accounts[0] ? String(accounts[0].id) : '')
       onOpenChange(false)
       onSaved?.()
     } catch {
@@ -123,6 +138,21 @@ export function TransactionModal({
                 <SelectItem value="income">Income</SelectItem>
                 <SelectItem value="savings">Savings</SelectItem>
                 <SelectItem value="transfer">Transfer</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label>Account</Label>
+            <Select value={accountId} onValueChange={setAccountId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Main" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={String(account.id)}>
+                    {account.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

@@ -27,8 +27,9 @@ export function IncomePage(): JSX.Element {
   const { profile, rates, setProfile, refreshTrigger, triggerRefresh } = useAppStore()
   const dialog = useAppDialog()
   const [sources, setSources] = useState<
-    (IncomeSourceRow & { name: string; color: string; is_gross: number; is_recurring: number })[]
+    (IncomeSourceRow & { name: string; color: string; is_gross: number; is_recurring: number; account_id?: number | null; account_name?: string | null })[]
   >([])
+  const [accounts, setAccounts] = useState<{ id: number; name: string; is_archived: number }[]>([])
   const [entries, setEntries] = useState<
     { source_id: number; source_name: string; month: number; amount: number; is_irregular: number; color: string; is_gross: number }[]
   >([])
@@ -51,7 +52,8 @@ export function IncomePage(): JSX.Element {
     isGross: false,
     isRecurring: true,
     frequency: 'monthly' as 'weekly' | 'fortnightly' | 'monthly' | 'yearly',
-    color: '#22c55e'
+    color: '#22c55e',
+    accountId: ''
   })
 
   useEffect(() => {
@@ -61,6 +63,9 @@ export function IncomePage(): JSX.Element {
   async function load(): Promise<void> {
     try {
       await window.api.income.checkBilling().catch(() => {})
+      const accountRows = ((await window.api.accounts.list()) as { id: number; name: string; is_archived: number }[]).filter((account) => account.is_archived !== 1)
+      setAccounts(accountRows)
+      setForm((prev) => ({ ...prev, accountId: prev.accountId || (accountRows[0] ? String(accountRows[0].id) : '') }))
       setSources(await window.api.income.sources())
       setEntries(await window.api.income.entries(profile.year))
       const txs = (await window.api.transactions.list({ year: profile.year })) as { amount: number; type: string; date: string; notes?: string }[]
@@ -92,7 +97,8 @@ export function IncomePage(): JSX.Element {
           isRecurring: form.isRecurring,
           grossOrNet: form.isGross ? 'gross' : 'net',
           frequency: form.frequency,
-          color: form.color
+          color: form.color,
+          accountId: form.accountId ? parseInt(form.accountId) : undefined
         })
       } else {
         await window.api.income.createSource({
@@ -102,7 +108,8 @@ export function IncomePage(): JSX.Element {
           isRecurring: form.isRecurring,
           grossOrNet: form.isGross ? 'gross' : 'net',
           frequency: form.frequency,
-          color: form.color
+          color: form.color,
+          accountId: form.accountId ? parseInt(form.accountId) : undefined
         })
       }
       setModalOpen(false)
@@ -113,7 +120,8 @@ export function IncomePage(): JSX.Element {
         isGross: false,
         isRecurring: true,
         frequency: 'monthly',
-        color: '#22c55e'
+        color: '#22c55e',
+        accountId: accounts[0] ? String(accounts[0].id) : ''
       })
       await load()
       triggerRefresh()
@@ -145,7 +153,8 @@ export function IncomePage(): JSX.Element {
       isGross: src.is_gross === 1,
       isRecurring: src.is_recurring !== 0,
       frequency: src.frequency ?? 'monthly',
-      color: src.color
+      color: src.color,
+      accountId: src.account_id ? String(src.account_id) : (accounts[0] ? String(accounts[0].id) : '')
     })
     setModalOpen(true)
   }
@@ -159,7 +168,8 @@ export function IncomePage(): JSX.Element {
       isGross: false,
       isRecurring: true,
       frequency: 'monthly',
-      color: '#22c55e'
+      color: '#22c55e',
+      accountId: accounts[0] ? String(accounts[0].id) : ''
     })
   }
 
@@ -281,6 +291,7 @@ export function IncomePage(): JSX.Element {
                     <span className="font-medium">{src.name}</span>
                     <p className="text-xs text-muted-foreground">
                       {src.is_recurring === 1 ? 'Recurring' : 'One-time'} • {(src.gross_or_net ?? (src.is_gross === 1 ? 'gross' : 'net')).toUpperCase()} • {(src.frequency ?? 'monthly').toUpperCase()}
+                      {src.account_name ? ` • ${src.account_name}` : ''}
                     </p>
                   </div>
                 </div>
@@ -391,6 +402,20 @@ export function IncomePage(): JSX.Element {
                 </div>
               </div>
             )}
+            <div className="grid gap-2">
+              <Label>Account</Label>
+              <select
+                value={form.accountId}
+                onChange={(e) => setForm({ ...form, accountId: e.target.value })}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {accounts.map((account) => (
+                  <option key={account.id} value={String(account.id)}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Button onClick={saveSource}>{editingSource ? 'Save changes' : 'Add source'}</Button>
           </div>
         </DialogContent>

@@ -64,6 +64,62 @@ function backfillProfileDefaults(database: SqlCipher.Database): void {
   }
 }
 
+function ensureMainAccount(database: SqlCipher.Database): number {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('checking', 'savings', 'cash', 'other')) DEFAULT 'checking',
+      currency TEXT NOT NULL DEFAULT 'SEK',
+      is_archived INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `)
+
+  const existing = database
+    .prepare("SELECT id FROM accounts WHERE is_archived = 0 ORDER BY id LIMIT 1")
+    .get() as { id: number } | undefined
+  if (existing) return existing.id
+
+  const result = database
+    .prepare("INSERT INTO accounts (name, type, currency, is_archived) VALUES ('Main', 'checking', 'SEK', 0)")
+    .run()
+  return Number(result.lastInsertRowid)
+}
+
+function addColumnIfMissing(database: SqlCipher.Database, table: string, column: string, definition: string): boolean {
+  const columns = database.pragma(`table_info(${table})`) as Array<{ name: string }>
+  if (columns.some((c) => c.name === column)) return false
+  database.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`)
+  return true
+}
+
+function runAccountMigration(database: SqlCipher.Database): void {
+  try {
+    const mainAccountId = ensureMainAccount(database)
+    const transactionColumnAdded = addColumnIfMissing(database, 'transactions', 'account_id', 'account_id INTEGER')
+    addColumnIfMissing(database, 'subscriptions', 'account_id', 'account_id INTEGER')
+    addColumnIfMissing(database, 'savings_sources', 'account_id', 'account_id INTEGER')
+    addColumnIfMissing(database, 'income_sources', 'account_id', 'account_id INTEGER')
+
+    database.prepare('UPDATE transactions SET account_id = ? WHERE account_id IS NULL').run(mainAccountId)
+    database.prepare('UPDATE subscriptions SET account_id = ? WHERE account_id IS NULL').run(mainAccountId)
+    database.prepare('UPDATE savings_sources SET account_id = ? WHERE account_id IS NULL').run(mainAccountId)
+    database.prepare('UPDATE income_sources SET account_id = ? WHERE account_id IS NULL').run(mainAccountId)
+
+    database.exec(`
+      CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
+      CREATE INDEX IF NOT EXISTS idx_subscriptions_account ON subscriptions(account_id);
+    `)
+
+    if (transactionColumnAdded) {
+      database.prepare('UPDATE transactions SET hmac = NULL').run()
+    }
+  } catch (e) {
+    console.log('Accounts migration skipped:', e)
+  }
+}
+
 export function getDbPath(): string {
   const dir = join(app.getPath('appData'), 'BudgetApp')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
@@ -193,11 +249,21 @@ function runMigrations(database: SqlCipher.Database): void {
       hmac TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('checking', 'savings', 'cash', 'other')) DEFAULT 'checking',
+      currency TEXT NOT NULL DEFAULT 'SEK',
+      is_archived INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       description TEXT NOT NULL,
       amount REAL NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('expense', 'income', 'savings', 'transfer')),
+      account_id INTEGER,
       category_id INTEGER,
       date TEXT NOT NULL,
       is_recurring INTEGER DEFAULT 0,
@@ -206,6 +272,7 @@ function runMigrations(database: SqlCipher.Database): void {
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       hmac TEXT,
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
       FOREIGN KEY (member_id) REFERENCES household_members(id) ON DELETE SET NULL
     );
@@ -278,6 +345,7 @@ function runMigrations(database: SqlCipher.Database): void {
       icon TEXT DEFAULT 'credit-card',
       color TEXT DEFAULT '#8b5cf6',
       notes TEXT,
+      account_id INTEGER,
       transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL
     );
 
@@ -289,6 +357,7 @@ function runMigrations(database: SqlCipher.Database): void {
       gross_or_net TEXT DEFAULT 'net',
       is_recurring INTEGER DEFAULT 1,
       frequency TEXT DEFAULT 'monthly',
+      account_id INTEGER,
       color TEXT DEFAULT '#22c55e'
     );
 
@@ -337,6 +406,7 @@ function runMigrations(database: SqlCipher.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
     CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
     CREATE INDEX IF NOT EXISTS idx_integrity_warnings_table ON integrity_warnings(table_name);
   `)
 
@@ -399,6 +469,7 @@ function runMigrations(database: SqlCipher.Database): void {
         is_recurring INTEGER DEFAULT 1,
         frequency TEXT DEFAULT 'monthly',
         category_id INTEGER,
+        account_id INTEGER,
         transaction_id INTEGER,
         created_at TEXT DEFAULT (datetime('now'))
       )
@@ -406,6 +477,8 @@ function runMigrations(database: SqlCipher.Database): void {
   } catch (e) {
     console.log('Savings sources migration skipped:', e)
   }
+
+  runAccountMigration(database)
 
   // Migration: Drop ai_summary columns from goals (reverted feature)
   try {

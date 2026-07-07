@@ -10,6 +10,22 @@ const DEFAULT_CONFIG: SchedulerConfig = { enabled: true, intervalHours: 24 }
 
 let intervalId: ReturnType<typeof setInterval> | null = null
 
+function getPrimaryAccountId(): number {
+  const db = getDatabase()
+  const existing = db.prepare("SELECT id FROM accounts WHERE is_archived = 0 ORDER BY id LIMIT 1").get() as { id: number } | undefined
+  if (existing) return existing.id
+  const result = db.prepare("INSERT INTO accounts (name, type, currency, is_archived) VALUES ('Main', 'checking', 'SEK', 0)").run()
+  return Number(result.lastInsertRowid)
+}
+
+function normalizeAccountId(accountId: number | null | undefined): number {
+  if (typeof accountId === 'number') {
+    const account = getDatabase().prepare('SELECT id FROM accounts WHERE id = ? AND is_archived = 0').get(accountId) as { id: number } | undefined
+    if (account) return account.id
+  }
+  return getPrimaryAccountId()
+}
+
 function runBillingChecks(): void {
   const db = getDatabase()
   if (!db) return
@@ -22,7 +38,7 @@ function runBillingChecks(): void {
 
     const due = db.prepare(
       `SELECT * FROM subscriptions WHERE next_billing_date IS NOT NULL AND next_billing_date <= ?`
-    ).all(today) as Array<{ id: number; name: string; amount: number; frequency: string; next_billing_date: string }>
+    ).all(today) as Array<{ id: number; name: string; amount: number; frequency: string; next_billing_date: string; account_id: number | null }>
 
     function advanceDate(dateStr: string, frequency: string): string {
       const [y, m, d] = dateStr.split('-').map(Number)
@@ -61,6 +77,7 @@ function runBillingChecks(): void {
             description: sub.name,
             amount: sub.amount,
             type: 'expense',
+            account_id: normalizeAccountId(sub.account_id),
             date: sub.next_billing_date,
             is_recurring: true,
             notes: `subscription:${sub.id}`
@@ -79,7 +96,7 @@ function runBillingChecks(): void {
       }
 
       const savingsSources = db.prepare('SELECT * FROM savings_sources').all() as Array<{
-        id: number; description: string; amount: number; category_id: number | null
+        id: number; description: string; amount: number; category_id: number | null; account_id: number | null
       }>
 
       for (const source of savingsSources) {
@@ -105,6 +122,7 @@ function runBillingChecks(): void {
             description: source.description,
             amount: source.amount,
             type: 'savings',
+            account_id: normalizeAccountId(source.account_id),
             category_id: catId,
             date: today,
             notes: noteMarker
@@ -113,7 +131,7 @@ function runBillingChecks(): void {
       }
 
       const incomeSources = db.prepare('SELECT * FROM income_sources WHERE is_recurring = 1').all() as Array<{
-        id: number; name: string; amount: number; frequency: string
+        id: number; name: string; amount: number; frequency: string; account_id: number | null
       }>
 
       for (const source of incomeSources) {
@@ -128,6 +146,7 @@ function runBillingChecks(): void {
             description: source.name,
             amount: monthlyAmount,
             type: 'income',
+            account_id: normalizeAccountId(source.account_id),
             date: today,
             notes: `income_source:${source.id}`
           })

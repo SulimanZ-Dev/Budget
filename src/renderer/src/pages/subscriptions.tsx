@@ -27,17 +27,22 @@ type RecurringItem = {
   transaction_description?: string | null
   tax_deductible?: number
   on_hold?: number
+  account_id?: number | null
+  account_name?: string | null
 }
+
+type Account = { id: number; name: string; is_archived: number }
 
 export function SubscriptionsPage(): JSX.Element {
   const { profile, rates } = useAppStore()
   const dialog = useAppDialog()
   const [items, setItems] = useState<RecurringItem[]>([])
   const [subs, setSubs] = useState<Sub[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingType, setEditingType] = useState<'subscription' | 'income' | 'savings'>('subscription')
-  const [form, setForm] = useState({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false })
+  const [form, setForm] = useState({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false, accountId: '' })
   const [filter, setFilter] = useState<'all' | 'subscription' | 'income' | 'savings'>('all')
   const [sort, setSort] = useState<'name' | 'amount' | 'date'>('amount')
 
@@ -52,6 +57,9 @@ export function SubscriptionsPage(): JSX.Element {
       window.api.income.checkBilling().catch(() => {})
       const subscriptionList = await window.api.subscriptions.list()
       setSubs(subscriptionList as Sub[])
+      const accountRows = ((await window.api.accounts.list()) as Account[]).filter((account) => account.is_archived !== 1)
+      setAccounts(accountRows)
+      setForm((prev) => ({ ...prev, accountId: prev.accountId || (accountRows[0] ? String(accountRows[0].id) : '') }))
       const incomeSources = await window.api.income.sources()
       const savingsSources = await window.api.savings.sources()
 
@@ -68,7 +76,9 @@ export function SubscriptionsPage(): JSX.Element {
           transaction_id: sub.transaction_id,
           transaction_description: sub.transaction_description,
           tax_deductible: sub.tax_deductible,
-          on_hold: sub.on_hold
+          on_hold: sub.on_hold,
+          account_id: sub.account_id,
+          account_name: sub.account_name
         })),
         ...(incomeSources as IncomeSource[]).map((src) => ({
           type: 'income' as const,
@@ -141,7 +151,8 @@ export function SubscriptionsPage(): JSX.Element {
             websiteUrl: form.url,
             nextBillingDate: form.date || undefined,
             taxDeductible: form.taxDeductible,
-            onHold: form.onHold
+            onHold: form.onHold,
+            accountId: form.accountId ? parseInt(form.accountId) : undefined
           })
         } else {
           await window.api.subscriptions.create({
@@ -151,13 +162,14 @@ export function SubscriptionsPage(): JSX.Element {
             websiteUrl: form.url,
             nextBillingDate: form.date || undefined,
             taxDeductible: form.taxDeductible,
-            onHold: form.onHold
+            onHold: form.onHold,
+            accountId: form.accountId ? parseInt(form.accountId) : undefined
           })
         }
       }
       setEditingId(null)
       setEditingType('subscription')
-      setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false })
+      setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false, accountId: accounts[0] ? String(accounts[0].id) : '' })
       setModalOpen(false)
       load()
     } catch {
@@ -199,7 +211,7 @@ export function SubscriptionsPage(): JSX.Element {
           <Button onClick={() => {
             setEditingId(null)
             setEditingType('subscription')
-            setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false })
+            setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false, accountId: accounts[0] ? String(accounts[0].id) : '' })
             setModalOpen(true)
           }}>
             <Plus className="h-4 w-4" />
@@ -268,7 +280,7 @@ export function SubscriptionsPage(): JSX.Element {
           onAction={() => {
             setEditingId(null)
             setEditingType('subscription')
-            setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false })
+            setForm({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false, accountId: accounts[0] ? String(accounts[0].id) : '' })
             setModalOpen(true)
           }}
         />
@@ -329,6 +341,11 @@ export function SubscriptionsPage(): JSX.Element {
                               On hold
                             </span>
                           ) : null}
+                          {item.account_name ? (
+                            <span className="text-[10px] text-muted-foreground/80 bg-muted/50 px-1.5 py-0.5 rounded">
+                              {item.account_name}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     <h3 className="mt-3 font-semibold">{item.name}</h3>
@@ -360,7 +377,7 @@ export function SubscriptionsPage(): JSX.Element {
                           onClick={() => {
                             setEditingId(item.id)
                             setEditingType('subscription')
-                            setForm({ name: item.name, amount: String(item.amount), url: item.website_url ?? '', date: item.next_billing_date ?? '', taxDeductible: !!item.tax_deductible, onHold: !!item.on_hold })
+                            setForm({ name: item.name, amount: String(item.amount), url: item.website_url ?? '', date: item.next_billing_date ?? '', taxDeductible: !!item.tax_deductible, onHold: !!item.on_hold, accountId: item.account_id ? String(item.account_id) : (accounts[0] ? String(accounts[0].id) : '') })
                             setModalOpen(true)
                           }}
                         >
@@ -439,6 +456,20 @@ export function SubscriptionsPage(): JSX.Element {
               <Label>Next billing date</Label>
               <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </div>
+            <div className="grid gap-2">
+              <Label>Account</Label>
+              <select
+                value={form.accountId}
+                onChange={(e) => setForm({ ...form, accountId: e.target.value })}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {accounts.map((account) => (
+                  <option key={account.id} value={String(account.id)}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -479,6 +510,8 @@ interface Sub {
   transaction_description?: string | null
   tax_deductible?: number
   on_hold?: number
+  account_id?: number | null
+  account_name?: string | null
 }
 
 interface IncomeSource {

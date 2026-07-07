@@ -35,6 +35,8 @@ export interface TransactionRowData {
   is_unnecessary: number
   member_id?: number
   member_name?: string
+  account_id?: number
+  account_name?: string
   notes?: string
 }
 
@@ -81,6 +83,7 @@ export function TransactionRow({
         description: t.description,
         amount: val,
         type: t.type,
+        accountId: t.account_id,
         categoryId: t.category_id,
         date: t.date,
         isRecurring: !!t.is_recurring,
@@ -101,6 +104,7 @@ export function TransactionRow({
         description: t.description,
         amount: t.amount,
         type: t.type,
+        accountId: t.account_id,
         categoryId: parseInt(catId),
         date: t.date,
         isRecurring: !!t.is_recurring,
@@ -121,6 +125,7 @@ export function TransactionRow({
         description: t.description,
         amount: t.amount,
         type: t.type,
+        accountId: t.account_id,
         categoryId: t.category_id,
         date: t.date,
         isRecurring: !!t.is_recurring,
@@ -200,6 +205,7 @@ export function TransactionRow({
             </button>
           )}
           {t.is_recurring ? <span className="text-info">Recurring</span> : null}
+          {t.account_name ? <span>{t.account_name}</span> : null}
           {t.is_unnecessary ? <span className="text-warning">Flagged</span> : null}
         </p>
       </div>

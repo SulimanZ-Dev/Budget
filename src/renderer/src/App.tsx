@@ -15,6 +15,7 @@ import { useAppInit } from '@/hooks/use-init'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard'
 import { useAppStore } from '@/store/app-store'
 import { DashboardPage } from '@/pages/dashboard'
+import { AccountsPage } from '@/pages/accounts'
 import { BudgetPage } from '@/pages/budget'
 import { TransactionsPage } from '@/pages/transactions'
 import { GoalsPage } from '@/pages/goals'
@@ -290,6 +291,7 @@ function AppContent(): JSX.Element {
             <PageTransition>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
+                <Route path="/accounts" element={<AccountsPage />} />
                 <Route path="/budget" element={<BudgetPage />} />
                 <Route path="/transactions" element={<TransactionsPage />} />
                 <Route path="/goals" element={<GoalsPage />} />

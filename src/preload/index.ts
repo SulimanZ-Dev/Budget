@@ -69,6 +69,13 @@ const api = {
     delete: (id: number) => ipcRenderer.invoke('members:delete', id)
   },
 
+  accounts: {
+    list: () => ipcRenderer.invoke('accounts:list'),
+    create: (account: unknown) => ipcRenderer.invoke('accounts:create', account),
+    update: (id: number, account: unknown) => ipcRenderer.invoke('accounts:update', id, account),
+    archive: (id: number) => ipcRenderer.invoke('accounts:archive', id)
+  },
+
   categories: {
     list: () => ipcRenderer.invoke('categories:list'),
     create: (cat: unknown) => ipcRenderer.invoke('categories:create', cat),
@@ -97,7 +104,7 @@ const api = {
     exportCsv: () => ipcRenderer.invoke('transactions:exportCsv'),
     categoryTrend: (categoryId: number, year: number, anchorMonth: number, months?: number) =>
       ipcRenderer.invoke('transactions:categoryTrend', categoryId, year, anchorMonth, months),
-    importOfx: () => ipcRenderer.invoke('transactions:importOfx'),
+    importOfx: (accountId?: number) => ipcRenderer.invoke('transactions:importOfx', accountId),
     // Event sourcing methods
     history: (id: number) => ipcRenderer.invoke('transactions:history', id),
     undo: (id: number) => ipcRenderer.invoke('transactions:undo', id)

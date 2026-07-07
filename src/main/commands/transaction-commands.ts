@@ -16,6 +16,7 @@ export interface CreateTransactionCommand {
   description: string
   amount: number
   type: 'expense' | 'income' | 'savings' | 'transfer'
+  account_id?: number | null
   category_id?: number | null
   date: string
   is_recurring?: boolean
@@ -24,15 +25,30 @@ export interface CreateTransactionCommand {
   notes?: string | null
 }
 
+function getPrimaryAccountId(): number {
+  const db = getDatabase()
+  const existing = db
+    .prepare("SELECT id FROM accounts WHERE is_archived = 0 ORDER BY id LIMIT 1")
+    .get() as { id: number } | undefined
+  if (existing) return existing.id
+
+  const result = db
+    .prepare("INSERT INTO accounts (name, type, currency, is_archived) VALUES ('Main', 'checking', 'SEK', 0)")
+    .run()
+  return Number(result.lastInsertRowid)
+}
+
 export function createTransaction(command: CreateTransactionCommand): { id: number } {
   const db = getDatabase()
   
   const tx = db.transaction((cmd: CreateTransactionCommand) => {
+    const accountId = cmd.account_id ?? getPrimaryAccountId()
     // Compute HMAC for the transaction
     const hmac = signTransaction({
       description: cmd.description,
       amount: cmd.amount,
       type: cmd.type,
+      account_id: accountId,
       category_id: cmd.category_id ?? null,
       date: cmd.date,
       member_id: cmd.member_id ?? null
@@ -41,14 +57,15 @@ export function createTransaction(command: CreateTransactionCommand): { id: numb
     // Insert into materialized view (transactions table)
     const result = db.prepare(`
       INSERT INTO transactions (
-        description, amount, type, category_id, date, 
+        description, amount, type, account_id, category_id, date,
         is_recurring, is_unnecessary, member_id, notes, hmac
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       cmd.description,
       cmd.amount,
       cmd.type,
+      accountId,
       cmd.category_id ?? null,
       cmd.date,
       cmd.is_recurring ? 1 : 0,
@@ -65,6 +82,7 @@ export function createTransaction(command: CreateTransactionCommand): { id: numb
       description: cmd.description,
       amount: cmd.amount,
       type: cmd.type,
+      account_id: accountId,
       category_id: cmd.category_id ?? null,
       date: cmd.date,
       is_recurring: cmd.is_recurring ?? false,
@@ -87,6 +105,7 @@ export interface UpdateTransactionCommand {
   description?: string
   amount?: number
   type?: 'expense' | 'income' | 'savings' | 'transfer'
+  account_id?: number | null
   category_id?: number | null
   date?: string
   is_recurring?: boolean
@@ -122,6 +141,10 @@ export function updateTransaction(command: UpdateTransactionCommand): boolean {
       updates.type = cmd.type
       previousValues.type = current.type
     }
+    if (cmd.account_id !== undefined && cmd.account_id !== current.account_id) {
+      updates.account_id = cmd.account_id
+      previousValues.account_id = current.account_id
+    }
     if (cmd.category_id !== undefined && cmd.category_id !== current.category_id) {
       updates.category_id = cmd.category_id
       previousValues.category_id = current.category_id
@@ -156,6 +179,7 @@ export function updateTransaction(command: UpdateTransactionCommand): boolean {
       description: cmd.description ?? current.description,
       amount: cmd.amount ?? current.amount,
       type: cmd.type ?? current.type,
+      account_id: cmd.account_id !== undefined ? cmd.account_id : current.account_id,
       category_id: cmd.category_id !== undefined ? cmd.category_id : current.category_id,
       date: cmd.date ?? current.date,
       member_id: cmd.member_id !== undefined ? cmd.member_id : current.member_id
@@ -176,6 +200,10 @@ export function updateTransaction(command: UpdateTransactionCommand): boolean {
     if (cmd.type !== undefined) {
       setClauses.push('type = ?')
       values.push(cmd.type)
+    }
+    if (cmd.account_id !== undefined) {
+      setClauses.push('account_id = ?')
+      values.push(cmd.account_id)
     }
     if (cmd.category_id !== undefined) {
       setClauses.push('category_id = ?')
@@ -321,6 +349,7 @@ export function undoLastChange(id: number): boolean {
       description: previousState.description || '',
       amount: previousState.amount || 0,
       type: previousState.type || 'expense',
+      account_id: previousState.account_id || null,
       category_id: previousState.category_id || null,
       date: previousState.date || new Date().toISOString().split('T')[0],
       member_id: previousState.member_id || null
@@ -332,14 +361,15 @@ export function undoLastChange(id: number): boolean {
     if (!exists) {
       // Undoing a delete – re-insert the row
       db.prepare(`
-        INSERT INTO transactions (id, description, amount, type, category_id, date,
+        INSERT INTO transactions (id, description, amount, type, account_id, category_id, date,
             is_recurring, is_unnecessary, member_id, notes, hmac)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         txId,
         previousState.description,
         previousState.amount,
         previousState.type,
+        previousState.account_id,
         previousState.category_id,
         previousState.date,
         previousState.is_recurring ? 1 : 0,
@@ -354,6 +384,7 @@ export function undoLastChange(id: number): boolean {
         description: previousState.description,
         amount: previousState.amount,
         type: previousState.type,
+        account_id: previousState.account_id,
         category_id: previousState.category_id,
         date: previousState.date,
         is_recurring: previousState.is_recurring ?? false,
@@ -365,13 +396,14 @@ export function undoLastChange(id: number): boolean {
       // Normal undo – update existing row
       db.prepare(`
         UPDATE transactions 
-        SET description = ?, amount = ?, type = ?, category_id = ?, date = ?,
+        SET description = ?, amount = ?, type = ?, account_id = ?, category_id = ?, date = ?,
             is_recurring = ?, is_unnecessary = ?, member_id = ?, notes = ?, hmac = ?
         WHERE id = ?
       `).run(
         previousState.description,
         previousState.amount,
         previousState.type,
+        previousState.account_id,
         previousState.category_id,
         previousState.date,
         previousState.is_recurring ? 1 : 0,
@@ -441,25 +473,27 @@ export function bulkFlagTransactions(ids: number[]): boolean {
  * Command: Import transactions from CSV with event sourcing
  */
 export function importTransactionsFromCsvWithEvents(
-  rows: Array<{ description: string; amount: number; date: string; type?: string }>
+  rows: Array<{ description: string; amount: number; date: string; type?: string }>,
+  accountId?: number | null
 ): { imported: number } {
   const db = getDatabase()
   
-  const tx = db.transaction((txRows: Array<{ description: string; amount: number; date: string; type?: string }>) => {
+  const tx = db.transaction((txRows: Array<{ description: string; amount: number; date: string; type?: string }>, importAccountId?: number | null) => {
     let imported = 0
     for (const row of txRows) {
       createTransaction({
         description: row.description,
         amount: row.amount,
         type: (row.type === 'income' || row.type === 'transfer') ? row.type : 'expense',
-        date: row.date
+        date: row.date,
+        account_id: importAccountId ?? undefined
       })
       imported++
     }
     return { imported }
   })
   
-  return tx(rows)
+  return tx(rows, accountId)
 }
 
 /**
@@ -482,6 +516,7 @@ export function rebuildTransactionsProjection(): number {
         description: state.description || '',
         amount: state.amount || 0,
         type: state.type || 'expense',
+        account_id: state.account_id || null,
         category_id: state.category_id || null,
         date: state.date || new Date().toISOString().split('T')[0],
         member_id: state.member_id || null
@@ -489,15 +524,16 @@ export function rebuildTransactionsProjection(): number {
       
       db.prepare(`
         INSERT INTO transactions (
-          id, description, amount, type, category_id, date,
+          id, description, amount, type, account_id, category_id, date,
           is_recurring, is_unnecessary, member_id, notes, hmac
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         transactionId,
         state.description,
         state.amount,
         state.type,
+        state.account_id,
         state.category_id,
         state.date,
         state.is_recurring ? 1 : 0,

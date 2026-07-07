@@ -13,6 +13,7 @@ export interface TransactionFilters {
   flagged?: boolean
   search?: string
   recurring?: boolean
+  accountId?: number
 }
 
 export function getTransactions(filters?: TransactionFilters) {
@@ -23,10 +24,14 @@ export function getTransactions(filters?: TransactionFilters) {
            c.name as category_name, 
            c.icon as category_icon, 
            c.color as category_color,
-           m.name as member_name 
+           m.name as member_name,
+           a.name as account_name,
+           a.type as account_type,
+           a.currency as account_currency
     FROM transactions t
     LEFT JOIN categories c ON t.category_id = c.id
     LEFT JOIN household_members m ON t.member_id = m.id 
+    LEFT JOIN accounts a ON t.account_id = a.id
     WHERE 1=1
   `
   
@@ -50,6 +55,11 @@ export function getTransactions(filters?: TransactionFilters) {
   if (filters?.type) {
     sql += ' AND t.type = ?'
     params.push(filters.type)
+  }
+
+  if (filters?.accountId) {
+    sql += ' AND t.account_id = ?'
+    params.push(filters.accountId)
   }
   
   if (filters?.flagged) {
@@ -83,10 +93,14 @@ export function getTransactionById(id: number) {
            c.name as category_name, 
            c.icon as category_icon, 
            c.color as category_color,
-           m.name as member_name 
+           m.name as member_name,
+           a.name as account_name,
+           a.type as account_type,
+           a.currency as account_currency
     FROM transactions t
     LEFT JOIN categories c ON t.category_id = c.id
     LEFT JOIN household_members m ON t.member_id = m.id 
+    LEFT JOIN accounts a ON t.account_id = a.id
     WHERE t.id = ?
   `).get(id)
 }
@@ -186,10 +200,14 @@ export function getTransactionsByDateRange(startDate: string, endDate: string) {
            c.name as category_name, 
            c.icon as category_icon, 
            c.color as category_color,
-           m.name as member_name 
+           m.name as member_name,
+           a.name as account_name,
+           a.type as account_type,
+           a.currency as account_currency
     FROM transactions t
     LEFT JOIN categories c ON t.category_id = c.id
     LEFT JOIN household_members m ON t.member_id = m.id 
+    LEFT JOIN accounts a ON t.account_id = a.id
     WHERE t.date BETWEEN ? AND ?
     ORDER BY t.date DESC, t.id DESC
   `).all(startDate, endDate)
@@ -206,10 +224,14 @@ export function searchTransactions(query: string, limit: number = 50) {
            c.name as category_name, 
            c.icon as category_icon, 
            c.color as category_color,
-           m.name as member_name 
+           m.name as member_name,
+           a.name as account_name,
+           a.type as account_type,
+           a.currency as account_currency
     FROM transactions t
     LEFT JOIN categories c ON t.category_id = c.id
     LEFT JOIN household_members m ON t.member_id = m.id 
+    LEFT JOIN accounts a ON t.account_id = a.id
     WHERE t.description LIKE ? OR t.notes LIKE ?
     ORDER BY t.date DESC, t.id DESC
     LIMIT ?
@@ -270,10 +292,14 @@ export function getRecentTransactions(limit: number = 10) {
            c.name as category_name, 
            c.icon as category_icon, 
            c.color as category_color,
-           m.name as member_name 
+           m.name as member_name,
+           a.name as account_name,
+           a.type as account_type,
+           a.currency as account_currency
     FROM transactions t
     LEFT JOIN categories c ON t.category_id = c.id
     LEFT JOIN household_members m ON t.member_id = m.id 
+    LEFT JOIN accounts a ON t.account_id = a.id
     ORDER BY t.created_at DESC, t.id DESC
     LIMIT ?
   `).all(limit)

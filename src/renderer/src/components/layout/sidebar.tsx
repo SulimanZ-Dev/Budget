@@ -28,6 +28,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/accounts', icon: Landmark, label: 'Accounts' },
   { to: '/budget', icon: Wallet, label: 'Budget' },
   { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
   { to: '/goals', icon: Target, label: 'Goals' },

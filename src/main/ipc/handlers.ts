@@ -70,6 +70,29 @@ function getNow(): Date {
   return now
 }
 
+function getPrimaryAccountId(database = getDatabase()): number {
+  const existing = database
+    .prepare("SELECT id FROM accounts WHERE is_archived = 0 ORDER BY id LIMIT 1")
+    .get() as { id: number } | undefined
+  if (existing) return existing.id
+
+  const result = database
+    .prepare("INSERT INTO accounts (name, type, currency, is_archived) VALUES ('Main', 'checking', 'SEK', 0)")
+    .run()
+  return Number(result.lastInsertRowid)
+}
+
+function normalizeAccountId(accountId: unknown, database = getDatabase()): number {
+  const parsed = typeof accountId === 'number' ? accountId : typeof accountId === 'string' ? parseInt(accountId, 10) : NaN
+  if (Number.isFinite(parsed)) {
+    const account = database
+      .prepare('SELECT id FROM accounts WHERE id = ? AND is_archived = 0')
+      .get(parsed) as { id: number } | undefined
+    if (account) return account.id
+  }
+  return getPrimaryAccountId(database)
+}
+
 export function registerIpcHandlers(getWindow: GetWindow): void {
   const db = () => getDatabase()
 
@@ -126,6 +149,51 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       .prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('profile', ?)")
       .run(JSON.stringify(profile))
     return profile
+  })
+
+  // Accounts
+  ipcMain.handle('accounts:list', () => {
+    return db()
+      .prepare(
+        `SELECT a.*,
+         COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE -t.amount END), 0) as balance,
+         COUNT(t.id) as transaction_count
+         FROM accounts a
+         LEFT JOIN transactions t ON t.account_id = a.id
+         GROUP BY a.id
+         ORDER BY a.is_archived ASC, a.id ASC`
+      )
+      .all()
+  })
+
+  ipcMain.handle('accounts:create', (_, account) => {
+    const name = String(account.name ?? '').trim()
+    if (!name) throw new Error('Account name is required')
+    const type = ['checking', 'savings', 'cash', 'other'].includes(account.type) ? account.type : 'checking'
+    const currency = ['SEK', 'EUR', 'USD'].includes(account.currency) ? account.currency : 'SEK'
+    const result = db()
+      .prepare('INSERT INTO accounts (name, type, currency, is_archived) VALUES (?, ?, ?, 0)')
+      .run(name, type, currency)
+    return { id: Number(result.lastInsertRowid) }
+  })
+
+  ipcMain.handle('accounts:update', (_, id: number, account) => {
+    const name = String(account.name ?? '').trim()
+    if (!name) throw new Error('Account name is required')
+    const type = ['checking', 'savings', 'cash', 'other'].includes(account.type) ? account.type : 'checking'
+    const currency = ['SEK', 'EUR', 'USD'].includes(account.currency) ? account.currency : 'SEK'
+    db()
+      .prepare('UPDATE accounts SET name = ?, type = ?, currency = ? WHERE id = ?')
+      .run(name, type, currency, id)
+    return true
+  })
+
+  ipcMain.handle('accounts:archive', (_, id: number) => {
+    const database = db()
+    const activeCount = database.prepare('SELECT COUNT(*) as count FROM accounts WHERE is_archived = 0').get() as { count: number }
+    if (activeCount.count <= 1) throw new Error('At least one active account is required')
+    database.prepare('UPDATE accounts SET is_archived = 1 WHERE id = ?').run(id)
+    return true
   })
 
   ipcMain.handle('scheduler:getConfig', () => getSchedulerConfig())
@@ -418,9 +486,11 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Transactions
   ipcMain.handle('transactions:list', (_, filters?: Record<string, unknown>) => {
     let sql = `SELECT t.*, c.name as category_name, c.icon as category_icon, c.color as category_color,
-               m.name as member_name FROM transactions t
+               m.name as member_name, a.name as account_name, a.type as account_type, a.currency as account_currency
+               FROM transactions t
                LEFT JOIN categories c ON t.category_id = c.id
-               LEFT JOIN household_members m ON t.member_id = m.id WHERE 1=1`
+               LEFT JOIN household_members m ON t.member_id = m.id
+               LEFT JOIN accounts a ON t.account_id = a.id WHERE 1=1`
     const params: unknown[] = []
     if (filters?.year) {
       sql += ` AND strftime('%Y', t.date) = ?`
@@ -437,6 +507,10 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (filters?.type) {
       sql += ' AND t.type = ?'
       params.push(filters.type)
+    }
+    if (filters?.accountId) {
+      sql += ' AND t.account_id = ?'
+      params.push(filters.accountId)
     }
     if (filters?.flagged) {
       sql += ' AND t.is_unnecessary = 1'
@@ -468,11 +542,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       savingsCategoryId = getSavingsCategoryId(db())
     }
     const assignedCategoryId = tx.type === 'savings' && !tx.categoryId ? savingsCategoryId : (tx.categoryId ?? null)
+    const accountId = normalizeAccountId(tx.accountId)
 
     const result = createTransaction({
       description: tx.description,
       amount: tx.amount,
       type: tx.type,
+      account_id: accountId,
       category_id: assignedCategoryId,
       date: tx.date,
       is_recurring: tx.isRecurring ?? false,
@@ -485,9 +561,9 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (tx.isRecurring) {
       if (tx.type === 'savings') {
         const ssResult = db().prepare(
-          `INSERT INTO savings_sources (description, amount, is_recurring, frequency, category_id, transaction_id)
-           VALUES (?, ?, 1, 'monthly', ?, ?)`
-        ).run(tx.description, tx.amount, savingsCategoryId, result.id)
+          `INSERT INTO savings_sources (description, amount, is_recurring, frequency, category_id, account_id, transaction_id)
+           VALUES (?, ?, 1, 'monthly', ?, ?, ?)`
+        ).run(tx.description, tx.amount, savingsCategoryId, accountId, result.id)
         const sourceId = Number(ssResult.lastInsertRowid)
         const marker = 'savings_source:' + sourceId
         const newNotes = tx.notes ? tx.notes + ' | ' + marker : marker
@@ -496,9 +572,9 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         // Start next billing one month from now — the current transaction is the first bill
         const nextDate = addMonths(tx.date, 1)
         db().prepare(
-          `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
-           VALUES (?, ?, ?, ?, ?)`
-        ).run(tx.description, tx.amount, 'monthly', nextDate, result.id)
+          `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, account_id, transaction_id)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(tx.description, tx.amount, 'monthly', nextDate, accountId, result.id)
       }
     }
     
@@ -512,8 +588,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Use command pattern for transaction updates
   ipcMain.handle('transactions:update', (_, id: number, tx) => {
     // Get current state before update
-    const current = db().prepare('SELECT is_recurring, description, amount, date, type FROM transactions WHERE id = ?').get(id) as
-      | { is_recurring: number; description: string; amount: number; date: string; type: string }
+    const current = db().prepare('SELECT is_recurring, description, amount, date, type, account_id FROM transactions WHERE id = ?').get(id) as
+      | { is_recurring: number; description: string; amount: number; date: string; type: string; account_id: number | null }
       | undefined
 
     if (!current) {
@@ -525,6 +601,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       description: tx.description,
       amount: tx.amount,
       type: tx.type,
+      account_id: tx.accountId !== undefined ? normalizeAccountId(tx.accountId) : undefined,
       category_id: tx.categoryId !== undefined ? tx.categoryId : undefined,
       date: tx.date,
       is_recurring: tx.isRecurring ? true : tx.isRecurring === false ? false : undefined,
@@ -536,6 +613,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const description = tx.description ?? current.description
     const amount = tx.amount ?? current.amount
     const date = tx.date ?? current.date
+    const accountId = tx.accountId !== undefined ? normalizeAccountId(tx.accountId) : current.account_id
 
     if (tx.isRecurring !== undefined) {
       const wasRecurring = current.is_recurring === 1
@@ -549,9 +627,9 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         if (txType === 'savings') {
           const savingsCategoryId = getSavingsCategoryId(db())
           const ssResult = db().prepare(
-            `INSERT INTO savings_sources (description, amount, is_recurring, frequency, category_id, transaction_id)
-             VALUES (?, ?, 1, 'monthly', ?, ?)`
-          ).run(description, amount, savingsCategoryId, id)
+            `INSERT INTO savings_sources (description, amount, is_recurring, frequency, category_id, account_id, transaction_id)
+             VALUES (?, ?, 1, 'monthly', ?, ?, ?)`
+          ).run(description, amount, savingsCategoryId, accountId, id)
           const sourceId = Number(ssResult.lastInsertRowid)
           const marker = 'savings_source:' + sourceId
           const existingNotes = db().prepare('SELECT notes FROM transactions WHERE id = ?').get(id) as { notes: string | null } | undefined
@@ -561,20 +639,20 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         } else {
           const nextDate = addMonths(date, 1)
           db().prepare(
-            `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, transaction_id)
-             VALUES (?, ?, 'monthly', ?, ?)`
-          ).run(description, amount, nextDate, id)
+            `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, account_id, transaction_id)
+             VALUES (?, ?, 'monthly', ?, ?, ?)`
+          ).run(description, amount, nextDate, accountId, id)
         }
       } else if (wasRecurring && isRecurring) {
         if (txType === 'savings') {
           db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(id)
           db().prepare(
-            `UPDATE savings_sources SET description = ?, amount = ? WHERE transaction_id = ?`
-          ).run(description, amount, id)
+            `UPDATE savings_sources SET description = ?, amount = ?, account_id = ? WHERE transaction_id = ?`
+          ).run(description, amount, accountId, id)
         } else {
           db().prepare(
-            `UPDATE subscriptions SET name = ?, amount = ? WHERE transaction_id = ?`
-          ).run(description, amount, id)
+            `UPDATE subscriptions SET name = ?, amount = ?, account_id = ? WHERE transaction_id = ?`
+          ).run(description, amount, accountId, id)
         }
       }
     }
@@ -626,18 +704,19 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   ipcMain.handle('transactions:exportCsv', () => {
     const rows = db()
       .prepare(
-        `SELECT t.description, t.amount, t.date, t.type, c.name as category_name
+        `SELECT t.description, t.amount, t.date, t.type, c.name as category_name, a.name as account_name
          FROM transactions t
          LEFT JOIN categories c ON t.category_id = c.id
+         LEFT JOIN accounts a ON t.account_id = a.id
          ORDER BY t.date DESC, t.id DESC`
       )
-      .all() as { description: string; amount: number; date: string; type: string; category_name?: string }[]
+      .all() as { description: string; amount: number; date: string; type: string; category_name?: string; account_name?: string }[]
     const { exportTransactionsToCsv } = require('../services/csv-import')
     return exportTransactionsToCsv(rows)
   })
 
   // Use command pattern for CSV import
-  ipcMain.handle('transactions:importCsv', (_, csv: string, mapping?: CsvMapping) => {
+  ipcMain.handle('transactions:importCsv', (_, csv: string, mapping?: CsvMapping & { accountId?: number }) => {
     const preview = parseCsvPreview(csv, 1)
     const map: CsvMapping = mapping ?? {
       ...guessColumnIndexes(preview.headers),
@@ -645,10 +724,10 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       hasHeader: true
     }
     const rows = importTransactionsFromCsv(csv, map)
-    return importTransactionsFromCsvWithEvents(rows)
+    return importTransactionsFromCsvWithEvents(rows, normalizeAccountId(mapping?.accountId))
   })
 
-  ipcMain.handle('transactions:importOfx', async () => {
+  ipcMain.handle('transactions:importOfx', async (_, accountId?: number) => {
     const win = getWindow()
     const result = await dialog.showOpenDialog(win!, {
       title: 'Import OFX/QFX file',
@@ -658,7 +737,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (!result.canceled && result.filePaths[0]) {
       const content = readFileSync(result.filePaths[0], 'utf8')
       const rows = parseOfx(content)
-      return importTransactionsFromCsvWithEvents(rows)
+      return importTransactionsFromCsvWithEvents(rows, normalizeAccountId(accountId))
     }
     return { imported: 0 }
   })
@@ -854,37 +933,19 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Subscriptions
   ipcMain.handle('subscriptions:list', () =>
     db().prepare(
-      `SELECT s.*, t.description as transaction_description
+      `SELECT s.*, t.description as transaction_description, a.name as account_name
        FROM subscriptions s
        LEFT JOIN transactions t ON s.transaction_id = t.id
+       LEFT JOIN accounts a ON s.account_id = a.id
        ORDER BY s.amount DESC`
     ).all()
   )
   ipcMain.handle('subscriptions:create', (_, sub) => {
+    const accountId = normalizeAccountId(sub.accountId)
     const r = db()
       .prepare(
-        `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, website_url, icon, color, notes, tax_deductible, on_hold)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        sub.name,
-        sub.amount,
-        sub.frequency,
-        sub.nextBillingDate,
-        sub.websiteUrl,
-        sub.icon,
-        sub.color,
-        sub.notes,
-        sub.taxDeductible ? 1 : 0,
-        sub.onHold ? 1 : 0
-      )
-    return { id: Number(r.lastInsertRowid) }
-  })
-  ipcMain.handle('subscriptions:update', (_, id: number, sub) => {
-    db()
-      .prepare(
-        `UPDATE subscriptions SET name=?, amount=?, frequency=?, next_billing_date=?,
-         website_url=?, icon=?, color=?, notes=?, tax_deductible=?, on_hold=? WHERE id=?`
+        `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, website_url, icon, color, notes, tax_deductible, on_hold, account_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         sub.name,
@@ -897,6 +958,29 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         sub.notes,
         sub.taxDeductible ? 1 : 0,
         sub.onHold ? 1 : 0,
+        accountId
+      )
+    return { id: Number(r.lastInsertRowid) }
+  })
+  ipcMain.handle('subscriptions:update', (_, id: number, sub) => {
+    const accountId = normalizeAccountId(sub.accountId)
+    db()
+      .prepare(
+        `UPDATE subscriptions SET name=?, amount=?, frequency=?, next_billing_date=?,
+         website_url=?, icon=?, color=?, notes=?, tax_deductible=?, on_hold=?, account_id=? WHERE id=?`
+      )
+      .run(
+        sub.name,
+        sub.amount,
+        sub.frequency,
+        sub.nextBillingDate,
+        sub.websiteUrl,
+        sub.icon,
+        sub.color,
+        sub.notes,
+        sub.taxDeductible ? 1 : 0,
+        sub.onHold ? 1 : 0,
+        accountId,
         id
       )
     return true
@@ -925,6 +1009,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
             description: sub.name as string,
             amount: sub.amount as number,
             type: 'expense',
+            account_id: normalizeAccountId(sub.account_id),
             date: new Date().toISOString().slice(0, 10),
             is_recurring: true
           })
@@ -961,6 +1046,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       amount: number
       frequency: string
       next_billing_date: string
+      account_id: number | null
     }>
     const created: number[] = []
 
@@ -991,6 +1077,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
           description: sub.name,
           amount: sub.amount,
           type: 'expense',
+          account_id: normalizeAccountId(sub.account_id),
           date: sub.next_billing_date,
           is_recurring: true,
           notes: `subscription:${sub.id}`
@@ -1028,7 +1115,14 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
   // Savings Sources
   ipcMain.handle('savings:sources', () => {
-    return db().prepare('SELECT * FROM savings_sources ORDER BY id').all()
+    return db()
+      .prepare(
+        `SELECT s.*, a.name as account_name
+         FROM savings_sources s
+         LEFT JOIN accounts a ON s.account_id = a.id
+         ORDER BY s.id`
+      )
+      .all()
   })
 
   ipcMain.handle('savings:deleteSource', (_, id: number) => {
@@ -1066,6 +1160,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       description: string
       amount: number
       category_id: number | null
+      account_id: number | null
     }>
     const created: number[] = []
     for (const source of sources) {
@@ -1085,6 +1180,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
           description: source.description,
           amount: source.amount,
           type: 'savings',
+          account_id: normalizeAccountId(source.account_id),
           category_id: catId,
           date: today,
           is_recurring: false,
@@ -1097,9 +1193,18 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
 
   // Income
-  ipcMain.handle('income:sources', () => db().prepare('SELECT * FROM income_sources').all())
+  ipcMain.handle('income:sources', () =>
+    db()
+      .prepare(
+        `SELECT s.*, a.name as account_name
+         FROM income_sources s
+         LEFT JOIN accounts a ON s.account_id = a.id`
+      )
+      .all()
+  )
   ipcMain.handle('income:createSource', (_, src) => {
     const amount = Number.isFinite(src.amount) ? src.amount : 0
+    const accountId = normalizeAccountId(src.accountId)
     const grossOrNet = src.grossOrNet === 'gross' ? 'gross' : src.isGross ? 'gross' : 'net'
     const frequency =
       src.frequency === 'weekly' ||
@@ -1111,7 +1216,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const isRecurring = src.isRecurring !== false ? 1 : 0
     const r = db()
       .prepare(
-        'INSERT INTO income_sources (name, amount, is_gross, gross_or_net, is_recurring, frequency, color) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO income_sources (name, amount, is_gross, gross_or_net, is_recurring, frequency, color, account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       )
       .run(
         src.name,
@@ -1120,7 +1225,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         grossOrNet,
         isRecurring,
         frequency,
-        src.color ?? '#22c55e'
+        src.color ?? '#22c55e',
+        accountId
       )
     const newId = Number(r.lastInsertRowid)
     // Non-recurring: create entry + transaction scoped to current month only
@@ -1136,6 +1242,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         description: src.name + ' (one-time)',
         amount,
         type: 'income',
+        account_id: accountId,
         date: dateStr,
         is_recurring: false,
         notes: 'income_source:' + newId
@@ -1145,6 +1252,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
   ipcMain.handle('income:updateSource', (_, src) => {
     const amount = Number.isFinite(src.amount) ? src.amount : 0
+    const accountId = normalizeAccountId(src.accountId)
     const grossOrNet = src.grossOrNet === 'gross' ? 'gross' : src.isGross ? 'gross' : 'net'
     const frequency =
       src.frequency === 'weekly' ||
@@ -1159,7 +1267,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const oldAmount = oldRow?.amount ?? amount
     db()
       .prepare(
-        'UPDATE income_sources SET name = ?, amount = ?, is_gross = ?, gross_or_net = ?, is_recurring = ?, frequency = ?, color = ? WHERE id = ?'
+        'UPDATE income_sources SET name = ?, amount = ?, is_gross = ?, gross_or_net = ?, is_recurring = ?, frequency = ?, color = ?, account_id = ? WHERE id = ?'
       )
       .run(
         src.name,
@@ -1169,6 +1277,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         isRecurring,
         frequency,
         src.color ?? '#22c55e',
+        accountId,
         src.id
       )
     // Update all existing entries for this source (covers recurring 12-row and non-recurring 1-row)
@@ -1180,7 +1289,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       if (isRecurring === 0) {
         const existingTx = db().prepare("SELECT id FROM transactions WHERE notes = ?").get('income_source:' + src.id) as { id: number } | undefined
         if (existingTx) {
-          db().prepare('UPDATE transactions SET amount = ?, description = ?, date = ? WHERE id = ?').run(amount, src.name + ' (one-time)', new Date().toISOString().slice(0, 10), existingTx.id)
+          updateTransaction({
+            id: existingTx.id,
+            description: src.name + ' (one-time)',
+            amount,
+            account_id: accountId,
+            date: new Date().toISOString().slice(0, 10)
+          })
         }
       }
     }
@@ -1199,6 +1314,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
           description: src.name + ' (one-time)',
           amount,
           type: 'income',
+          account_id: accountId,
           date: dateStr,
           is_recurring: false,
           notes: 'income_source:' + src.id
@@ -1246,6 +1362,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       name: string
       amount: number
       frequency: string
+      account_id: number | null
     }>
     const created: number[] = []
 
@@ -1268,6 +1385,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
           description: source.name,
           amount: monthlyAmount,
           type: 'income',
+          account_id: normalizeAccountId(source.account_id),
           date: today,
           is_recurring: false,
           notes: noteMarker
@@ -1477,8 +1595,10 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   ipcMain.handle('transactions:search', (_, query: string, limit = 20) => {
     return db()
       .prepare(
-        `SELECT t.id, t.description, t.amount, t.date, t.type, c.name as category_name
-         FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
+        `SELECT t.id, t.description, t.amount, t.date, t.type, c.name as category_name, a.name as account_name
+         FROM transactions t
+         LEFT JOIN categories c ON t.category_id = c.id
+         LEFT JOIN accounts a ON t.account_id = a.id
          WHERE t.description LIKE ? ORDER BY t.date DESC LIMIT ?`
       )
       .all(`%${query}%`, limit)
@@ -1681,9 +1801,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         'ai_insights',
         'household_members',
         'currency_cache',
-        'integrity_warnings'
+        'integrity_warnings',
+        'accounts'
       ]
       for (const t of tables) database.prepare(`DELETE FROM ${t}`).run()
+      database
+        .prepare("INSERT INTO accounts (name, type, currency, is_archived) VALUES ('Main', 'checking', 'SEK', 0)")
+        .run()
       // Reset onboarding
       database.prepare("DELETE FROM settings WHERE key = 'onboardingComplete'").run()
       const currentYear = new Date().getFullYear()
@@ -1935,6 +2059,7 @@ function exportAllTables(): Record<string, unknown[]> {
   const tables = [
     'settings',
     'household_members',
+    'accounts',
     'categories',
     'transactions',
     'budget_entries',
@@ -1963,6 +2088,7 @@ function importAllTables(data: Record<string, unknown[]>): void {
   const tx = database.transaction((txData: Record<string, unknown[]>) => {
     const order = [
       'household_members',
+      'accounts',
       'categories',
       'goals',
       'wealth_snapshots',

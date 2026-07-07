@@ -21,6 +21,7 @@ export interface TransactionEventPayload {
   description?: string
   amount?: number
   type?: 'expense' | 'income' | 'savings' | 'transfer'
+  account_id?: number | null
   category_id?: number | null
   date?: string
   is_recurring?: boolean

@@ -49,6 +49,7 @@ function serializeTransaction(row: {
   description: string
   amount: number
   type: string
+  account_id?: number | null
   category_id: number | null
   date: string
   member_id?: number | null
@@ -58,6 +59,7 @@ function serializeTransaction(row: {
     description: row.description,
     amount: row.amount,
     type: row.type,
+    account_id: row.account_id || null,
     category_id: row.category_id,
     date: row.date,
     member_id: row.member_id || null
@@ -123,6 +125,7 @@ export function signTransaction(row: {
   description: string
   amount: number
   type: string
+  account_id?: number | null
   category_id: number | null
   date: string
   member_id?: number | null
@@ -139,6 +142,7 @@ export function verifyTransaction(row: {
   description: string
   amount: number
   type: string
+  account_id?: number | null
   category_id: number | null
   date: string
   member_id?: number | null
@@ -369,6 +373,7 @@ export function scanDatabaseIntegrity(): {
     description: string
     amount: number
     type: string
+    account_id: number | null
     category_id: number | null
     date: string
     member_id: number | null
@@ -500,6 +505,7 @@ export function backfillHMACs(): {
     description: string
     amount: number
     type: string
+    account_id: number | null
     category_id: number | null
     date: string
     member_id: number | null

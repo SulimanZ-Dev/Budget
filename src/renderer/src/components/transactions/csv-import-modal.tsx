@@ -29,6 +29,8 @@ export function CsvImportModal({
   const [amtCol, setAmtCol] = useState('1')
   const [dateCol, setDateCol] = useState('2')
   const [delimiter, setDelimiter] = useState(',')
+  const [accounts, setAccounts] = useState<{ id: number; name: string; is_archived: number }[]>([])
+  const [accountId, setAccountId] = useState('')
   const [importing, setImporting] = useState(false)
   const [loaded, setLoaded] = useState(false)
 
@@ -52,6 +54,11 @@ export function CsvImportModal({
   useEffect(() => {
     if (open && csvText && !loaded) {
       loadPreview()
+      window.api.accounts.list().then((rows) => {
+        const active = (rows as { id: number; name: string; is_archived: number }[]).filter((account) => account.is_archived !== 1)
+        setAccounts(active)
+        setAccountId((current) => current || (active[0] ? String(active[0].id) : ''))
+      })
     }
     if (!open) setLoaded(false)
   }, [open, csvText])
@@ -64,7 +71,8 @@ export function CsvImportModal({
         amountCol: parseInt(amtCol),
         dateCol: parseInt(dateCol),
         delimiter,
-        hasHeader: true
+        hasHeader: true,
+        accountId: accountId ? parseInt(accountId) : undefined
       })
       onImported((result as { imported: number }).imported)
       onOpenChange(false)
@@ -135,6 +143,21 @@ export function CsvImportModal({
               </SelectContent>
             </Select>
           </div>
+        </div>
+        <div className="grid gap-2">
+          <Label>Account</Label>
+          <Select value={accountId} onValueChange={setAccountId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Main" />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((account) => (
+                <SelectItem key={account.id} value={String(account.id)}>
+                  {account.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         {previewRows.length > 0 && (
           <div className="max-h-32 overflow-auto rounded-lg border text-xs">

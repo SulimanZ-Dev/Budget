@@ -33,6 +33,8 @@ export function TransactionsPage(): JSX.Element {
   const navigate = useNavigate()
   const [transactions, setTransactions] = useState<TransactionRowData[]>([])
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
+  const [accounts, setAccounts] = useState<{ id: number; name: string; is_archived: number }[]>([])
+  const [importAccountId, setImportAccountId] = useState('')
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search, 300)
@@ -51,6 +53,11 @@ export function TransactionsPage(): JSX.Element {
 
   useEffect(() => {
     window.api.categories.list().then((c) => setCategories(c as { id: number; name: string }[]))
+    window.api.accounts.list().then((rows) => {
+      const active = (rows as { id: number; name: string; is_archived: number }[]).filter((account) => account.is_archived !== 1)
+      setAccounts(active)
+      setImportAccountId((current) => current || (active[0] ? String(active[0].id) : ''))
+    })
   }, [])
 
   useEffect(() => {
@@ -237,6 +244,9 @@ export function TransactionsPage(): JSX.Element {
       sort={sort}
       setSort={setSort}
       loadData={load}
+      accounts={accounts}
+      importAccountId={importAccountId}
+      setImportAccountId={setImportAccountId}
     >
       {calendarView && calendarDays && (
         <div className="mb-6 grid grid-cols-7 gap-1">
@@ -308,7 +318,10 @@ function TransactionsShell({
   pickCsv,
   sort,
   setSort,
-  loadData
+  loadData,
+  accounts,
+  importAccountId,
+  setImportAccountId
 }: {
   children: React.ReactNode
   search: string
@@ -332,6 +345,9 @@ function TransactionsShell({
   sort: string
   setSort: (v: string) => void
   loadData: () => void
+  accounts: { id: number; name: string; is_archived: number }[]
+  importAccountId: string
+  setImportAccountId: (v: string) => void
 }): JSX.Element {
   const dialog = useAppDialog()
 
@@ -363,7 +379,7 @@ function TransactionsShell({
             Export CSV
           </Button>
           <Button variant="outline" size="sm" onClick={async () => {
-            const result = await window.api.transactions.importOfx()
+            const result = await window.api.transactions.importOfx(importAccountId ? parseInt(importAccountId) : undefined)
             if (result && result.imported > 0) {
               await dialog.alert(`Imported ${result.imported} transactions from OFX.`, 'Import complete')
               loadData()
@@ -374,6 +390,23 @@ function TransactionsShell({
           </Button>
         </div>
       </div>
+      {accounts.length > 0 && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Import account</span>
+          <Select value={importAccountId} onValueChange={setImportAccountId}>
+            <SelectTrigger className="h-8 w-44">
+              <SelectValue placeholder="Main" />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((account) => (
+                <SelectItem key={account.id} value={String(account.id)}>
+                  {account.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
