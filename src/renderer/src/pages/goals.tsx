@@ -34,6 +34,18 @@ interface Goal {
   notes?: string
 }
 
+interface GoalFeasibility {
+  status: string
+  detail: string
+  requiredMonthly: number
+  pacePercent: number
+  color: 'success' | 'warning' | 'destructive' | 'info'
+}
+
+interface CashFlowForecastRow {
+  projectedBalance: number
+}
+
 function statusLabel(progress: number): { text: string; color: string } {
   if (progress >= 0.9) return { text: 'Almost there!', color: 'text-success' }
   if (progress >= 0.5) return { text: 'On track', color: 'text-info' }
@@ -41,9 +53,10 @@ function statusLabel(progress: number): { text: string; color: string } {
 }
 
 export function GoalsPage(): JSX.Element {
-  const { profile, rates } = useAppStore()
+  const { profile, selectedMonth, rates } = useAppStore()
   const dialog = useAppDialog()
   const [goals, setGoals] = useState<Goal[]>([])
+  const [monthlySurplus, setMonthlySurplus] = useState(0)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
   const [form, setForm] = useState({
@@ -51,6 +64,7 @@ export function GoalsPage(): JSX.Element {
     type: 'savings',
     targetAmount: '',
     currentAmount: '',
+    targetDate: '',
     interestRate: '',
     monthlyPayment: '',
     notes: ''
@@ -59,10 +73,16 @@ export function GoalsPage(): JSX.Element {
   useEffect(() => {
     async function load(): Promise<void> {
       await window.api.goals.autoCreateFromCategories()
-      setGoals(await window.api.goals.list())
+      const [goalRows, forecastRows] = await Promise.all([
+        window.api.goals.list(),
+        window.api.dashboard.cashFlowForecast(profile.year, selectedMonth)
+      ])
+      setGoals(goalRows)
+      const forecast = (forecastRows as CashFlowForecastRow[])[0]
+      setMonthlySurplus(Math.max(0, forecast?.projectedBalance ?? 0))
     }
     load()
-  }, [])
+  }, [profile.year, selectedMonth])
 
   async function removeGoal(id: number): Promise<void> {
     if (!await dialog.confirm('Delete this goal?', {
@@ -81,6 +101,7 @@ export function GoalsPage(): JSX.Element {
       type: goal.type,
       targetAmount: String(goal.target_amount),
       currentAmount: String(goal.current_amount),
+      targetDate: goal.target_date ?? '',
       interestRate: goal.interest_rate ? String(goal.interest_rate) : '',
       monthlyPayment: goal.monthly_payment ? String(goal.monthly_payment) : '',
       notes: goal.notes || ''
@@ -94,6 +115,7 @@ export function GoalsPage(): JSX.Element {
       type: form.type,
       targetAmount: parseFloat(form.targetAmount),
       currentAmount: parseFloat(form.currentAmount) || 0,
+      targetDate: form.targetDate || undefined,
       interestRate: form.interestRate ? parseFloat(form.interestRate) : undefined,
       monthlyPayment: form.monthlyPayment ? parseFloat(form.monthlyPayment) : undefined,
       notes: form.notes || undefined
@@ -110,6 +132,7 @@ export function GoalsPage(): JSX.Element {
       type: 'savings',
       targetAmount: '',
       currentAmount: '',
+      targetDate: '',
       interestRate: '',
       monthlyPayment: '',
       notes: ''
@@ -125,6 +148,7 @@ export function GoalsPage(): JSX.Element {
       type: 'savings',
       targetAmount: '',
       currentAmount: '',
+      targetDate: '',
       interestRate: '',
       monthlyPayment: '',
       notes: ''
@@ -146,6 +170,78 @@ export function GoalsPage(): JSX.Element {
     return months
   }
 
+  function monthsUntil(targetDate?: string): number | null {
+    if (!targetDate) return null
+    const target = new Date(`${targetDate}T00:00:00`)
+    if (Number.isNaN(target.getTime())) return null
+    const now = new Date()
+    const months = (target.getFullYear() - now.getFullYear()) * 12 + target.getMonth() - now.getMonth()
+    return Math.max(1, months + (target.getDate() >= now.getDate() ? 1 : 0))
+  }
+
+  function feasibility(g: Goal): GoalFeasibility {
+    const remaining = Math.max(0, g.target_amount - g.current_amount)
+    if (remaining <= 0) {
+      return {
+        status: 'Ahead of schedule',
+        detail: 'Goal is already funded.',
+        requiredMonthly: 0,
+        pacePercent: 100,
+        color: 'success'
+      }
+    }
+    const months = monthsUntil(g.target_date)
+    if (!months) {
+      return {
+        status: 'Set a deadline',
+        detail: 'Add a target date to check feasibility.',
+        requiredMonthly: 0,
+        pacePercent: 0,
+        color: 'info'
+      }
+    }
+    const requiredMonthly = Math.ceil(remaining / months)
+    const pacePercent = requiredMonthly > 0 ? Math.min(100, (monthlySurplus / requiredMonthly) * 100) : 100
+    if (monthlySurplus >= requiredMonthly * 1.2) {
+      return {
+        status: 'Ahead of schedule',
+        detail: `${formatMoney(requiredMonthly, profile.displayCurrency, rates)}/month needed; current surplus can cover it.`,
+        requiredMonthly,
+        pacePercent,
+        color: 'success'
+      }
+    }
+    if (monthlySurplus >= requiredMonthly) {
+      return {
+        status: 'On track',
+        detail: `${formatMoney(requiredMonthly, profile.displayCurrency, rates)}/month needed; current surplus covers it.`,
+        requiredMonthly,
+        pacePercent,
+        color: 'success'
+      }
+    }
+    const gap = requiredMonthly - monthlySurplus
+    return {
+      status: `Behind - need ${formatMoney(gap, profile.displayCurrency, rates)}/month more`,
+      detail: `${formatMoney(requiredMonthly, profile.displayCurrency, rates)}/month needed by ${formatDate(new Date(`${g.target_date}T00:00:00`), profile.locale)}.`,
+      requiredMonthly,
+      pacePercent,
+      color: 'warning'
+    }
+  }
+
+  const feasibilityTextClass: Record<GoalFeasibility['color'], string> = {
+    success: 'text-success',
+    warning: 'text-warning',
+    destructive: 'text-destructive',
+    info: 'text-info'
+  }
+  const feasibilityBarClass: Record<GoalFeasibility['color'], string> = {
+    success: 'bg-success',
+    warning: 'bg-warning',
+    destructive: 'bg-destructive',
+    info: 'bg-info'
+  }
 
   return (
     <div className="space-y-6 p-6">
@@ -183,6 +279,7 @@ export function GoalsPage(): JSX.Element {
                 : null
             const projected =
               monthsLeft != null ? formatDate(addMonths(new Date(), monthsLeft), profile.locale) : null
+            const plan = feasibility(g)
 
             return (
               <motion.div
@@ -242,6 +339,23 @@ export function GoalsPage(): JSX.Element {
                     {projected && (
                       <p className="mt-3 text-xs text-muted-foreground">Projected: {projected}</p>
                     )}
+                    <div className="mt-3 rounded-lg border bg-muted/30 p-3">
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className={`font-medium ${feasibilityTextClass[plan.color]}`}>{plan.status}</span>
+                        {plan.requiredMonthly > 0 && (
+                          <span className="text-muted-foreground">
+                            {formatMoney(plan.requiredMonthly, profile.displayCurrency, rates)}/mo
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={`h-full ${feasibilityBarClass[plan.color]}`}
+                          style={{ width: `${plan.pacePercent}%` }}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">{plan.detail}</p>
+                    </div>
                     {g.type === 'debt' && debtPayoffMonths(g) != null && (
                       <p className="mt-2 text-xs text-info">
                         Payoff in ~{debtPayoffMonths(g)} months at current payment rate
@@ -331,6 +445,14 @@ export function GoalsPage(): JSX.Element {
                   />
                 </div>
               )}
+            </div>
+            <div className="grid gap-2">
+              <Label>Target date</Label>
+              <Input
+                type="date"
+                value={form.targetDate}
+                onChange={(e) => setForm({ ...form, targetDate: e.target.value })}
+              />
             </div>
             {form.type === 'emergency' && (
               <Button
