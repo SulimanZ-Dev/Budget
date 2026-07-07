@@ -473,18 +473,19 @@ export function bulkFlagTransactions(ids: number[]): boolean {
  * Command: Import transactions from CSV with event sourcing
  */
 export function importTransactionsFromCsvWithEvents(
-  rows: Array<{ description: string; amount: number; date: string; type?: string }>,
+  rows: Array<{ description: string; amount: number; date: string; type?: string; category_id?: number | null }>,
   accountId?: number | null
 ): { imported: number } {
   const db = getDatabase()
   
-  const tx = db.transaction((txRows: Array<{ description: string; amount: number; date: string; type?: string }>, importAccountId?: number | null) => {
+  const tx = db.transaction((txRows: Array<{ description: string; amount: number; date: string; type?: string; category_id?: number | null }>, importAccountId?: number | null) => {
     let imported = 0
     for (const row of txRows) {
       createTransaction({
         description: row.description,
         amount: row.amount,
         type: (row.type === 'income' || row.type === 'transfer') ? row.type : 'expense',
+        category_id: row.category_id ?? null,
         date: row.date,
         account_id: importAccountId ?? undefined
       })

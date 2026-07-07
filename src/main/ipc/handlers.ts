@@ -129,6 +129,79 @@ function normalizePositiveInteger(value: unknown, fallback: number, max?: number
   return max ? Math.min(normalized, max) : normalized
 }
 
+type RuleOperator = 'AND' | 'OR'
+type RuleConditionType = 'description_contains' | 'amount_min' | 'amount_max' | 'category_is' | 'type_is'
+type RuleNode =
+  | { kind: 'condition'; type: RuleConditionType; value: string | number }
+  | { kind: 'group'; operator: RuleOperator; children: RuleNode[] }
+
+interface CategorizationRuleRow {
+  id: number
+  pattern: string
+  category_id: number
+  priority: number | null
+  apply_future_only: number | null
+  conditions_json: string | null
+}
+
+interface RuleTransactionLike {
+  description: string
+  amount: number
+  type?: string | null
+  category_id?: number | null
+}
+
+function legacyRuleNode(pattern: string): RuleNode {
+  return { kind: 'condition', type: 'description_contains', value: pattern }
+}
+
+function parseRuleNode(rule: CategorizationRuleRow): RuleNode {
+  if (!rule.conditions_json) return legacyRuleNode(rule.pattern)
+  try {
+    const parsed = JSON.parse(rule.conditions_json) as RuleNode
+    return parsed?.kind ? parsed : legacyRuleNode(rule.pattern)
+  } catch {
+    return legacyRuleNode(rule.pattern)
+  }
+}
+
+function matchesRuleNode(node: RuleNode, tx: RuleTransactionLike): boolean {
+  if (node.kind === 'group') {
+    const children = node.children ?? []
+    if (children.length === 0) return false
+    return node.operator === 'OR'
+      ? children.some((child) => matchesRuleNode(child, tx))
+      : children.every((child) => matchesRuleNode(child, tx))
+  }
+
+  if (node.type === 'description_contains') {
+    return tx.description.toLowerCase().includes(String(node.value).trim().toLowerCase())
+  }
+  if (node.type === 'amount_min') return tx.amount >= Number(node.value)
+  if (node.type === 'amount_max') return tx.amount <= Number(node.value)
+  if (node.type === 'category_is') return tx.category_id === Number(node.value)
+  if (node.type === 'type_is') return tx.type === String(node.value)
+  return false
+}
+
+function getCategorizationRules(database = getDatabase()): CategorizationRuleRow[] {
+  return database
+    .prepare('SELECT * FROM categorization_rules ORDER BY priority ASC, id ASC')
+    .all() as CategorizationRuleRow[]
+}
+
+function matchingRuleCategoryId(
+  tx: RuleTransactionLike,
+  options: { includeFutureOnly: boolean },
+  database = getDatabase()
+): number | null {
+  for (const rule of getCategorizationRules(database)) {
+    if (!options.includeFutureOnly && rule.apply_future_only === 1) continue
+    if (matchesRuleNode(parseRuleNode(rule), tx)) return rule.category_id
+  }
+  return null
+}
+
 function normalizeOffset(value: unknown): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return 0
@@ -325,14 +398,26 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
   ipcMain.handle('rules:list', () => {
     return db()
-      .prepare('SELECT r.*, c.name as category_name FROM categorization_rules r LEFT JOIN categories c ON r.category_id = c.id ORDER BY r.id')
+      .prepare('SELECT r.*, c.name as category_name FROM categorization_rules r LEFT JOIN categories c ON r.category_id = c.id ORDER BY r.priority ASC, r.id ASC')
       .all()
   })
 
-  ipcMain.handle('rules:create', (_, rule: { pattern: string; categoryId: number }) => {
+  ipcMain.handle('rules:create', (_, rule: {
+    pattern?: string
+    categoryId: number
+    priority?: number
+    applyFutureOnly?: boolean
+    conditions?: RuleNode
+  }) => {
+    const conditions = rule.conditions ?? legacyRuleNode(rule.pattern ?? '')
+    const pattern = String(rule.pattern ?? '').trim() || 'Advanced rule'
+    const priority = normalizePositiveInteger(rule.priority ?? 100, 100)
     const r = db()
-      .prepare('INSERT INTO categorization_rules (pattern, category_id) VALUES (?, ?)')
-      .run(rule.pattern, rule.categoryId)
+      .prepare(
+        `INSERT INTO categorization_rules (pattern, category_id, priority, apply_future_only, conditions_json)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(pattern, rule.categoryId, priority, rule.applyFutureOnly ? 1 : 0, JSON.stringify(conditions))
     return { id: Number(r.lastInsertRowid) }
   })
 
@@ -342,18 +427,15 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
 
   ipcMain.handle('rules:apply', () => {
-    const rules = db().prepare('SELECT * FROM categorization_rules').all() as { pattern: string; category_id: number }[]
     const txs = db().prepare(
-      "SELECT id, description FROM transactions WHERE category_id IS NULL"
-    ).all() as { id: number; description: string }[]
+      "SELECT id, description, amount, type, category_id FROM transactions"
+    ).all() as { id: number; description: string; amount: number; type: string; category_id: number | null }[]
     const updated: number[] = []
     for (const tx of txs) {
-      for (const rule of rules) {
-        if (tx.description.includes(rule.pattern)) {
-          db().prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(rule.category_id, tx.id)
-          updated.push(tx.id)
-          break
-        }
+      const categoryId = matchingRuleCategoryId(tx, { includeFutureOnly: false }, db())
+      if (categoryId && categoryId !== tx.category_id) {
+        db().prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(categoryId, tx.id)
+        updated.push(tx.id)
       }
     }
     return updated
@@ -827,7 +909,11 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       hasHeader: true
     }
     const rows = importTransactionsFromCsv(csv, map)
-    return importTransactionsFromCsvWithEvents(rows, normalizeAccountId(mapping?.accountId))
+    const categorizedRows = rows.map((row) => ({
+      ...row,
+      category_id: matchingRuleCategoryId(row, { includeFutureOnly: true }, db())
+    }))
+    return importTransactionsFromCsvWithEvents(categorizedRows, normalizeAccountId(mapping?.accountId))
   })
 
   ipcMain.handle('transactions:importOfx', async (_, accountId?: number) => {
@@ -840,7 +926,11 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (!result.canceled && result.filePaths[0]) {
       const content = readFileSync(result.filePaths[0], 'utf8')
       const rows = parseOfx(content)
-      return importTransactionsFromCsvWithEvents(rows, normalizeAccountId(accountId))
+      const categorizedRows = rows.map((row) => ({
+        ...row,
+        category_id: matchingRuleCategoryId(row, { includeFutureOnly: true }, db())
+      }))
+      return importTransactionsFromCsvWithEvents(categorizedRows, normalizeAccountId(accountId))
     }
     return { imported: 0 }
   })

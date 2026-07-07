@@ -39,7 +39,7 @@ const api = {
 
   rules: {
     list: () => ipcRenderer.invoke('rules:list'),
-    create: (rule: { pattern: string; categoryId: number }) => ipcRenderer.invoke('rules:create', rule),
+    create: (rule: unknown) => ipcRenderer.invoke('rules:create', rule),
     delete: (id: number) => ipcRenderer.invoke('rules:delete', id),
     apply: () => ipcRenderer.invoke('rules:apply')
   },

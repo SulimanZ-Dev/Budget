@@ -523,9 +523,15 @@ function runMigrations(database: SqlCipher.Database): void {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         pattern TEXT NOT NULL,
         category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+        priority INTEGER DEFAULT 100,
+        apply_future_only INTEGER DEFAULT 0,
+        conditions_json TEXT,
         created_at TEXT DEFAULT (datetime('now'))
       )
     `)
+    addColumnIfMissing(database, 'categorization_rules', 'priority', 'priority INTEGER DEFAULT 100')
+    addColumnIfMissing(database, 'categorization_rules', 'apply_future_only', 'apply_future_only INTEGER DEFAULT 0')
+    addColumnIfMissing(database, 'categorization_rules', 'conditions_json', 'conditions_json TEXT')
   } catch (e) {
     console.log('Categorization rules migration skipped:', e)
   }
