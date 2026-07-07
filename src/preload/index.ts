@@ -107,6 +107,10 @@ const api = {
       ipcRenderer.invoke('transactions:categoryTrend', categoryId, year, anchorMonth, months),
     categoryVariance: (categoryId: number, year: number, month: number) =>
       ipcRenderer.invoke('transactions:categoryVariance', categoryId, year, month),
+    recurringMerchantPatterns: (year: number, month: number) =>
+      ipcRenderer.invoke('transactions:recurringMerchantPatterns', year, month),
+    dismissRecurringMerchantPattern: (key: string) =>
+      ipcRenderer.invoke('transactions:dismissRecurringMerchantPattern', key),
     importOfx: (accountId?: number) => ipcRenderer.invoke('transactions:importOfx', accountId),
     // Event sourcing methods
     history: (id: number) => ipcRenderer.invoke('transactions:history', id),

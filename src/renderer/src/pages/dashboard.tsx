@@ -53,6 +53,17 @@ interface CashFlowForecastRow {
   tier: 'success' | 'warning' | 'destructive'
 }
 
+interface RecurringMerchantPattern {
+  key: string
+  merchant: string
+  categoryName: string
+  count: number
+  total: number
+  average: number
+  firstDate: string
+  lastDate: string
+}
+
 export function DashboardPage(): JSX.Element {
   const { profile, selectedMonth, rates, loading: appLoading, refreshTrigger } = useAppStore()
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -61,6 +72,7 @@ export function DashboardPage(): JSX.Element {
   const [weeklyTip, setWeeklyTip] = useState('')
   const [generatingInsight, setGeneratingInsight] = useState(false)
   const [anomalies, setAnomalies] = useState<{ category: string; current: number; avg: number; stddev: number; severity: string }[]>([])
+  const [recurringPatterns, setRecurringPatterns] = useState<RecurringMerchantPattern[]>([])
   const [upcomingSubs, setUpcomingSubs] = useState<
     { id: number; name: string; amount: number; frequency: string; next_billing_date?: string }[]
   >([])
@@ -84,9 +96,17 @@ export function DashboardPage(): JSX.Element {
           window.api.savings.checkBilling().catch(() => {})
           window.api.income.checkBilling().catch(() => {})
           window.api.ai.detectAnomalies().then(setAnomalies).catch(() => {})
+          window.api.transactions.recurringMerchantPatterns(profile.year, selectedMonth).then((patterns) => {
+            setRecurringPatterns(patterns as RecurringMerchantPattern[])
+          }).catch(() => {})
           window.api.subscriptions.upcoming().then((u) => setUpcomingSubs(u as typeof upcomingSubs)).catch(() => {})
         }
       }, [profile.year, selectedMonth, appLoading, refreshTrigger])
+
+  async function dismissRecurringPattern(key: string): Promise<void> {
+    await window.api.transactions.dismissRecurringMerchantPattern(key)
+    setRecurringPatterns((current) => current.filter((pattern) => pattern.key !== key))
+  }
 
   async function refreshInsight(): Promise<void> {
     setGeneratingInsight(true)
@@ -185,6 +205,29 @@ export function DashboardPage(): JSX.Element {
                     {(a.severity === 'high' ? 'Critical spike' : 'Unusual activity')}
                   </p>
                 </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {recurringPatterns.length > 0 && (
+        <div className="space-y-2">
+          {recurringPatterns.map((pattern) => (
+            <Card key={pattern.key} className="border-info/40 bg-info/5">
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <div className="flex items-start gap-3 text-sm">
+                  <CreditCard className="mt-0.5 h-5 w-5 shrink-0 text-info" />
+                  <div>
+                    <p className="font-medium">{pattern.merchant}</p>
+                    <p className="text-muted-foreground">
+                      {pattern.count} times in {pattern.categoryName} since {pattern.firstDate} - avg {formatMoney(pattern.average, profile.displayCurrency, rates)}
+                    </p>
+                  </div>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => dismissRecurringPattern(pattern.key)}>
+                  Dismiss
+                </Button>
               </CardContent>
             </Card>
           ))}

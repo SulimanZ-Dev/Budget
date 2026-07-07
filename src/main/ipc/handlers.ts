@@ -1785,6 +1785,95 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     }
   })
 
+  ipcMain.handle('transactions:recurringMerchantPatterns', (_, year: number, month: number) => {
+    const start = addYearMonth(year, month, -5)
+    const end = addYearMonth(year, month, 1)
+    const startDate = monthStart(start.year, start.month)
+    const endDate = monthStart(end.year, end.month)
+    const ignoredRow = db().prepare("SELECT value FROM settings WHERE key = 'recurringMerchantIgnores'").get() as
+      | { value: string }
+      | undefined
+    const ignored = ignoredRow ? JSON.parse(ignoredRow.value) as Record<string, boolean> : {}
+    const rows = db()
+      .prepare(
+        `SELECT t.id, t.description, t.amount, t.date, t.category_id, c.name as category_name
+         FROM transactions t
+         LEFT JOIN categories c ON t.category_id = c.id
+         WHERE t.type = 'expense'
+           AND t.category_id IS NOT NULL
+           AND t.date >= ?
+           AND t.date < ?
+           AND (t.notes IS NULL OR t.notes NOT LIKE 'subscription:%')
+           AND NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.transaction_id = t.id)
+         ORDER BY t.date ASC, t.id ASC`
+      )
+      .all(startDate, endDate) as Array<{
+        id: number
+        description: string
+        amount: number
+        date: string
+        category_id: number
+        category_name: string | null
+      }>
+
+    const groups = new Map<string, {
+      merchant: string
+      normalizedMerchant: string
+      categoryId: number
+      categoryName: string
+      transactions: Array<{ id: number; amount: number; date: string; description: string }>
+    }>()
+    for (const row of rows) {
+      const normalizedMerchant = normalizeMerchantName(row.description)
+      const key = `${normalizedMerchant}|${row.category_id}`
+      if (ignored[key]) continue
+      const existing = groups.get(key) ?? {
+        merchant: row.description.trim(),
+        normalizedMerchant,
+        categoryId: row.category_id,
+        categoryName: row.category_name ?? 'Uncategorized',
+        transactions: []
+      }
+      existing.transactions.push({
+        id: row.id,
+        amount: row.amount,
+        date: row.date,
+        description: row.description
+      })
+      groups.set(key, existing)
+    }
+
+    return [...groups.entries()]
+      .filter(([, group]) => group.transactions.length >= 4)
+      .map(([key, group]) => {
+        const total = roundCurrency(group.transactions.reduce((sum, tx) => sum + tx.amount, 0))
+        const average = roundCurrency(total / group.transactions.length)
+        return {
+          key,
+          merchant: group.merchant,
+          normalizedMerchant: group.normalizedMerchant,
+          categoryId: group.categoryId,
+          categoryName: group.categoryName,
+          count: group.transactions.length,
+          total,
+          average,
+          firstDate: group.transactions[0]?.date,
+          lastDate: group.transactions[group.transactions.length - 1]?.date
+        }
+      })
+      .sort((a, b) => b.total - a.total)
+  })
+
+  ipcMain.handle('transactions:dismissRecurringMerchantPattern', (_, key: string) => {
+    const row = db().prepare("SELECT value FROM settings WHERE key = 'recurringMerchantIgnores'").get() as
+      | { value: string }
+      | undefined
+    const ignored = row ? JSON.parse(row.value) as Record<string, boolean> : {}
+    ignored[key] = true
+    db().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('recurringMerchantIgnores', ?)").run(JSON.stringify(ignored))
+    return true
+  })
+
   ipcMain.handle('transactions:search', (_, query: string, limit = 20) => {
     return db()
       .prepare(
