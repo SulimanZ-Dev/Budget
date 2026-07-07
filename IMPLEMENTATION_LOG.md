@@ -8,6 +8,12 @@
 - **Files touched**: `src/renderer/src/pages/settings.tsx`.
 - **Verification**: Re-read `settings.tsx` after editing and confirmed affected controls pass explicit patches. Ran `npm run typecheck` successfully. Rebuilt with `npm run build` successfully. Attempted a disposable Electron profile restart test, but Electron on this Windows host ignores `APPDATA` overrides for `app.getPath('appData')` and resolves to the real encrypted profile; I did not unlock or mutate the real profile. Verified the app-data behavior with an isolated Electron main-process check before stopping the disposable launch.
 
+### Item 2: Budget sparklines load stale/missing data
+- **Problem**: `BudgetPage.load()` fetched fresh budget rows, then requested category trends using `visible`, which was derived from the previous render's `entries`/`spending` state.
+- **Fix**: Store fetched budget rows in a local `loadedEntries` variable, build a local `loadedVisible` list from `loadedEntries` and the freshly-computed spending map, and request trend data from that fresh list.
+- **Files touched**: `src/renderer/src/pages/budget.tsx`.
+- **Verification**: Re-read `budget.tsx` after editing and confirmed trend requests no longer depend on the render-level `visible` value inside `load()`. Ran `npm run typecheck` successfully and `npm run build` successfully. Live first-render visual verification was blocked by the same Electron app-data isolation issue noted in Item 1; I did not unlock or mutate the real encrypted profile.
+
 ## Session: 2026-07-05 - Full Demo Data Coverage
 
 ### Part 1 Step 1: tab/data-source checklist

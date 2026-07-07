@@ -60,7 +60,8 @@ export function BudgetPage(): JSX.Element {
         window.api.income.sources(),
         window.api.subscriptions.list()
       ])
-      setEntries((budget as BudgetRow[]) ?? [])
+      const loadedEntries = (budget as BudgetRow[]) ?? []
+      setEntries(loadedEntries)
       const map: Record<number, number> = {}
       for (const t of (txs as { category_id: number; amount: number; type: string }[]) ?? []) {
         if (t.type === 'savings' && t.category_id) {
@@ -97,13 +98,16 @@ export function BudgetPage(): JSX.Element {
       )
       setSubscriptionMonthly(monthlySubs)
 
-      // Load 6-month trends for visible categories
-      const trendRequests = visible.map(cat =>
+      // Load 6-month trends for freshly-loaded visible categories.
+      const loadedVisible = profile.autoHideZeroCategories
+        ? loadedEntries.filter((e) => e.amount > 0 || (map[e.category_id] || 0) > 0)
+        : loadedEntries
+      const trendRequests = loadedVisible.map(cat =>
         window.api.transactions.categoryTrend(cat.category_id, profile.year, 6)
       )
       const trendResults = await Promise.all(trendRequests)
       const trendMap: Record<number, { month: number; spent: number }[]> = {}
-      visible.forEach((cat, idx) => {
+      loadedVisible.forEach((cat, idx) => {
         trendMap[cat.category_id] = trendResults[idx] ?? []
       })
       setTrends(trendMap)
