@@ -18,7 +18,8 @@ import {
   PiggyBank,
   HelpCircle,
   Lock,
-  LockOpen
+  LockOpen,
+  Search
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
@@ -41,7 +42,7 @@ const navItems = [
 ]
 
 export function Sidebar(): JSX.Element {
-  const { sidebarCollapsed, setSidebarCollapsed, setShowHelp } = useAppStore()
+  const { sidebarCollapsed, setSidebarCollapsed, setShowHelp, setCommandOpen } = useAppStore()
   const [isEncrypted, setIsEncrypted] = useState(false)
 
   useEffect(() => {
@@ -101,6 +102,15 @@ export function Sidebar(): JSX.Element {
             <p className="text-xs">{isEncrypted ? 'Database is encrypted and unlocked' : 'Database encryption status unknown'}</p>
           </TooltipContent>
         </Tooltip>
+        <Button
+          variant="ghost"
+          className={cn("w-full justify-start", sidebarCollapsed && "justify-center")}
+          onClick={() => setCommandOpen(true)}
+          title="Open command palette"
+        >
+          <Search className="h-5 w-5 shrink-0" />
+          {!sidebarCollapsed && <span className="ml-3">Command</span>}
+        </Button>
         <Button
           variant="ghost"
           className={cn("w-full justify-start", sidebarCollapsed && "justify-center")}

@@ -12,6 +12,14 @@ const api = {
   notify: (title: string, body: string): Promise<void> =>
     ipcRenderer.invoke('notification:show', { title, body }),
 
+  commands: {
+    onOpenCommandPalette: (callback: () => void): (() => void) => {
+      const listener = (): void => callback()
+      ipcRenderer.on('command-palette:open', listener)
+      return () => ipcRenderer.removeListener('command-palette:open', listener)
+    }
+  },
+
   years: {
     list: () => ipcRenderer.invoke('years:list')
   },

@@ -32,6 +32,12 @@
 - **Files touched**: `src/main/crypto/__tests__/keyManager.test.ts`.
 - **Verification**: Re-read the test file after editing and confirmed `src/main/crypto/keyManager.ts` was not modified. Ran `npm test -- src/main/crypto/__tests__/keyManager.test.ts` successfully: 8/8 key-manager tests passed. Ran full `npm test` successfully: 1 test file, 8 tests passed. Ran `npm run typecheck` successfully.
 
+### Item 6: Command palette unreachable from keyboard
+- **Problem**: Ctrl+K could be swallowed before the renderer `keydown` handler saw it, and there was no visible command palette launcher.
+- **Fix**: Added an Electron `before-input-event` bridge for Ctrl+K that sends `command-palette:open` to the renderer. Exposed a preload listener and wired it through `useKeyboardShortcuts()` with the same input/dialog guards used by renderer shortcuts. Normalized renderer shortcut keys with `toLowerCase()`. Added a visible sidebar "Command" button that opens the palette through the existing Zustand state.
+- **Files touched**: `src/main/index.ts`, `src/preload/index.ts`, `src/renderer/src/hooks/use-keyboard.ts`, `src/renderer/src/components/layout/sidebar.tsx`.
+- **Verification**: Re-read all touched files after editing and confirmed both keyboard paths and the sidebar fallback call `setCommandOpen(true)`. Ran `npm run typecheck` successfully and `npm run build` successfully. Live Ctrl+K and sidebar-click verification is blocked by the encrypted real profile/app-data isolation issue noted in Item 1; I did not unlock or mutate the real profile.
+
 ## Session: 2026-07-05 - Full Demo Data Coverage
 
 ### Part 1 Step 1: tab/data-source checklist

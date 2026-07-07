@@ -17,48 +17,56 @@ function isInputField(el: EventTarget | null): boolean {
   )
 }
 
+function shouldSkipShortcuts(target: EventTarget | null): boolean {
+  if (isInputField(target)) return true
+  return Boolean(
+    document.querySelector('[role="dialog"][aria-modal="true"]') ||
+      document.querySelector('[data-state="open"][role="dialog"]')
+  )
+}
+
 export function useKeyboardShortcuts(): void {
   const navigate = useNavigate()
   const { setCommandOpen, setTransactionModalOpen, openAI, profile, setProfile } = useAppStore()
 
   useEffect(() => {
+    return window.api.commands.onOpenCommandPalette(() => {
+      if (!shouldSkipShortcuts(document.activeElement)) {
+        setCommandOpen(true)
+      }
+    })
+  }, [setCommandOpen])
+
+  useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
       const target = e.target
 
-      // Let all keystrokes through when focus is inside an input-like element
-      if (isInputField(target)) return
-
-      // Skip when a modal/dialog/drawer is open
-      if (
-        document.querySelector('[role="dialog"][aria-modal="true"]') ||
-        document.querySelector('[data-state="open"][role="dialog"]')
-      ) {
-        return
-      }
+      if (shouldSkipShortcuts(target)) return
 
       const mod = e.ctrlKey || e.metaKey
       if (!mod) return
+      const key = e.key.toLowerCase()
 
-      if (e.key === 'k') {
+      if (key === 'k') {
         e.preventDefault()
         e.stopPropagation()
         setCommandOpen(true)
-      } else if (e.key === 'n') {
+      } else if (key === 'n') {
         e.preventDefault()
         setTransactionModalOpen(true)
       } else if (e.key === ',') {
         e.preventDefault()
         navigate('/settings')
-      } else if (e.key === 'd') {
+      } else if (key === 'd') {
         e.preventDefault()
         const next = profile.theme === 'dark' ? 'light' : 'dark'
         setProfile({ theme: next })
         window.api.theme.set(next)
         document.documentElement.classList.toggle('dark', next === 'dark')
-      } else if (e.key === 'f') {
+      } else if (key === 'f') {
         e.preventDefault()
         navigate('/transactions')
-      } else if (e.shiftKey && e.key === 'A') {
+      } else if (e.shiftKey && key === 'a') {
         e.preventDefault()
         openAI()
         navigate('/ai')
