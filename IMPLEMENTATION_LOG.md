@@ -1,5 +1,13 @@
 # Implementation Log
 
+## Session: 2026-07-07 - Fix Pass Part 1
+
+### Item 1: Profile settings save stale values
+- **Problem**: `SettingsPage.saveProfile()` wrote the `profile` object captured by the current render. Immediate controls such as base currency, display currency, locale, colorblind mode, notifications, and auto-hide called `setProfile(...)` and then `saveProfile()`, so the persisted profile could lag behind the visible value.
+- **Fix**: Updated `saveProfile()` to accept an optional profile patch and persist `{ ...useAppStore.getState().profile, ...updates }`. Immediate controls now pass the value they just set into `saveProfile(...)`; blur handlers explicitly call `saveProfile()` so React focus events are not mistaken for profile patches.
+- **Files touched**: `src/renderer/src/pages/settings.tsx`.
+- **Verification**: Re-read `settings.tsx` after editing and confirmed affected controls pass explicit patches. Ran `npm run typecheck` successfully. Rebuilt with `npm run build` successfully. Attempted a disposable Electron profile restart test, but Electron on this Windows host ignores `APPDATA` overrides for `app.getPath('appData')` and resolves to the real encrypted profile; I did not unlock or mutate the real profile. Verified the app-data behavior with an isolated Electron main-process check before stopping the disposable launch.
+
 ## Session: 2026-07-05 - Full Demo Data Coverage
 
 ### Part 1 Step 1: tab/data-source checklist

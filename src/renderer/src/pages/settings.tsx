@@ -341,8 +341,9 @@ export function SettingsPage(): JSX.Element {
     }
   }
 
-  async function saveProfile(): Promise<void> {
-    await window.api.settings.setProfile({ ...profile })
+  async function saveProfile(updates: Partial<typeof profile> = {}): Promise<void> {
+    const nextProfile = { ...useAppStore.getState().profile, ...updates }
+    await window.api.settings.setProfile(nextProfile)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -395,7 +396,7 @@ export function SettingsPage(): JSX.Element {
       'dark',
       theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
     )
-    saveProfile()
+    saveProfile({ theme })
   }
 
   return (
@@ -412,7 +413,7 @@ export function SettingsPage(): JSX.Element {
             <Input
               value={profile.name}
               onChange={(e) => setProfile({ name: e.target.value })}
-              onBlur={saveProfile}
+              onBlur={() => saveProfile()}
             />
           </div>
           <div className="grid gap-2">
@@ -453,8 +454,9 @@ export function SettingsPage(): JSX.Element {
           <Select
             value={profile.baseCurrency || 'SEK'}
             onValueChange={(v) => {
-              setProfile({ baseCurrency: v as DisplayCurrency })
-              saveProfile()
+              const baseCurrency = v as DisplayCurrency
+              setProfile({ baseCurrency })
+              saveProfile({ baseCurrency })
             }}
           >
             <SelectTrigger>
@@ -470,8 +472,9 @@ export function SettingsPage(): JSX.Element {
           <Select
             value={profile.displayCurrency}
             onValueChange={(v) => {
-              setProfile({ displayCurrency: v as DisplayCurrency })
-              saveProfile()
+              const displayCurrency = v as DisplayCurrency
+              setProfile({ displayCurrency })
+              saveProfile({ displayCurrency })
             }}
           >
             <SelectTrigger>
@@ -500,7 +503,7 @@ export function SettingsPage(): JSX.Element {
                 const next = Number.parseFloat(e.target.value)
                 setProfile({ cpiPercent: Number.isFinite(next) ? next : 0 })
               }}
-              onBlur={saveProfile}
+              onBlur={() => saveProfile()}
             />
           </div>
           <div className="grid gap-2">
@@ -512,7 +515,7 @@ export function SettingsPage(): JSX.Element {
                 const next = Number.parseFloat(e.target.value)
                 setProfile({ taxWithheldPercent: Number.isFinite(next) ? next : 0 })
               }}
-              onBlur={saveProfile}
+              onBlur={() => saveProfile()}
             />
           </div>
         </CardContent>
@@ -567,7 +570,7 @@ export function SettingsPage(): JSX.Element {
               checked={profile.colorBlindMode}
               onCheckedChange={(v) => {
                 setProfile({ colorBlindMode: v })
-                saveProfile()
+                saveProfile({ colorBlindMode: v })
               }}
             />
           </div>
@@ -576,8 +579,9 @@ export function SettingsPage(): JSX.Element {
             <Select
               value={profile.locale}
               onValueChange={(v) => {
-                setProfile({ locale: v as AppLocale })
-                saveProfile()
+                const locale = v as AppLocale
+                setProfile({ locale })
+                saveProfile({ locale })
               }}
             >
               <SelectTrigger>
@@ -606,7 +610,7 @@ export function SettingsPage(): JSX.Element {
               checked={profile.notificationsEnabled}
               onCheckedChange={(v) => {
                 setProfile({ notificationsEnabled: v })
-                saveProfile()
+                saveProfile({ notificationsEnabled: v })
               }}
             />
           </div>
@@ -616,7 +620,7 @@ export function SettingsPage(): JSX.Element {
               checked={profile.autoHideZeroCategories}
               onCheckedChange={(v) => {
                 setProfile({ autoHideZeroCategories: v })
-                saveProfile()
+                saveProfile({ autoHideZeroCategories: v })
               }}
             />
           </div>
@@ -629,7 +633,7 @@ export function SettingsPage(): JSX.Element {
                 const next = Number.parseFloat(e.target.value)
                 setProfile({ savingsRateTarget: Number.isFinite(next) ? next : 20 })
               }}
-              onBlur={saveProfile}
+              onBlur={() => saveProfile()}
             />
           </div>
         </CardContent>
