@@ -105,6 +105,8 @@ const api = {
     exportCsv: () => ipcRenderer.invoke('transactions:exportCsv'),
     categoryTrend: (categoryId: number, year: number, anchorMonth: number, months?: number) =>
       ipcRenderer.invoke('transactions:categoryTrend', categoryId, year, anchorMonth, months),
+    categoryVariance: (categoryId: number, year: number, month: number) =>
+      ipcRenderer.invoke('transactions:categoryVariance', categoryId, year, month),
     importOfx: (accountId?: number) => ipcRenderer.invoke('transactions:importOfx', accountId),
     // Event sourcing methods
     history: (id: number) => ipcRenderer.invoke('transactions:history', id),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Plus, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
+import { ChevronLeft, ChevronRight, HelpCircle, Plus, TrendingDown, TrendingUp, Wallet } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -26,6 +26,16 @@ interface BudgetRow {
   amount: number
 }
 
+interface CategoryVariance {
+  currentTotal: number
+  previousTotal: number
+  delta: number
+  changePercent: number
+  direction: 'up' | 'down' | 'flat'
+  explanation: string
+  drivers: string[]
+}
+
 export function BudgetPage(): JSX.Element {
   const {
     profile,
@@ -45,6 +55,8 @@ export function BudgetPage(): JSX.Element {
   const [subscriptionMonthly, setSubscriptionMonthly] = useState(0)
   const [savingsAndTransfersOutflow, setSavingsAndTransfersOutflow] = useState(0)
   const [trends, setTrends] = useState<Record<number, { month: number; spent: number }[]>>({})
+  const [variances, setVariances] = useState<Record<number, CategoryVariance>>({})
+  const [expandedVariance, setExpandedVariance] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     load()
@@ -105,12 +117,21 @@ export function BudgetPage(): JSX.Element {
       const trendRequests = loadedVisible.map(cat =>
         window.api.transactions.categoryTrend(cat.category_id, profile.year, selectedMonth, 6)
       )
-      const trendResults = await Promise.all(trendRequests)
+      const varianceRequests = loadedVisible.map(cat =>
+        window.api.transactions.categoryVariance(cat.category_id, profile.year, selectedMonth)
+      )
+      const [trendResults, varianceResults] = await Promise.all([
+        Promise.all(trendRequests),
+        Promise.all(varianceRequests)
+      ])
       const trendMap: Record<number, { month: number; spent: number }[]> = {}
+      const varianceMap: Record<number, CategoryVariance> = {}
       loadedVisible.forEach((cat, idx) => {
         trendMap[cat.category_id] = trendResults[idx] ?? []
+        varianceMap[cat.category_id] = varianceResults[idx] as CategoryVariance
       })
       setTrends(trendMap)
+      setVariances(varianceMap)
     } catch {
       // Silently fail
     }
@@ -139,6 +160,15 @@ export function BudgetPage(): JSX.Element {
         onRefresh={load}
       />
     )
+  }
+
+  function toggleVariance(categoryId: number): void {
+    setExpandedVariance((current) => {
+      const next = new Set(current)
+      if (next.has(categoryId)) next.delete(categoryId)
+      else next.add(categoryId)
+      return next
+    })
   }
 
   return (
@@ -208,7 +238,7 @@ export function BudgetPage(): JSX.Element {
             const over = budget > 0 && spent > budget
             
             return (
-              <motion.button
+              <motion.div
                 key={cat.category_id}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -217,8 +247,16 @@ export function BudgetPage(): JSX.Element {
                 variants={cardHoverVariants}
                 transition={{ delay: i * 0.05 }}
                 onClick={() => openCategoryDetail(cat)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    openCategoryDetail(cat)
+                  }
+                }}
+                role="button"
+                tabIndex={0}
                 className={cn(
-                  'rounded-xl border p-5 text-left focus-visible:ring-2 focus-visible:ring-ring',
+                  'cursor-pointer rounded-xl border p-5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   over ? 'glass-card border-destructive/30 bg-destructive/5' : 'bg-card'
                 )}
               >
@@ -266,7 +304,30 @@ export function BudgetPage(): JSX.Element {
                     />
                   </div>
                 ) : null}
-              </motion.button>
+                {variances[cat.category_id] && (
+                  <div
+                    className="mt-3 border-t pt-3"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1 px-2 text-xs"
+                      onClick={() => toggleVariance(cat.category_id)}
+                    >
+                      <HelpCircle className="h-3 w-3" />
+                      Why?
+                    </Button>
+                    {expandedVariance.has(cat.category_id) && (
+                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                        {variances[cat.category_id].explanation}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </motion.div>
             )
           })}
         </div>

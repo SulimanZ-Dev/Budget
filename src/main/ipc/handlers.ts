@@ -105,6 +105,10 @@ function addYearMonth(year: number, month: number, offset: number): { year: numb
   return { year: Math.floor(total / 12), month: (total % 12) + 1 }
 }
 
+function normalizeMerchantName(description: string): string {
+  return description.toLowerCase().trim().replace(/\s+/g, ' ')
+}
+
 function normalizePositiveInteger(value: unknown, fallback: number, max?: number): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
@@ -1676,6 +1680,109 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       result.push({ month: (period % 12) + 1, spent: map[period] || 0 })
     }
     return result
+  })
+
+  ipcMain.handle('transactions:categoryVariance', (_, categoryId: number, year: number, month: number) => {
+    const current = addYearMonth(year, month, 0)
+    const previous = addYearMonth(year, month, -1)
+    const next = addYearMonth(year, month, 1)
+    const currentStart = monthStart(current.year, current.month)
+    const currentEnd = monthStart(next.year, next.month)
+    const previousStart = monthStart(previous.year, previous.month)
+
+    const rows = db()
+      .prepare(
+        `SELECT id, description, amount, date, is_recurring
+         FROM transactions
+         WHERE category_id = ?
+           AND type IN ('expense', 'savings')
+           AND date >= ?
+           AND date < ?
+         ORDER BY date DESC, id DESC`
+      )
+      .all(categoryId, previousStart, currentEnd) as Array<{
+        id: number
+        description: string
+        amount: number
+        date: string
+        is_recurring: number
+      }>
+
+    const currentRows = rows.filter((row) => row.date >= currentStart && row.date < currentEnd)
+    const previousRows = rows.filter((row) => row.date >= previousStart && row.date < currentStart)
+    const currentTotal = roundCurrency(currentRows.reduce((sum, row) => sum + row.amount, 0))
+    const previousTotal = roundCurrency(previousRows.reduce((sum, row) => sum + row.amount, 0))
+    const delta = roundCurrency(currentTotal - previousTotal)
+    const changePercent = previousTotal > 0 ? Math.round((delta / previousTotal) * 100) : currentTotal > 0 ? 100 : 0
+
+    const currentMerchants = new Map<string, { name: string; total: number; count: number; recurring: boolean }>()
+    const previousMerchants = new Map<string, { name: string; total: number; count: number; recurring: boolean }>()
+    for (const row of currentRows) {
+      const key = normalizeMerchantName(row.description)
+      const existing = currentMerchants.get(key) ?? { name: row.description.trim(), total: 0, count: 0, recurring: false }
+      existing.total += row.amount
+      existing.count += 1
+      existing.recurring = existing.recurring || row.is_recurring === 1
+      currentMerchants.set(key, existing)
+    }
+    for (const row of previousRows) {
+      const key = normalizeMerchantName(row.description)
+      const existing = previousMerchants.get(key) ?? { name: row.description.trim(), total: 0, count: 0, recurring: false }
+      existing.total += row.amount
+      existing.count += 1
+      existing.recurring = existing.recurring || row.is_recurring === 1
+      previousMerchants.set(key, existing)
+    }
+
+    const drivers: string[] = []
+    const newMerchant = [...currentMerchants.entries()]
+      .filter(([key]) => !previousMerchants.has(key))
+      .sort((a, b) => b[1].total - a[1].total)[0]?.[1]
+    if (newMerchant && newMerchant.total >= Math.max(100, Math.abs(delta) * 0.25)) {
+      drivers.push(`${newMerchant.name} appears this month for ${roundCurrency(newMerchant.total)}.`)
+    }
+
+    const currentLargest = [...currentRows].sort((a, b) => b.amount - a.amount)[0]
+    const previousLargest = [...previousRows].sort((a, b) => b.amount - a.amount)[0]
+    const currentAverage = currentRows.length ? currentTotal / currentRows.length : 0
+    if (
+      currentLargest &&
+      currentLargest.amount >= Math.max(currentAverage * 1.5, (previousLargest?.amount ?? 0) * 1.35, 100)
+    ) {
+      drivers.push(`${currentLargest.description} is the largest transaction at ${roundCurrency(currentLargest.amount)}.`)
+    }
+
+    if (currentRows.length >= previousRows.length + 2) {
+      drivers.push(`There are ${currentRows.length} transactions this month versus ${previousRows.length} last month.`)
+    } else if (previousRows.length >= currentRows.length + 2) {
+      drivers.push(`There are fewer transactions this month (${currentRows.length}) than last month (${previousRows.length}).`)
+    }
+
+    const recurringStarted = [...currentMerchants.entries()]
+      .find(([key, merchant]) => merchant.recurring && !previousMerchants.get(key)?.recurring)?.[1]
+    const recurringStopped = [...previousMerchants.entries()]
+      .find(([key, merchant]) => merchant.recurring && !currentMerchants.get(key)?.recurring)?.[1]
+    if (recurringStarted) {
+      drivers.push(`${recurringStarted.name} is marked recurring this month and was not recurring here last month.`)
+    } else if (recurringStopped) {
+      drivers.push(`${recurringStopped.name} was recurring last month but is not present as recurring this month.`)
+    }
+
+    const direction = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'
+    const summary =
+      direction === 'flat'
+        ? `This category is unchanged from last month at ${roundCurrency(currentTotal)}.`
+        : `This category is ${direction} ${roundCurrency(Math.abs(delta))} from last month (${changePercent}%).`
+
+    return {
+      currentTotal,
+      previousTotal,
+      delta,
+      changePercent,
+      direction,
+      explanation: drivers.length ? `${summary} ${drivers.slice(0, 2).join(' ')}` : summary,
+      drivers
+    }
   })
 
   ipcMain.handle('transactions:search', (_, query: string, limit = 20) => {
