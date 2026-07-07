@@ -50,6 +50,11 @@ function backfillProfileDefaults(database: Database.Database): void {
   }
 }
 
+export const __databaseTesting = {
+  getProfileDefaults,
+  backfillProfileDefaults
+}
+
 function ensureMainAccount(database: Database.Database): number {
   database.exec(`
     CREATE TABLE IF NOT EXISTS accounts (
