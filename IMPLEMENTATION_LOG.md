@@ -14,6 +14,12 @@
 - **Files touched**: `src/renderer/src/pages/budget.tsx`.
 - **Verification**: Re-read `budget.tsx` after editing and confirmed trend requests no longer depend on the render-level `visible` value inside `load()`. Ran `npm run typecheck` successfully and `npm run build` successfully. Live first-render visual verification was blocked by the same Electron app-data isolation issue noted in Item 1; I did not unlock or mutate the real encrypted profile.
 
+### Item 3: Budget category trend endpoint ignores selected month
+- **Problem**: `transactions:categoryTrend` anchored the six-month window to `new Date().getMonth() + 1`, so viewing past months could show trends ending at today's real month.
+- **Fix**: Changed the preload API and Budget page call to pass the viewed `selectedMonth`. The IPC handler now builds a year-month period range from the passed year/month and supports six-month windows that cross year boundaries.
+- **Files touched**: `src/preload/index.ts`, `src/renderer/src/pages/budget.tsx`, `src/main/ipc/handlers.ts`.
+- **Verification**: Re-read all touched files after editing. Ran `npm run typecheck` successfully and `npm run build` successfully. Exercised the revised SQL window with Python `sqlite3`: anchoring on March 2026 returned October 2025 through March 2026 and ignored April 2026, confirming the trend window follows the viewed month rather than today's date. A direct Budget-page visual check remains blocked by the encrypted real profile/app-data isolation issue noted in Item 1.
+
 ## Session: 2026-07-05 - Full Demo Data Coverage
 
 ### Part 1 Step 1: tab/data-source checklist

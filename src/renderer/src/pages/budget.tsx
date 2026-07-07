@@ -103,7 +103,7 @@ export function BudgetPage(): JSX.Element {
         ? loadedEntries.filter((e) => e.amount > 0 || (map[e.category_id] || 0) > 0)
         : loadedEntries
       const trendRequests = loadedVisible.map(cat =>
-        window.api.transactions.categoryTrend(cat.category_id, profile.year, 6)
+        window.api.transactions.categoryTrend(cat.category_id, profile.year, selectedMonth, 6)
       )
       const trendResults = await Promise.all(trendRequests)
       const trendMap: Record<number, { month: number; spent: number }[]> = {}
