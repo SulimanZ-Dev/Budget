@@ -47,6 +47,7 @@ import {
 
 type GetWindow = () => BrowserWindow | null
 type TransactionFilters = Record<string, unknown>
+type ForecastTier = 'success' | 'warning' | 'destructive'
 
 function parseDateToLocalYearMonth(dateStr: string): { year: number; month: number } {
   const parts = dateStr.split('-')
@@ -69,6 +70,39 @@ function addMonths(dateStr: string, months: number): string {
 function getNow(): Date {
   const now = new Date()
   return now
+}
+
+function roundCurrency(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.round(value * 100) / 100
+}
+
+function monthlyAmount(amount: number, frequency?: string): number {
+  if (frequency === 'weekly') return roundCurrency((amount * 52) / 12)
+  if (frequency === 'fortnightly') return roundCurrency((amount * 26) / 12)
+  if (frequency === 'yearly' || frequency === 'annual') return roundCurrency(amount / 12)
+  return roundCurrency(amount)
+}
+
+function netFromGross(amount: number, taxPercent: number): number {
+  const safeTax = Math.min(100, Math.max(0, Number.isFinite(taxPercent) ? taxPercent : 0))
+  return roundCurrency(amount * (1 - safeTax / 100))
+}
+
+function budgetHealthTier(score: number, negative = false): ForecastTier {
+  if (negative) return 'destructive'
+  if (score >= 70) return 'success'
+  if (score >= 40) return 'warning'
+  return 'destructive'
+}
+
+function monthStart(year: number, month: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-01`
+}
+
+function addYearMonth(year: number, month: number, offset: number): { year: number; month: number } {
+  const total = year * 12 + (month - 1) + offset
+  return { year: Math.floor(total / 12), month: (total % 12) + 1 }
 }
 
 function normalizePositiveInteger(value: unknown, fallback: number, max?: number): number {
@@ -1761,6 +1795,90 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       budgetHealth,
       insights
     }
+  })
+
+  ipcMain.handle('dashboard:cashFlowForecast', (_, year: number, month: number) => {
+    const profileRow = db().prepare("SELECT value FROM settings WHERE key = 'profile'").get() as
+      | { value: string }
+      | undefined
+    const profile = profileRow ? JSON.parse(profileRow.value) as { taxWithheldPercent?: number } : {}
+    const taxPercent = Number(profile.taxWithheldPercent ?? 30)
+
+    const incomeSources = db().prepare('SELECT * FROM income_sources WHERE is_recurring = 1').all() as Array<{
+      id: number
+      amount: number
+      is_gross?: number
+      gross_or_net?: string
+      frequency?: string
+    }>
+    const incomeEntries = db().prepare('SELECT * FROM income_entries WHERE year BETWEEN ? AND ?').all(year, year + 1) as Array<{
+      source_id: number
+      year: number
+      month: number
+      amount: number
+    }>
+    const subscriptions = db().prepare('SELECT * FROM subscriptions WHERE COALESCE(on_hold, 0) = 0').all() as Array<{
+      amount: number
+      frequency: string
+    }>
+    const savingsSources = db().prepare('SELECT * FROM savings_sources WHERE COALESCE(is_recurring, 1) = 1').all() as Array<{
+      amount: number
+      frequency?: string
+    }>
+
+    const subscriptionMonthly = subscriptions.reduce((sum, sub) => sum + monthlyAmount(sub.amount, sub.frequency), 0)
+    const savingsMonthly = savingsSources.reduce((sum, source) => sum + monthlyAmount(source.amount, source.frequency ?? 'monthly'), 0)
+
+    const anchor = addYearMonth(year, month, -3)
+    const anchorStart = monthStart(anchor.year, anchor.month)
+    const currentStart = monthStart(year, month)
+    const recentVariable = db()
+      .prepare(
+        `SELECT COALESCE(SUM(amount), 0) as v
+         FROM transactions
+         WHERE type = 'expense'
+           AND date >= ?
+           AND date < ?
+           AND COALESCE(is_recurring, 0) = 0
+           AND (notes IS NULL OR notes NOT LIKE 'subscription:%')`
+      )
+      .get(anchorStart, currentStart) as { v: number }
+    const recentVariableAverage = roundCurrency(recentVariable.v / 3)
+
+    return [1, 2, 3].map((offset) => {
+      const target = addYearMonth(year, month, offset)
+      const projectedIncome = incomeSources.reduce((sum, source) => {
+        const entry = incomeEntries.find((row) => row.source_id === source.id && row.year === target.year && row.month === target.month)
+        const rawAmount = entry?.amount ?? source.amount
+        const monthly = monthlyAmount(rawAmount, source.frequency ?? 'monthly')
+        const mode = source.gross_or_net ?? (source.is_gross ? 'gross' : 'net')
+        return sum + (mode === 'gross' ? netFromGross(monthly, taxPercent) : monthly)
+      }, 0)
+
+      const budgetedOutflow = db()
+        .prepare('SELECT COALESCE(SUM(amount), 0) as v FROM budget_entries WHERE year = ? AND month = ?')
+        .get(target.year, target.month) as { v: number }
+      const variableOutflow = Math.max(budgetedOutflow.v, recentVariableAverage)
+      const projectedOutflow = variableOutflow + subscriptionMonthly + savingsMonthly
+      const projectedBalance = roundCurrency(projectedIncome - projectedOutflow)
+      const balancePercent = projectedIncome > 0 ? Math.round((projectedBalance / projectedIncome) * 100) : 0
+      const tier = budgetHealthTier(balancePercent, projectedBalance < 0)
+
+      return {
+        year: target.year,
+        month: target.month,
+        projectedIncome: roundCurrency(projectedIncome),
+        budgetedOutflow: roundCurrency(budgetedOutflow.v),
+        recentVariableAverage,
+        variableOutflow: roundCurrency(variableOutflow),
+        subscriptionOutflow: roundCurrency(subscriptionMonthly),
+        savingsOutflow: roundCurrency(savingsMonthly),
+        projectedOutflow: roundCurrency(projectedOutflow),
+        projectedBalance,
+        balancePercent,
+        tier
+      }
+    })
   })
 
   // Backup

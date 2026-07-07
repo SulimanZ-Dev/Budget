@@ -40,9 +40,23 @@ interface DashboardStats {
   insights: { content: string }[]
 }
 
+interface CashFlowForecastRow {
+  year: number
+  month: number
+  projectedIncome: number
+  variableOutflow: number
+  subscriptionOutflow: number
+  savingsOutflow: number
+  projectedOutflow: number
+  projectedBalance: number
+  balancePercent: number
+  tier: 'success' | 'warning' | 'destructive'
+}
+
 export function DashboardPage(): JSX.Element {
   const { profile, selectedMonth, rates, loading: appLoading, refreshTrigger } = useAppStore()
   const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [forecast, setForecast] = useState<CashFlowForecastRow[]>([])
   const [loading, setLoading] = useState(true)
   const [weeklyTip, setWeeklyTip] = useState('')
   const [generatingInsight, setGeneratingInsight] = useState(false)
@@ -54,8 +68,12 @@ export function DashboardPage(): JSX.Element {
   useEffect(() => {
     async function load(): Promise<void> {
       setLoading(true)
-      const data = await window.api.dashboard.stats(profile.year, selectedMonth)
+      const [data, forecastData] = await Promise.all([
+        window.api.dashboard.stats(profile.year, selectedMonth),
+        window.api.dashboard.cashFlowForecast(profile.year, selectedMonth)
+      ])
       setStats(data as DashboardStats)
+      setForecast(forecastData as CashFlowForecastRow[])
       const tip = await window.api.ai.weeklyTip()
       setWeeklyTip(tip)
       setLoading(false)
@@ -109,6 +127,17 @@ export function DashboardPage(): JSX.Element {
 
   const bestMonth = [...stats.savingsByMonth].sort((a, b) => b.rate - a.rate)[0]
   const worstMonth = [...stats.savingsByMonth].sort((a, b) => a.rate - b.rate)[0]
+  const firstForecast = forecast[0]
+  const tierClass: Record<CashFlowForecastRow['tier'], string> = {
+    success: 'text-success',
+    warning: 'text-warning',
+    destructive: 'text-destructive'
+  }
+  const tierBorderClass: Record<CashFlowForecastRow['tier'], string> = {
+    success: 'border-success/30 bg-success/5',
+    warning: 'border-warning/30 bg-warning/5',
+    destructive: 'border-destructive/30 bg-destructive/5'
+  }
 
   return (
     <div className="space-y-6 p-6">
@@ -262,6 +291,53 @@ export function DashboardPage(): JSX.Element {
           </Card>
         </motion.div>
       </div>
+
+      {forecast.length > 0 && (
+        <Card className={firstForecast ? tierBorderClass[firstForecast.tier] : 'bg-card'}>
+          <CardHeader>
+            <CardTitle>Cash-flow forecast</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {firstForecast && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Next month projected balance
+                  </p>
+                  <p className={`text-2xl font-bold ${tierClass[firstForecast.tier]}`}>
+                    {formatMoney(firstForecast.projectedBalance, profile.displayCurrency, rates)}
+                  </p>
+                </div>
+                <div className={`text-right text-sm font-medium ${tierClass[firstForecast.tier]}`}>
+                  {firstForecast.balancePercent}% of income
+                </div>
+              </div>
+            )}
+            <div className="grid gap-2 md:grid-cols-3">
+              {forecast.map((row) => (
+                <div key={`${row.year}-${row.month}`} className="rounded-lg border bg-card/60 p-3 text-sm">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="font-medium">{MONTH_NAMES[row.month - 1]?.slice(0, 3)} {row.year}</span>
+                    <span className={tierClass[row.tier]}>{row.balancePercent}%</span>
+                  </div>
+                  <p className="text-muted-foreground">
+                    Income {formatMoney(row.projectedIncome, profile.displayCurrency, rates)}
+                  </p>
+                  <p className="text-muted-foreground">
+                    Outflow {formatMoney(row.projectedOutflow, profile.displayCurrency, rates)}
+                  </p>
+                  <p className={`mt-1 font-semibold ${tierClass[row.tier]}`}>
+                    {formatMoney(row.projectedBalance, profile.displayCurrency, rates)}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Uses recurring income, subscriptions, savings sources, planned budgets, and recent variable spending.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <motion.div

@@ -201,7 +201,9 @@ const api = {
   },
 
   dashboard: {
-    stats: (year: number, month: number) => ipcRenderer.invoke('dashboard:stats', year, month)
+    stats: (year: number, month: number) => ipcRenderer.invoke('dashboard:stats', year, month),
+    cashFlowForecast: (year: number, month: number) =>
+      ipcRenderer.invoke('dashboard:cashFlowForecast', year, month)
   },
 
   data: {
