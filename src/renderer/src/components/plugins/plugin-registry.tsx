@@ -182,7 +182,7 @@ export function PluginRegistry() {
                       <>
                         <span>•</span>
                         <a
-                          href="#"
+                          href={plugin.manifest.homepage}
                           onClick={(e) => {
                             e.preventDefault()
                             window.api.openExternal(plugin.manifest.homepage!)

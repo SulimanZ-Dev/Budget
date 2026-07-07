@@ -38,6 +38,12 @@
 - **Files touched**: `src/main/index.ts`, `src/preload/index.ts`, `src/renderer/src/hooks/use-keyboard.ts`, `src/renderer/src/components/layout/sidebar.tsx`.
 - **Verification**: Re-read all touched files after editing and confirmed both keyboard paths and the sidebar fallback call `setCommandOpen(true)`. Ran `npm run typecheck` successfully and `npm run build` successfully. Live Ctrl+K and sidebar-click verification is blocked by the encrypted real profile/app-data isolation issue noted in Item 1; I did not unlock or mutate the real profile.
 
+### Item 7: Plugin registry dead/placeholder UX
+- **Problem**: The plugin registry had a dead Plugin Development Guide `href="#"`, and plugin load/reload failures used native alerts.
+- **Fix**: The native alerts were migrated in Item 4. The dead guide link was removed in favor of text pointing to the existing root `PLUGINS.md`. The plugin homepage anchor now uses the manifest homepage URL as its `href` while still opening through Electron's external-link API.
+- **Files touched**: `src/renderer/src/components/plugins/plugin-registry.tsx`.
+- **Verification**: Re-read `plugin-registry.tsx` after editing. Confirmed `PLUGINS.md` exists. Ran `rg` checks confirming the plugin registry no longer contains `Plugin Development Guide`, native `alert()`/`confirm()`, or placeholder `href="#"` anchors. Ran `npm run typecheck` successfully. Live plugin failure dialog verification is blocked by the encrypted real profile/app-data isolation issue noted in Item 1.
+
 ## Session: 2026-07-05 - Full Demo Data Coverage
 
 ### Part 1 Step 1: tab/data-source checklist
