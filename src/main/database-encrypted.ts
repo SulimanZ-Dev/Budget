@@ -19,6 +19,51 @@ import { initializeEventStore } from './events/event-store'
 
 let db: SqlCipher.Database | null = null
 
+function getProfileDefaults(): Record<string, unknown> {
+  return {
+    name: '',
+    currency: 'SEK',
+    displayCurrency: 'SEK',
+    baseCurrency: 'SEK',
+    cpiPercent: 2.5,
+    taxWithheldPercent: 30,
+    theme: 'system',
+    year: new Date().getFullYear(),
+    autoHideZeroCategories: false,
+    notificationsEnabled: true,
+    grossIncomeToggle: false,
+    savingsRateTarget: 20,
+    colorBlindMode: false,
+    locale: 'sv-SE'
+  }
+}
+
+function backfillProfileDefaults(database: SqlCipher.Database): void {
+  const row = database.prepare("SELECT value FROM settings WHERE key = 'profile'").get() as
+    | { value: string }
+    | undefined
+  if (!row) return
+
+  try {
+    const profile = JSON.parse(row.value) as Record<string, unknown>
+    let changed = false
+    for (const [key, value] of Object.entries(getProfileDefaults())) {
+      if (!(key in profile)) {
+        profile[key] = value
+        changed = true
+      }
+    }
+
+    if (changed) {
+      database
+        .prepare("UPDATE settings SET value = ? WHERE key = 'profile'")
+        .run(JSON.stringify(profile))
+    }
+  } catch (e) {
+    console.log('Profile defaults backfill skipped:', e)
+  }
+}
+
 export function getDbPath(): string {
   const dir = join(app.getPath('appData'), 'BudgetApp')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
@@ -397,11 +442,12 @@ function runMigrations(database: SqlCipher.Database): void {
     database
       .prepare(
         `INSERT OR IGNORE INTO settings (key, value) VALUES
-        ('profile', '{"name":"","currency":"SEK","displayCurrency":"SEK","baseCurrency":"SEK","cpiPercent":2.5,"taxWithheldPercent":30,"theme":"system","year":${new Date().getFullYear()},"autoHideZeroCategories":false,"notificationsEnabled":true,"grossIncomeToggle":false}'),
+        ('profile', '${JSON.stringify(getProfileDefaults())}'),
         ('spendingStreak', '{"current":0,"longest":0,"lastDate":null}')`
       )
       .run()
   }
+  backfillProfileDefaults(database)
 
   // Create default categories with goal types if they don't exist
   const categoryCount = database.prepare('SELECT COUNT(*) as count FROM categories').get() as { count: number }

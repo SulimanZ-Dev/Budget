@@ -180,3 +180,11 @@ Base: c3a2f83 (crash-revert commit)
 - `1be4415` feat: A2 spending trend sparklines on budget category cards
 - `c17c7f6` feat: A5 year-over-year comparison chart on analytics page
 - TODO: D3 backup reminder (settings)
+
+## Session: 2026-07-07 - Fix Pass Part 1 Item 8
+
+### Item 8: Profile defaults drift
+- **Problem**: The encrypted and legacy database profile seeds did not include the same fields as the renderer store defaults, and the data wipe reset profile omitted `baseCurrency` and `locale`.
+- **Fix**: Added the missing persisted profile fields in both database seed paths, added a startup backfill that only fills missing profile keys without overwriting existing values, and updated the data wipe reset profile to include `baseCurrency` and `locale`.
+- **Verification**: `npm run typecheck`, `npm run build`, and `npm test` all pass. Static verification confirms the database defaults and wipe reset now include `baseCurrency`, `savingsRateTarget`, `colorBlindMode`, and `locale`.
+- **Remaining note**: Live data-wipe verification was not run against the real encrypted profile because Electron ignores the attempted disposable `APPDATA` override on this Windows host and resolves to the real app-data directory.
