@@ -25,6 +25,7 @@ import { SubscriptionsPage } from '@/pages/subscriptions'
 import { IncomePage } from '@/pages/income'
 import { SavingsPage } from '@/pages/savings'
 import { HabitsPage } from '@/pages/habits'
+import { TaxEstimatorPage } from '@/pages/tax-estimator'
 import { AiAssistantPage } from '@/pages/ai-assistant'
 import { SettingsPage } from '@/pages/settings'
 import { YearEndReportPage } from '@/pages/year-end-report'
@@ -301,6 +302,7 @@ function AppContent(): JSX.Element {
                 <Route path="/income" element={<IncomePage />} />
                 <Route path="/savings" element={<SavingsPage />} />
                 <Route path="/habits" element={<HabitsPage />} />
+                <Route path="/tax" element={<TaxEstimatorPage />} />
                 <Route path="/ai" element={<AiAssistantPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Routes>

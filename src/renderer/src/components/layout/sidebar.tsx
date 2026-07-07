@@ -19,7 +19,8 @@ import {
   HelpCircle,
   Lock,
   LockOpen,
-  Search
+  Search,
+  Calculator
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
@@ -38,6 +39,7 @@ const navItems = [
   { to: '/income', icon: Banknote, label: 'Income' },
   { to: '/savings', icon: PiggyBank, label: 'Savings' },
   { to: '/habits', icon: Heart, label: 'Habits' },
+  { to: '/tax', icon: Calculator, label: 'Tax' },
   { to: '/ai', icon: Sparkles, label: 'AI Assistant' },
   { to: '/settings', icon: Settings, label: 'Settings' }
 ]

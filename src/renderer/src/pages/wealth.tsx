@@ -40,6 +40,9 @@ export function WealthPage(): JSX.Element {
   const [holdings, setHoldings] = useState<
     { id: number; etf_name: string; ticker: string; shares: number; avg_cost: number; current_price: number; current_value: number }[]
   >([])
+  const [accounts, setAccounts] = useState<
+    { id: number; name: string; type: string; is_archived: number; balance: number; currency: string }[]
+  >([])
   const [totalSavings, setTotalSavings] = useState(0)
   const [form, setForm] = useState({
     savings: '',
@@ -71,6 +74,7 @@ export function WealthPage(): JSX.Element {
     setSnapshots(await window.api.wealth.list())
     setInvestments(await window.api.investments.list())
     setHoldings(await window.api.investmentHoldings.list())
+    setAccounts((await window.api.accounts.list()) as { id: number; name: string; type: string; is_archived: number; balance: number; currency: string }[])
     // Load total savings from past transactions (exclude future auto-created ones)
     const transactions = await window.api.transactions.list({ type: 'savings' })
     const today = new Date().toISOString().slice(0, 10)
@@ -147,6 +151,11 @@ export function WealthPage(): JSX.Element {
   // Investment holdings total current value
   const holdingsTotal = holdings.reduce((sum, h) => sum + h.current_value, 0)
   const investmentsTotal = investments.reduce((sum, inv) => sum + inv.current_value, 0)
+  const activeAccounts = accounts.filter((account) => account.is_archived !== 1)
+  const liquidAccountBalance = activeAccounts
+    .filter((account) => ['checking', 'savings', 'cash'].includes(account.type))
+    .reduce((sum, account) => sum + account.balance, 0)
+  const snapshotSavingsValue = activeAccounts.length > 0 ? liquidAccountBalance : totalSavings
 
   const chartData = snapshots.map((s) => ({
     date: s.date.slice(0, 7),
@@ -160,8 +169,8 @@ export function WealthPage(): JSX.Element {
 
   // Compute a live current net worth by adding savings & investments to the latest snapshot
   const latestSnapshotNet = chartData.length > 0 ? chartData[chartData.length - 1].net : 0
-  const hasLiveData = totalSavings > 0 || holdingsTotal > 0 || investmentsTotal > 0
-  const currentNetWorth = latestSnapshotNet + totalSavings + holdingsTotal + investmentsTotal
+  const hasLiveData = snapshotSavingsValue !== 0 || holdingsTotal > 0 || investmentsTotal > 0
+  const currentNetWorth = latestSnapshotNet + snapshotSavingsValue + holdingsTotal + investmentsTotal
 
   const pensionData = Array.from({ length: 30 }, (_, i) => {
     const months = i * 12
@@ -185,7 +194,7 @@ export function WealthPage(): JSX.Element {
             <p className="text-sm text-muted-foreground">Current net worth (incl. live savings + investments)</p>
             <p className="text-3xl font-bold mt-1">{formatMoney(currentNetWorth, profile.displayCurrency, rates)}</p>
             <div className="flex gap-6 mt-3 text-sm text-muted-foreground">
-              <span>Savings: <strong className="text-foreground">{formatMoney(totalSavings, profile.displayCurrency, rates)}</strong></span>
+              <span>Accounts: <strong className="text-foreground">{formatMoney(snapshotSavingsValue, profile.displayCurrency, rates)}</strong></span>
               <span>ETFs: <strong className="text-foreground">{formatMoney(holdingsTotal, profile.displayCurrency, rates)}</strong></span>
               <span>Investments: <strong className="text-foreground">{formatMoney(investmentsTotal, profile.displayCurrency, rates)}</strong></span>
             </div>
@@ -232,13 +241,18 @@ export function WealthPage(): JSX.Element {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between rounded-lg bg-muted p-3">
             <div>
-              <p className="text-sm font-medium">Total from savings transactions</p>
-              <p className="text-lg font-bold text-info">{formatMoney(totalSavings, profile.displayCurrency, rates)}</p>
+              <p className="text-sm font-medium">Snapshot savings source</p>
+              <p className="text-lg font-bold text-info">{formatMoney(snapshotSavingsValue, profile.displayCurrency, rates)}</p>
+              {activeAccounts.length > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  From checking, savings, and cash accounts. Savings transactions total: {formatMoney(totalSavings, profile.displayCurrency, rates)}
+                </p>
+              )}
             </div>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setForm({ ...form, savings: String(totalSavings) })}
+              onClick={() => setForm({ ...form, savings: String(snapshotSavingsValue) })}
             >
               Auto-fill
             </Button>

@@ -285,6 +285,17 @@ function runMigrations(database: Database.Database): void {
       FOREIGN KEY (source_id) REFERENCES income_sources(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS tax_estimates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL CHECK(month BETWEEN 1 AND 12),
+      income_gross REAL NOT NULL DEFAULT 0,
+      income_net_actual REAL NOT NULL DEFAULT 0,
+      supposed_net_income REAL NOT NULL DEFAULT 0,
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(year, month)
+    );
+
     CREATE TABLE IF NOT EXISTS monthly_mood (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       year INTEGER NOT NULL,
@@ -323,14 +334,13 @@ function runMigrations(database: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
     CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
-    CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_date_id ON transactions(date DESC, id DESC);
-    CREATE INDEX IF NOT EXISTS idx_transactions_account_date ON transactions(account_id, date DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_category_date ON transactions(category_id, date DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_type_date ON transactions(type, date DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_flagged_date ON transactions(is_unnecessary, date DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_recurring_date ON transactions(is_recurring, date DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_description ON transactions(description COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS idx_tax_estimates_year_month ON tax_estimates(year, month);
   `)
 
   // Migration: Update existing transactions table to support savings and transfer types

@@ -2366,6 +2366,54 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return { filePath: null, rowCount: rows.length }
   })
 
+  ipcMain.handle('tax:list', (_, year: number) => {
+    return db()
+      .prepare(
+        `SELECT id, year, month, income_gross, income_net_actual, supposed_net_income, updated_at
+         FROM tax_estimates
+         WHERE year = ?
+         ORDER BY month ASC`
+      )
+      .all(year)
+  })
+
+  ipcMain.handle('tax:setEntry', (_, data: {
+    year: number
+    month: number
+    incomeGross: number
+    incomeNetActual: number
+    supposedNetIncome: number
+  }) => {
+    const month = normalizePositiveInteger(data.month, 1, 12)
+    const parsedYear = Math.floor(Number(data.year))
+    const year = Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear()
+    const incomeGross = roundCurrency(Number(data.incomeGross) || 0)
+    const incomeNetActual = roundCurrency(Number(data.incomeNetActual) || 0)
+    const supposedNetIncome = roundCurrency(Number(data.supposedNetIncome) || 0)
+    db()
+      .prepare(
+        `INSERT INTO tax_estimates (year, month, income_gross, income_net_actual, supposed_net_income, updated_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(year, month) DO UPDATE SET
+           income_gross = excluded.income_gross,
+           income_net_actual = excluded.income_net_actual,
+           supposed_net_income = excluded.supposed_net_income,
+           updated_at = datetime('now')`
+      )
+      .run(year, month, incomeGross, incomeNetActual, supposedNetIncome)
+    return true
+  })
+
+  ipcMain.handle('tax:deleteEntry', (_, year: number, month: number) => {
+    const normalizedMonth = normalizePositiveInteger(month, 1, 12)
+    const parsedYear = Math.floor(Number(year))
+    const normalizedYear = Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear()
+    db()
+      .prepare('DELETE FROM tax_estimates WHERE year = ? AND month = ?')
+      .run(normalizedYear, normalizedMonth)
+    return true
+  })
+
   ipcMain.handle('reports:yearSummary', (_, year: number) => {
     const y = String(year)
     const monthly = db()

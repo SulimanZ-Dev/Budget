@@ -227,6 +227,12 @@ const api = {
       ipcRenderer.invoke('reports:taxReviewExport', year, categoryIds)
   },
 
+  tax: {
+    list: (year: number) => ipcRenderer.invoke('tax:list', year),
+    setEntry: (entry: unknown) => ipcRenderer.invoke('tax:setEntry', entry),
+    deleteEntry: (year: number, month: number) => ipcRenderer.invoke('tax:deleteEntry', year, month)
+  },
+
   print: {
     yearSummary: () => ipcRenderer.invoke('print:yearSummary')
   },
