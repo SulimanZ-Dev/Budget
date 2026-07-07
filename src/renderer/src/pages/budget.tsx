@@ -39,7 +39,7 @@ interface CategoryVariance {
 interface CategoryBaseline {
   lower: number
   upper: number
-  median: number
+  average: number
   status: 'below' | 'normal' | 'above'
   markerPercent: number
   lowerPercent: number
@@ -50,34 +50,21 @@ function roundedCurrency(value: number): number {
   return Math.round(value * 100) / 100
 }
 
-function median(values: number[]): number {
-  if (values.length === 0) return 0
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 0
-    ? (sorted[middle - 1] + sorted[middle]) / 2
-    : sorted[middle]
-}
-
 function categoryBaseline(trend: { month: number; spent: number }[] | undefined, currentSpent: number): CategoryBaseline | null {
   if (!trend || trend.length < 4) return null
   const history = trend.slice(0, -1).map((point) => point.spent)
   if (history.length < 3 || history.every((value) => value === 0)) return null
 
-  const center = median(history)
-  const deviations = history.map((value) => Math.abs(value - center))
-  const robustSpread = median(deviations) * 1.4826
-  const observedSpread = Math.max(...history) - Math.min(...history)
-  const spread = robustSpread > 0 ? robustSpread : observedSpread / 2
-  const lower = Math.max(0, center - spread)
-  const upper = Math.max(center + spread, center, 1)
+  const average = history.reduce((sum, value) => sum + value, 0) / history.length
+  const lower = Math.max(0, average * 0.65)
+  const upper = Math.max(average * 1.35, 1)
   const maxScale = Math.max(upper, currentSpent, 1)
   const status = currentSpent > upper ? 'above' : currentSpent < lower ? 'below' : 'normal'
 
   return {
     lower: roundedCurrency(lower),
     upper: roundedCurrency(upper),
-    median: roundedCurrency(center),
+    average: roundedCurrency(average),
     status,
     markerPercent: Math.min(99, Math.max(1, (currentSpent / maxScale) * 100)),
     lowerPercent: Math.min(100, (lower / maxScale) * 100),
@@ -390,7 +377,7 @@ export function BudgetPage(): JSX.Element {
                       />
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Median baseline: {formatMoney(baseline.median, profile.displayCurrency, rates)}
+                      Trailing average: {formatMoney(baseline.average, profile.displayCurrency, rates)}
                     </p>
                   </div>
                 )}
