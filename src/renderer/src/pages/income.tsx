@@ -21,9 +21,11 @@ import { MONTH_NAMES } from '@/lib/utils'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { InfoTooltip } from '@/components/shared/info-tooltip'
+import { useAppDialog } from '@/components/shared/app-dialog'
 
 export function IncomePage(): JSX.Element {
   const { profile, rates, setProfile, refreshTrigger, triggerRefresh } = useAppStore()
+  const dialog = useAppDialog()
   const [sources, setSources] = useState<
     (IncomeSourceRow & { name: string; color: string; is_gross: number; is_recurring: number })[]
   >([])
@@ -121,7 +123,11 @@ export function IncomePage(): JSX.Element {
   }
 
   async function deleteSource(id: number): Promise<void> {
-    if (!confirm('Delete this income source?')) return
+    if (!await dialog.confirm('Delete this income source?', {
+      title: 'Delete income source',
+      confirmLabel: 'Delete',
+      destructive: true
+    })) return
     try {
       await window.api.income.deleteSource(id)
       await load()

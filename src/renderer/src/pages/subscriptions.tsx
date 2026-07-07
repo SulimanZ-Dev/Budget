@@ -12,6 +12,7 @@ import { formatMoney } from '@/lib/utils'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Pencil, Trash2 } from 'lucide-react'
+import { useAppDialog } from '@/components/shared/app-dialog'
 
 type RecurringItem = {
   type: 'subscription' | 'income' | 'savings'
@@ -30,6 +31,7 @@ type RecurringItem = {
 
 export function SubscriptionsPage(): JSX.Element {
   const { profile, rates } = useAppStore()
+  const dialog = useAppDialog()
   const [items, setItems] = useState<RecurringItem[]>([])
   const [subs, setSubs] = useState<Sub[]>([])
   const [modalOpen, setModalOpen] = useState(false)
@@ -164,7 +166,11 @@ export function SubscriptionsPage(): JSX.Element {
   }
 
   async function remove(id: number, type: string): Promise<void> {
-    if (!confirm(`Delete this ${type}?`)) return
+    if (!await dialog.confirm(`Delete this ${type}?`, {
+      title: `Delete ${type}`,
+      confirmLabel: 'Delete',
+      destructive: true
+    })) return
     try {
       if (type === 'subscription') {
         await window.api.subscriptions.delete(id)
@@ -363,7 +369,10 @@ export function SubscriptionsPage(): JSX.Element {
                         </Button>
                         {item.transaction_id ? (
                           <Button variant="secondary" size="sm" onClick={async () => {
-                            if (!confirm('Unlink this subscription and make the transaction non-recurring?')) return
+                            if (!await dialog.confirm('Unlink this subscription and make the transaction non-recurring?', {
+                              title: 'Unlink subscription',
+                              confirmLabel: 'Unlink'
+                            })) return
                             await window.api.subscriptions.unlink(item.id)
                             load()
                           }}>
@@ -375,7 +384,7 @@ export function SubscriptionsPage(): JSX.Element {
                             if (result.success) {
                               load()
                             } else {
-                              alert(result.error || 'Failed to link')
+                              await dialog.alert(result.error || 'Failed to link', 'Link failed')
                             }
                           }}>
                             <ExternalLink className="h-3 w-3" />

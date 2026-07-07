@@ -15,6 +15,7 @@ import { formatMoney, formatPercent, MONTH_NAMES } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Trash2, Pencil } from 'lucide-react'
+import { useAppDialog } from '@/components/shared/app-dialog'
 
 interface CategoryDrawerProps {
   categoryId: number
@@ -36,6 +37,7 @@ export function CategoryDrawerContent({
   onRefresh
 }: CategoryDrawerProps): JSX.Element {
   const { profile, selectedMonth, rates, closeDrawer } = useAppStore()
+  const dialog = useAppDialog()
   const [loading, setLoading] = useState(true)
   const [detail, setDetail] = useState<{
     history: { month: number; spent: number }[]
@@ -76,7 +78,11 @@ export function CategoryDrawerContent({
   }
 
   async function deleteCategory(): Promise<void> {
-    if (!confirm(`Delete category "${categoryName}"? This will also remove all budget entries for this category.`)) return
+    if (!await dialog.confirm(`Delete category "${categoryName}"? This will also remove all budget entries for this category.`, {
+      title: 'Delete category',
+      confirmLabel: 'Delete',
+      destructive: true
+    })) return
     try {
       await window.api.categories.delete(categoryId)
       closeDrawer()

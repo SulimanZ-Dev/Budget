@@ -24,6 +24,7 @@ import { TransactionDetailDrawer } from '@/components/transactions/transaction-d
 import { useNavigate } from 'react-router-dom'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useAppDialog } from '@/components/shared/app-dialog'
 
 type RecurringFilter = 'all' | 'recurring' | 'oneoff'
 
@@ -332,6 +333,8 @@ function TransactionsShell({
   setSort: (v: string) => void
   loadData: () => void
 }): JSX.Element {
+  const dialog = useAppDialog()
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -362,7 +365,7 @@ function TransactionsShell({
           <Button variant="outline" size="sm" onClick={async () => {
             const result = await window.api.transactions.importOfx()
             if (result && result.imported > 0) {
-              alert(`Imported ${result.imported} transactions from OFX.`)
+              await dialog.alert(`Imported ${result.imported} transactions from OFX.`, 'Import complete')
               loadData()
             }
           }}>

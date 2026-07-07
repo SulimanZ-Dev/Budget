@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatMoney, formatDate } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 import { addMonths } from 'date-fns'
+import { useAppDialog } from '@/components/shared/app-dialog'
 
 interface Goal {
   id: number
@@ -41,6 +42,7 @@ function statusLabel(progress: number): { text: string; color: string } {
 
 export function GoalsPage(): JSX.Element {
   const { profile, rates } = useAppStore()
+  const dialog = useAppDialog()
   const [goals, setGoals] = useState<Goal[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
@@ -63,7 +65,11 @@ export function GoalsPage(): JSX.Element {
   }, [])
 
   async function removeGoal(id: number): Promise<void> {
-    if (!confirm('Delete this goal?')) return
+    if (!await dialog.confirm('Delete this goal?', {
+      title: 'Delete goal',
+      confirmLabel: 'Delete',
+      destructive: true
+    })) return
     await window.api.goals.delete(id)
     setGoals(await window.api.goals.list())
   }

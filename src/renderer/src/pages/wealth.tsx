@@ -19,9 +19,11 @@ import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { Landmark } from 'lucide-react'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Pencil, Trash2 } from 'lucide-react'
+import { useAppDialog } from '@/components/shared/app-dialog'
 
 export function WealthPage(): JSX.Element {
   const { profile, rates, refreshTrigger } = useAppStore()
+  const dialog = useAppDialog()
   const [snapshots, setSnapshots] = useState<
     {
       date: string
@@ -133,7 +135,11 @@ export function WealthPage(): JSX.Element {
   }
 
   async function deleteHolding(id: number): Promise<void> {
-    if (!confirm('Delete this holding?')) return
+    if (!await dialog.confirm('Delete this holding?', {
+      title: 'Delete holding',
+      confirmLabel: 'Delete',
+      destructive: true
+    })) return
     await window.api.investmentHoldings.delete(id)
     load()
   }

@@ -20,6 +20,12 @@
 - **Files touched**: `src/preload/index.ts`, `src/renderer/src/pages/budget.tsx`, `src/main/ipc/handlers.ts`.
 - **Verification**: Re-read all touched files after editing. Ran `npm run typecheck` successfully and `npm run build` successfully. Exercised the revised SQL window with Python `sqlite3`: anchoring on March 2026 returned October 2025 through March 2026 and ignored April 2026, confirming the trend window follows the viewed month rather than today's date. A direct Budget-page visual check remains blocked by the encrypted real profile/app-data isolation issue noted in Item 1.
 
+### Item 4: Native alert()/confirm() migration incomplete
+- **Problem**: Several renderer paths still used native `alert()`/`confirm()`, leaving them outside the app's Radix dialog/focus management.
+- **Fix**: Migrated destructive confirmations and notices to `useAppDialog()` in Goals, Income, Savings, Wealth, Recurring/Subscriptions, Budget category drawer, Plugin Registry, and the OFX import notice in Transactions. Plugin load/reload failures now use app dialogs, and the dead Plugin Development Guide `href="#"` was removed in favor of text pointing to `PLUGINS.md`.
+- **Files touched**: `src/renderer/src/pages/goals.tsx`, `src/renderer/src/pages/income.tsx`, `src/renderer/src/pages/savings.tsx`, `src/renderer/src/pages/wealth.tsx`, `src/renderer/src/pages/subscriptions.tsx`, `src/renderer/src/pages/transactions.tsx`, `src/renderer/src/components/budget/category-drawer.tsx`, `src/renderer/src/components/plugins/plugin-registry.tsx`.
+- **Verification**: Re-read all touched files after editing. Ran `rg -n "\\balert\\(|\\bconfirm\\(" src\\renderer\\src\\pages src\\renderer\\src\\components`; remaining matches are `dialog.alert`/`dialog.confirm` app-dialog calls, not native browser dialogs. Ran `npm run typecheck` successfully and `npm run build` successfully. Per-dialog live click/focus verification is blocked by the encrypted real profile/app-data isolation issue noted in Item 1; I did not unlock or mutate the real profile.
+
 ## Session: 2026-07-05 - Full Demo Data Coverage
 
 ### Part 1 Step 1: tab/data-source checklist

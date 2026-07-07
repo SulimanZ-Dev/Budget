@@ -9,6 +9,7 @@ import { useAppStore } from '@/store/app-store'
 import { formatMoney } from '@/lib/utils'
 import { EmptyState } from '@/components/shared/empty-state'
 import { TransactionDetailDrawer } from '@/components/transactions/transaction-detail-drawer'
+import { useAppDialog } from '@/components/shared/app-dialog'
 
 type SavingsTx = {
   id: number
@@ -29,6 +30,7 @@ type SavingsTx = {
 
 export function SavingsPage(): JSX.Element {
   const { profile, rates, selectedMonth, openDrawer, closeDrawer, refreshTrigger, triggerRefresh } = useAppStore()
+  const dialog = useAppDialog()
   const [rows, setRows] = useState<SavingsTx[]>([])
   const [form, setForm] = useState({
     description: '',
@@ -70,7 +72,11 @@ export function SavingsPage(): JSX.Element {
   }
 
   async function remove(id: number): Promise<void> {
-    if (!confirm('Delete this savings transaction?')) return
+    if (!await dialog.confirm('Delete this savings transaction?', {
+      title: 'Delete savings transaction',
+      confirmLabel: 'Delete',
+      destructive: true
+    })) return
     await window.api.transactions.delete(id)
     await load()
     triggerRefresh()

@@ -13,6 +13,7 @@ import {
   AlertCircle,
   ExternalLink
 } from 'lucide-react'
+import { useAppDialog } from '@/components/shared/app-dialog'
 
 interface PluginMetadata {
   manifest: {
@@ -33,6 +34,7 @@ interface PluginMetadata {
 }
 
 export function PluginRegistry() {
+  const dialog = useAppDialog()
   const [plugins, setPlugins] = useState<PluginMetadata[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -58,7 +60,7 @@ export function PluginRegistry() {
       if (result.success) {
         await loadPlugins()
       } else {
-        alert(`Failed to load plugin: ${result.error}`)
+        await dialog.alert(`Failed to load plugin: ${result.error}`, 'Plugin load failed')
       }
     } catch (error) {
       console.error('Failed to load plugin:', error)
@@ -80,7 +82,7 @@ export function PluginRegistry() {
       if (result.success) {
         await loadPlugins()
       } else {
-        alert(`Failed to reload plugin: ${result.error}`)
+        await dialog.alert(`Failed to reload plugin: ${result.error}`, 'Plugin reload failed')
       }
     } catch (error) {
       console.error('Failed to reload plugin:', error)
@@ -255,10 +257,7 @@ export function PluginRegistry() {
           Plugin Development
         </h4>
         <p className="text-sm text-muted-foreground mb-2">
-          Want to create your own plugin? Check out the{' '}
-          <a href="#" className="text-primary hover:underline">
-            Plugin Development Guide
-          </a>
+          Want to create your own plugin? See PLUGINS.md in the project root.
         </p>
         <p className="text-sm text-muted-foreground">
           Plugin directory: <code className="bg-background px-1 py-0.5 rounded">
