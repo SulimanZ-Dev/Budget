@@ -26,6 +26,12 @@
 - **Files touched**: `src/renderer/src/pages/goals.tsx`, `src/renderer/src/pages/income.tsx`, `src/renderer/src/pages/savings.tsx`, `src/renderer/src/pages/wealth.tsx`, `src/renderer/src/pages/subscriptions.tsx`, `src/renderer/src/pages/transactions.tsx`, `src/renderer/src/components/budget/category-drawer.tsx`, `src/renderer/src/components/plugins/plugin-registry.tsx`.
 - **Verification**: Re-read all touched files after editing. Ran `rg -n "\\balert\\(|\\bconfirm\\(" src\\renderer\\src\\pages src\\renderer\\src\\components`; remaining matches are `dialog.alert`/`dialog.confirm` app-dialog calls, not native browser dialogs. Ran `npm run typecheck` successfully and `npm run build` successfully. Per-dialog live click/focus verification is blocked by the encrypted real profile/app-data isolation issue noted in Item 1; I did not unlock or mutate the real profile.
 
+### Item 5: Key manager tests fail outside Electron
+- **Problem**: `keyManager.test.ts` called `encryptWithMachineKey()`, which uses `app.getPath('appData')`; in Vitest there was no Electron `app` mock, so 4 of 8 tests failed.
+- **Fix**: Added a Vitest `electron` mock in `keyManager.test.ts` that returns a temporary app-data directory for `app.getPath()`, and removes that temp directory after the suite.
+- **Files touched**: `src/main/crypto/__tests__/keyManager.test.ts`.
+- **Verification**: Re-read the test file after editing and confirmed `src/main/crypto/keyManager.ts` was not modified. Ran `npm test -- src/main/crypto/__tests__/keyManager.test.ts` successfully: 8/8 key-manager tests passed. Ran full `npm test` successfully: 1 test file, 8 tests passed. Ran `npm run typecheck` successfully.
+
 ## Session: 2026-07-05 - Full Demo Data Coverage
 
 ### Part 1 Step 1: tab/data-source checklist

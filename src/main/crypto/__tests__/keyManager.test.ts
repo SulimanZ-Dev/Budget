@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, afterAll, afterEach, vi } from 'vitest'
 import { randomBytes } from 'crypto'
+import { rmSync } from 'fs'
 import {
   initializeEncryption,
   unlockKeystore,
@@ -11,8 +12,25 @@ import {
   decryptWithMachineKey
 } from '../keyManager'
 
+const testAppDataDir = vi.hoisted(() => {
+  const { mkdtempSync } = require('fs')
+  const { tmpdir } = require('os')
+  const { join } = require('path')
+  return mkdtempSync(join(tmpdir(), 'budget-keymanager-test-'))
+})
+
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn(() => testAppDataDir)
+  }
+}))
+
 describe('KeyManager', () => {
   const testPassword = 'TestPassword123!'
+
+  afterAll(() => {
+    rmSync(testAppDataDir, { recursive: true, force: true })
+  })
   
   afterEach(() => {
     // Clean up after each test
