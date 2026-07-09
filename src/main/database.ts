@@ -116,6 +116,16 @@ function runAccountMigration(database: Database.Database): void {
   }
 }
 
+function runTaxYearSettingsMigration(database: Database.Database): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS tax_year_settings (
+      year INTEGER PRIMARY KEY,
+      expected_yearly_tax_owed REAL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+  `)
+}
+
 export function getDbPath(): string {
   const dir = join(app.getPath('appData'), 'BudgetApp')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
@@ -299,6 +309,12 @@ function runMigrations(database: Database.Database): void {
       UNIQUE(year, month)
     );
 
+    CREATE TABLE IF NOT EXISTS tax_year_settings (
+      year INTEGER PRIMARY KEY,
+      expected_yearly_tax_owed REAL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS monthly_mood (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       year INTEGER NOT NULL,
@@ -345,6 +361,8 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_transactions_description ON transactions(description COLLATE NOCASE);
     CREATE INDEX IF NOT EXISTS idx_tax_estimates_year_month ON tax_estimates(year, month);
   `)
+
+  runTaxYearSettingsMigration(database)
 
   // Migration: Update existing transactions table to support savings and transfer types
   try {

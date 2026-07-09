@@ -2532,6 +2532,42 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       .all(year)
   })
 
+  ipcMain.handle('tax:getYearSettings', (_, year: number) => {
+    const parsedYear = Math.floor(Number(year))
+    const normalizedYear = Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear()
+    const row = db()
+      .prepare(
+        `SELECT year, expected_yearly_tax_owed, updated_at
+         FROM tax_year_settings
+         WHERE year = ?`
+      )
+      .get(normalizedYear) as
+      | { year: number; expected_yearly_tax_owed: number | null; updated_at: string }
+      | undefined
+
+    return row ?? { year: normalizedYear, expected_yearly_tax_owed: null, updated_at: null }
+  })
+
+  ipcMain.handle('tax:setYearSettings', (_, data: { year: number; expectedYearlyTaxOwed?: number | null }) => {
+    const parsedYear = Math.floor(Number(data.year))
+    const year = Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear()
+    const expected = data.expectedYearlyTaxOwed
+    const normalizedExpected = expected == null || !Number.isFinite(Number(expected))
+      ? null
+      : roundCurrency(Number(expected))
+
+    db()
+      .prepare(
+        `INSERT INTO tax_year_settings (year, expected_yearly_tax_owed, updated_at)
+         VALUES (?, ?, datetime('now'))
+         ON CONFLICT(year) DO UPDATE SET
+           expected_yearly_tax_owed = excluded.expected_yearly_tax_owed,
+           updated_at = datetime('now')`
+      )
+      .run(year, normalizedExpected)
+    return { year, expected_yearly_tax_owed: normalizedExpected }
+  })
+
   ipcMain.handle('tax:setEntry', (_, data: {
     year: number
     month: number

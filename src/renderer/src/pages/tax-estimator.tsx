@@ -12,6 +12,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { formatMoney, MONTH_NAMES } from '@/lib/utils'
+import { calculateTaxReconciledYtd, parseOptionalTaxAmount } from '@/lib/tax'
 import { useAppStore } from '@/store/app-store'
 
 interface TaxEntry {
@@ -24,6 +25,12 @@ interface TaxEntry {
   updated_at?: string
 }
 
+interface TaxYearSettings {
+  year: number
+  expected_yearly_tax_owed: number | null
+  updated_at?: string | null
+}
+
 function adjustmentLabel(difference: number): { label: string; className: string } {
   if (difference > 0) return { label: 'Expected refund', className: 'text-success' }
   if (difference < 0) return { label: 'Amount owed', className: 'text-destructive' }
@@ -33,6 +40,8 @@ function adjustmentLabel(difference: number): { label: string; className: string
 export function TaxEstimatorPage(): JSX.Element {
   const { profile, selectedMonth, rates } = useAppStore()
   const [entries, setEntries] = useState<TaxEntry[]>([])
+  const [expectedYearlyTaxOwed, setExpectedYearlyTaxOwed] = useState('')
+  const [yearSettingsLoaded, setYearSettingsLoaded] = useState(false)
   const [form, setForm] = useState({
     month: String(selectedMonth),
     incomeGross: '',
@@ -56,12 +65,44 @@ export function TaxEstimatorPage(): JSX.Element {
     (sum, entry) => sum + entry.supposed_net_income - entry.income_net_actual,
     0
   )
-  const yearlyAdjustment = adjustmentLabel(yearlyDifference)
+  const expectedYearlyTaxAmount = parseOptionalTaxAmount(expectedYearlyTaxOwed)
+  const hasExpectedYearlyTax = expectedYearlyTaxOwed.trim() !== '' && expectedYearlyTaxAmount !== null
+  const reconciledYearlyDifference = calculateTaxReconciledYtd(
+    yearlyDifference,
+    hasExpectedYearlyTax ? expectedYearlyTaxAmount : null
+  )
+  const yearlyAdjustment = adjustmentLabel(reconciledYearlyDifference)
+
+  function formatSignedMoney(amount: number): string {
+    if (amount === 0) return formatMoney(0, profile.displayCurrency, rates)
+    const sign = amount > 0 ? '+' : '-'
+    return `${sign}${formatMoney(Math.abs(amount), profile.displayCurrency, rates)}`
+  }
 
   async function load(): Promise<void> {
-    const rows = await window.api.tax.list(profile.year)
+    setYearSettingsLoaded(false)
+    const [rows, settings] = await Promise.all([
+      window.api.tax.list(profile.year),
+      window.api.tax.getYearSettings(profile.year)
+    ])
     setEntries(rows as TaxEntry[])
+    const yearSettings = settings as TaxYearSettings
+    setExpectedYearlyTaxOwed(
+      yearSettings.expected_yearly_tax_owed == null ? '' : String(yearSettings.expected_yearly_tax_owed)
+    )
+    setYearSettingsLoaded(true)
   }
+
+  useEffect(() => {
+    if (!yearSettingsLoaded) return
+    const handle = window.setTimeout(() => {
+      window.api.tax.setYearSettings({
+        year: profile.year,
+        expectedYearlyTaxOwed: parseOptionalTaxAmount(expectedYearlyTaxOwed)
+      }).catch(() => {})
+    }, 250)
+    return () => window.clearTimeout(handle)
+  }, [expectedYearlyTaxOwed, profile.year, yearSettingsLoaded])
 
   function loadMonth(month: string): void {
     const parsedMonth = Number.parseInt(month)
@@ -171,11 +212,43 @@ export function TaxEstimatorPage(): JSX.Element {
             </p>
             <p className="mt-1 text-sm text-muted-foreground">{currentAdjustment.label}</p>
             <div className="mt-4 border-t pt-4">
-              <p className="text-sm text-muted-foreground">Year to date total</p>
-              <p className={`text-xl font-bold ${yearlyAdjustment.className}`}>
-                {formatMoney(Math.abs(yearlyDifference), profile.displayCurrency, rates)}
+              {hasExpectedYearlyTax ? (
+                <>
+                  <p className="text-sm text-muted-foreground">Year-to-date (before reconciliation)</p>
+                  <p className="text-lg font-semibold">
+                    {formatSignedMoney(yearlyDifference)}
+                  </p>
+                  <p className="mt-3 text-sm text-muted-foreground">Year-to-date (reconciled)</p>
+                  <p className={`text-xl font-bold ${yearlyAdjustment.className}`}>
+                    {formatSignedMoney(reconciledYearlyDifference)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">{yearlyAdjustment.label}</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">Year to date total</p>
+                  <p className={`text-xl font-bold ${yearlyAdjustment.className}`}>
+                    {formatMoney(Math.abs(yearlyDifference), profile.displayCurrency, rates)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">{yearlyAdjustment.label}</p>
+                </>
+              )}
+            </div>
+            <div className="mt-4 border-t pt-4">
+              <div className="grid gap-2">
+                <Label htmlFor="expected-yearly-tax-owed">Expected Yearly Tax Owed (optional)</Label>
+                <Input
+                  id="expected-yearly-tax-owed"
+                  type="number"
+                  value={expectedYearlyTaxOwed}
+                  onChange={(event) => setExpectedYearlyTaxOwed(event.target.value)}
+                  placeholder="Leave blank for raw YTD"
+                />
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                This is subtracted from your year-to-date total immediately in full, not spread
+                across months. Entering or changing this number will update your total right away.
               </p>
-              <p className="text-sm text-muted-foreground">{yearlyAdjustment.label}</p>
             </div>
           </CardContent>
         </Card>

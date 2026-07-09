@@ -234,6 +234,8 @@ const api = {
 
   tax: {
     list: (year: number) => ipcRenderer.invoke('tax:list', year),
+    getYearSettings: (year: number) => ipcRenderer.invoke('tax:getYearSettings', year),
+    setYearSettings: (settings: unknown) => ipcRenderer.invoke('tax:setYearSettings', settings),
     setEntry: (entry: unknown) => ipcRenderer.invoke('tax:setEntry', entry),
     deleteEntry: (year: number, month: number) => ipcRenderer.invoke('tax:deleteEntry', year, month)
   },
