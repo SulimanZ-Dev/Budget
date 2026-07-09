@@ -22,11 +22,15 @@ import { RuleEditor } from '@/components/shared/rule-editor'
 import { useAppDialog } from '@/components/shared/app-dialog'
 
 interface DemoResult {
+  accounts: number
+  categories: number
+  members: number
   subscriptions: number
   transactions: number
   goals: number
   incomeSources: number
   savingsSources: number
+  taxEntries: number
   budgetEntries: number
   wealthSnapshots: number
   holdings: number
@@ -38,6 +42,13 @@ interface DemoResult {
 interface CategoryOption {
   id: number
   name: string
+}
+
+interface AccountOption {
+  id: number
+  name: string
+  type?: string
+  is_archived?: number
 }
 
 function randomInt(min: number, max: number): number {
@@ -119,8 +130,27 @@ export function SettingsPage(): JSX.Element {
   }
 
   async function generateDemoData(): Promise<DemoResult> {
-    const categories = await window.api.categories.list() as { id: number; name: string }[]
-    const expenseCategories = categories.length > 0 ? categories : [{ id: undefined as unknown as number, name: 'Demo' }]
+    const demoCategorySpecs = [
+      { name: 'Groceries', icon: 'shopping-bag', color: '#22c55e', budgetAmount: 5200, isFixed: false, sortOrder: 10 },
+      { name: 'Transport', icon: 'car', color: '#0ea5e9', budgetAmount: 1800, isFixed: false, sortOrder: 11 },
+      { name: 'Dining', icon: 'utensils', color: '#f97316', budgetAmount: 2600, isFixed: false, sortOrder: 12 },
+      { name: 'Utilities', icon: 'zap', color: '#eab308', budgetAmount: 2400, isFixed: true, sortOrder: 13 },
+      { name: 'Housing', icon: 'home', color: '#8b5cf6', budgetAmount: 12500, isFixed: true, sortOrder: 14 },
+      { name: 'Health', icon: 'heart-pulse', color: '#ef4444', budgetAmount: 1200, isFixed: false, sortOrder: 15 },
+      { name: 'Shopping', icon: 'shopping-bag', color: '#ec4899', budgetAmount: 2200, isFixed: false, sortOrder: 16 },
+      { name: 'Fun', icon: 'gamepad-2', color: '#14b8a6', budgetAmount: 1800, isFixed: false, sortOrder: 17 }
+    ]
+    let categories = await window.api.categories.list() as { id: number; name: string }[]
+    let createdCategories = 0
+    for (const spec of demoCategorySpecs) {
+      if (categories.some((category) => category.name.toLowerCase() === spec.name.toLowerCase())) continue
+      const created = await window.api.categories.create(spec) as { id: number; name: string }
+      categories = [...categories, { id: created.id, name: spec.name }]
+      createdCategories++
+    }
+    const expenseCategories = categories.filter((category) =>
+      demoCategorySpecs.some((spec) => spec.name.toLowerCase() === category.name.toLowerCase())
+    )
     const currentYear = profile.year
     const currentMonth = selectedMonth ?? new Date().getMonth() + 1
     const subscriptions = ['Netflix', 'Spotify', 'Gym', 'Rent', 'Phone Plan', 'Cloud Storage', 'Transit Pass', 'Meal Kit']
@@ -160,9 +190,27 @@ export function SettingsPage(): JSX.Element {
       return { year: date.getFullYear(), month: date.getMonth() + 1 }
     })
 
+    const accountSpecs = [
+      { name: `Demo Checking ${randomInt(1, 99)}`, type: 'checking', currency: profile.baseCurrency, openingBalance: randomInt(8000, 26000) },
+      { name: `Demo Savings ${randomInt(1, 99)}`, type: 'savings', currency: profile.baseCurrency, openingBalance: randomInt(25000, 90000) },
+      { name: `Demo Cash ${randomInt(1, 99)}`, type: 'cash', currency: profile.baseCurrency, openingBalance: randomInt(500, 2500) }
+    ]
+    const createdAccounts: AccountOption[] = []
+    for (const account of accountSpecs) {
+      const created = await window.api.accounts.create(account) as { id: number }
+      createdAccounts.push({ id: created.id, name: account.name, type: account.type })
+    }
+    const accounts = createdAccounts.length > 0
+      ? createdAccounts
+      : (await window.api.accounts.list() as AccountOption[]).filter((account) => account.is_archived !== 1)
+    const checkingAccount = accounts.find((account) => account.type === 'checking') ?? accounts[0]
+    const savingsAccount = accounts.find((account) => account.type === 'savings') ?? accounts[0]
+
     const memberNames = [`Alex ${randomInt(1, 99)}`, `Sam ${randomInt(1, 99)}`]
+    const createdMembers: { id: number; name: string }[] = []
     for (const name of memberNames) {
-      await window.api.members.create({ name })
+      const member = await window.api.members.create({ name }) as { id: number; name: string }
+      createdMembers.push(member)
     }
 
     const createdIncomeSourceIds: number[] = []
@@ -174,7 +222,9 @@ export function SettingsPage(): JSX.Element {
         grossOrNet: pick(['gross', 'net']),
         isRecurring: i !== incomeSourceCount - 1,
         frequency: pick(['monthly', 'monthly', 'fortnightly']),
-        color: pick(['#22c55e', '#14b8a6', '#0ea5e9', '#84cc16'])
+        color: pick(['#22c55e', '#14b8a6', '#0ea5e9', '#84cc16']),
+        accountId: checkingAccount?.id,
+        nextBillingDate: randomFutureDateWithinMonths(2)
       }) as { id: number }
       createdIncomeSourceIds.push(created.id)
       for (const period of monthsToSeed) {
@@ -194,8 +244,10 @@ export function SettingsPage(): JSX.Element {
         amount: randomInt(800, 4500),
         type: 'savings',
         categoryId: undefined,
+        accountId: savingsAccount?.id,
         date: dateMonthsAgo(randomInt(0, 2), randomInt(3, 24)),
         isRecurring: true,
+        allowDuplicate: true,
         notes: 'Demo recurring savings'
       })
     }
@@ -212,7 +264,8 @@ export function SettingsPage(): JSX.Element {
         color: pick(['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']),
         notes: 'Demo data',
         taxDeductible: i === 0 || Math.random() < 0.35,
-        onHold: Math.random() < 0.2
+        onHold: Math.random() < 0.2,
+        accountId: checkingAccount?.id
       })
     }
 
@@ -223,12 +276,33 @@ export function SettingsPage(): JSX.Element {
         description: type === 'income' ? pick(['Salary payout', 'Freelance invoice', 'Refund received']) : pick(merchants),
         amount: type === 'income' ? randomInt(12000, 42000) : randomInt(45, 3200),
         type,
+        accountId: type === 'savings' ? savingsAccount?.id : checkingAccount?.id,
         categoryId: type === 'expense' ? category.id : undefined,
         date: randomDateWithinMonths(randomInt(6, 11)),
         isRecurring: false,
         isUnnecessary: type === 'expense' && Math.random() < 0.12,
+        memberId: pick(createdMembers).id,
+        allowDuplicate: true,
         notes: 'Demo data'
       })
+    }
+
+    await window.api.tax.setYearSettings({
+      year: currentYear,
+      expectedYearlyTaxOwed: randomInt(98000, 185000)
+    })
+    let taxEntries = 0
+    for (const period of monthsToSeed) {
+      const incomeGross = randomInt(36000, 62000)
+      const taxPaid = randomInt(9000, 18500)
+      await window.api.tax.setEntry({
+        year: period.year,
+        month: period.month,
+        incomeGross,
+        incomeNetActual: incomeGross - taxPaid,
+        supposedNetIncome: incomeGross - randomInt(10500, 19500)
+      })
+      taxEntries++
     }
 
     for (let i = 1; i <= 14; i++) {
@@ -238,9 +312,12 @@ export function SettingsPage(): JSX.Element {
         description: pick(['Daily groceries', 'Transit tap', 'Lunch cafe', 'Evening pharmacy']),
         amount: randomInt(35, 260),
         type: 'expense',
+        accountId: checkingAccount?.id,
         categoryId: pick(expenseCategories).id,
         date: date.toISOString().slice(0, 10),
         isRecurring: false,
+        memberId: pick(createdMembers).id,
+        allowDuplicate: true,
         notes: 'Demo streak data'
       })
     }
@@ -339,11 +416,15 @@ export function SettingsPage(): JSX.Element {
 
     triggerRefresh()
     return {
+      accounts: createdAccounts.length,
+      categories: createdCategories,
+      members: createdMembers.length,
       subscriptions: subCount,
       transactions: txCount + 14,
       goals: goalCount,
       incomeSources: incomeSourceCount,
       savingsSources: savingsSourceCount,
+      taxEntries,
       budgetEntries,
       wealthSnapshots: 6,
       holdings: demoHoldings.length,
@@ -357,7 +438,7 @@ export function SettingsPage(): JSX.Element {
     try {
       const result = await generateDemoData()
       await dialog.alert(
-        `Added ${result.subscriptions} subscriptions, ${result.transactions} transactions, ${result.goals} goals, ${result.incomeSources} income sources, ${result.savingsSources} savings sources, ${result.budgetEntries} budget entries, ${result.wealthSnapshots} wealth snapshots, ${result.holdings} holdings, ${result.investments} legacy investments, ${result.rules} rules, and ${result.moods} mood entries.`,
+        `Added ${result.accounts} accounts, ${result.categories} categories, ${result.members} members, ${result.subscriptions} subscriptions, ${result.transactions} transactions, ${result.goals} goals, ${result.incomeSources} income sources, ${result.savingsSources} savings sources, ${result.taxEntries} tax entries, ${result.budgetEntries} budget entries, ${result.wealthSnapshots} wealth snapshots, ${result.holdings} holdings, ${result.investments} legacy investments, ${result.rules} rules, and ${result.moods} mood entries.`,
         'Demo data added'
       )
     } catch (error) {

@@ -52,6 +52,32 @@ type GetWindow = () => BrowserWindow | null
 type TransactionFilters = Record<string, unknown>
 type ForecastTier = 'success' | 'warning' | 'destructive'
 
+const DATA_TABLES = [
+  'transaction_events',
+  'budget_entries',
+  'categorization_rules',
+  'subscriptions',
+  'savings_sources',
+  'income_entries',
+  'income_sources',
+  'tax_estimates',
+  'tax_year_settings',
+  'monthly_mood',
+  'ai_insights',
+  'wealth_snapshots',
+  'investment_holdings',
+  'investments',
+  'transactions',
+  'goals',
+  'household_members',
+  'currency_cache',
+  'integrity_warnings',
+  'categories',
+  'accounts'
+] as const
+
+const BACKUP_TABLES = ['settings', ...DATA_TABLES] as const
+
 function parseDateToLocalYearMonth(dateStr: string): { year: number; month: number } {
   const parts = dateStr.split('-')
   return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10) }
@@ -2348,32 +2374,14 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   ipcMain.handle('data:wipe', () => {
     const database = db()
     const tx = database.transaction(() => {
-      const tables = [
-        'transactions',
-        'transaction_events',
-        'budget_entries',
-        'categories',
-        'goals',
-        'wealth_snapshots',
-        'investments',
-        'investment_holdings',
-        'subscriptions',
-        'savings_sources',
-        'income_entries',
-        'income_sources',
-        'monthly_mood',
-        'ai_insights',
-        'household_members',
-        'currency_cache',
-        'integrity_warnings',
-        'accounts'
-      ]
-      for (const t of tables) database.prepare(`DELETE FROM ${t}`).run()
+      for (const table of DATA_TABLES) database.prepare(`DELETE FROM ${table}`).run()
+      database.prepare('DELETE FROM settings').run()
+      database
+        .prepare(`DELETE FROM sqlite_sequence WHERE name IN (${DATA_TABLES.map(() => '?').join(',')})`)
+        .run(...DATA_TABLES)
       database
         .prepare("INSERT INTO accounts (name, type, currency, is_archived) VALUES ('Main', 'checking', 'SEK', 0)")
         .run()
-      // Reset onboarding
-      database.prepare("DELETE FROM settings WHERE key = 'onboardingComplete'").run()
       const currentYear = new Date().getFullYear()
       database
         .prepare(
@@ -2831,29 +2839,9 @@ function getGoalCurrentAmount(database: ReturnType<typeof getDatabase>, goalType
 
 function exportAllTables(): Record<string, unknown[]> {
   const database = getDatabase()
-  const tables = [
-    'settings',
-    'household_members',
-    'accounts',
-    'categories',
-    'transactions',
-    'budget_entries',
-    'goals',
-    'wealth_snapshots',
-    'investments',
-    'investment_holdings',
-    'subscriptions',
-    'savings_sources',
-    'income_sources',
-    'income_entries',
-    'monthly_mood',
-    'ai_insights',
-    'currency_cache',
-    'integrity_warnings'
-  ]
   const dump: Record<string, unknown[]> = {}
-  for (const t of tables) {
-    dump[t] = database.prepare(`SELECT * FROM ${t}`).all()
+  for (const table of BACKUP_TABLES) {
+    dump[table] = database.prepare(`SELECT * FROM ${table}`).all()
   }
   return dump
 }
@@ -2861,7 +2849,12 @@ function exportAllTables(): Record<string, unknown[]> {
 function importAllTables(data: Record<string, unknown[]>): void {
   const database = getDatabase()
   const tx = database.transaction((txData: Record<string, unknown[]>) => {
-    const order = [
+    for (const table of BACKUP_TABLES) {
+      database.prepare(`DELETE FROM ${table}`).run()
+    }
+
+    const insertOrder = [
+      'settings',
       'household_members',
       'accounts',
       'categories',
@@ -2869,22 +2862,25 @@ function importAllTables(data: Record<string, unknown[]>): void {
       'wealth_snapshots',
       'investments',
       'investment_holdings',
+      'transactions',
+      'transaction_events',
+      'budget_entries',
+      'categorization_rules',
       'subscriptions',
       'savings_sources',
       'income_sources',
       'income_entries',
+      'tax_estimates',
+      'tax_year_settings',
       'monthly_mood',
       'ai_insights',
-      'transactions',
-      'transaction_events',
       'currency_cache',
-      'integrity_warnings',
-      'settings'
-    ]
-    for (const table of order) {
+      'integrity_warnings'
+    ] as const
+
+    for (const table of insertOrder) {
       const rows = txData[table]
       if (!rows?.length) continue
-      database.prepare(`DELETE FROM ${table}`).run()
       const cols = Object.keys(rows[0] as object)
       const placeholders = cols.map(() => '?').join(',')
       const insert = database.prepare(

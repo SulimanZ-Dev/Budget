@@ -4,18 +4,25 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAppStore } from '@/store/app-store'
-import { Wallet, Target, Banknote, User, Plus, Minus, Sparkles, History, Puzzle, Shield } from 'lucide-react'
+import { Wallet, Target, Banknote, User, Plus, Minus, Sparkles, Shield, Landmark } from 'lucide-react'
+
+const today = new Date().toISOString().slice(0, 10)
 
 const steps = [
   {
     icon: User,
     title: 'Welcome to Budget',
-    desc: 'Your personal finance manager that helps you track spending, save money, and reach your goals. Everything stays private on your computer—no cloud, no tracking.'
+    desc: 'Set up the basics once, then track accounts, transactions, income, tax, goals, and recurring bills from one private desktop app.'
+  },
+  {
+    icon: Landmark,
+    title: 'Start With Your Main Account',
+    desc: 'Name the account you use most and add an optional starting balance so your dashboard does not begin from zero.'
   },
   {
     icon: Banknote,
     title: 'Add Your Income',
-    desc: 'Tell us where your money comes from (salary, side jobs, etc.). This helps calculate how much you can save each month.'
+    desc: 'Tell us where money comes from, when it is next paid, and whether it is gross or net. Income will stay linked to the right account.'
   },
   {
     icon: Wallet,
@@ -29,13 +36,13 @@ const steps = [
   },
   {
     icon: Sparkles,
-    title: 'AI & Advanced Features',
-    desc: 'Ask the AI assistant natural-language questions about your finances. Track FIRE goals, enable plugins for extended functionality, and review every change with the event history log.'
+    title: 'Tools Ready From Day One',
+    desc: 'Use imports, duplicate checks, undo for bulk actions, tax reconciliation, subscriptions, plugins, AI, and the event history when you need them.'
   },
   {
     icon: Shield,
     title: 'Security & Privacy',
-    desc: 'Your data is encrypted with AES-256-GCM using a master password only you know. All data stays on your computer — nothing is sent to the cloud.'
+    desc: 'Your data stays on this computer. Encryption, privacy audit tools, and local-first settings are available from the main app.'
   }
 ]
 
@@ -45,13 +52,19 @@ interface IncomeSource {
   grossOrNet: 'gross' | 'net'
   isRecurring: boolean
   frequency: 'weekly' | 'fortnightly' | 'monthly' | 'yearly'
+  nextBillingDate: string
 }
+
+type AccountType = 'checking' | 'savings' | 'cash' | 'other'
 
 export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.Element {
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
+  const [accountName, setAccountName] = useState('Main')
+  const [accountType, setAccountType] = useState<AccountType>('checking')
+  const [openingBalance, setOpeningBalance] = useState('')
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([
-    { name: 'Salary', amount: '', grossOrNet: 'net', isRecurring: true, frequency: 'monthly' }
+    { name: 'Salary', amount: '', grossOrNet: 'net', isRecurring: true, frequency: 'monthly', nextBillingDate: today }
   ])
   const [categories, setCategories] = useState('Food, Transport, Housing, Entertainment')
   const [goalName, setGoalName] = useState('Emergency fund')
@@ -61,7 +74,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
   function addIncomeSource(): void {
     setIncomeSources([
       ...incomeSources,
-      { name: '', amount: '', grossOrNet: 'net', isRecurring: true, frequency: 'monthly' }
+      { name: '', amount: '', grossOrNet: 'net', isRecurring: true, frequency: 'monthly', nextBillingDate: today }
     ])
   }
 
@@ -84,24 +97,56 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
       year: new Date().getFullYear()
     })
 
-    // Create income sources and entries
+    const accounts = (await window.api.accounts.list()) as {
+      id: number
+      name: string
+      is_archived: number
+      transaction_count?: number
+    }[]
+    const firstAccount = accounts.find((account) => account.is_archived !== 1)
+    const parsedOpeningBalance = parseFloat(openingBalance)
+    const openingBalanceValue = Number.isFinite(parsedOpeningBalance) ? parsedOpeningBalance : 0
+    let accountId = firstAccount?.id
+
+    if (firstAccount && (firstAccount.transaction_count ?? 0) === 0) {
+      await window.api.accounts.update(firstAccount.id, {
+        name: accountName.trim() || firstAccount.name || 'Main',
+        type: accountType,
+        currency: 'SEK',
+        openingBalance: openingBalanceValue
+      })
+    } else if (!firstAccount) {
+      const created = await window.api.accounts.create({
+        name: accountName.trim() || 'Main',
+        type: accountType,
+        currency: 'SEK',
+        openingBalance: openingBalanceValue
+      })
+      accountId = created.id
+    }
+
     const now = new Date()
     for (const src of incomeSources) {
-      if (src.amount) {
+      const amount = Math.abs(parseFloat(src.amount))
+      if (Number.isFinite(amount) && amount > 0) {
         const created = await window.api.income.createSource({
-          name: src.name,
-          amount: parseFloat(src.amount),
+          name: src.name.trim() || 'Income',
+          amount,
           isGross: src.grossOrNet === 'gross' ? 1 : 0,
           grossOrNet: src.grossOrNet,
           isRecurring: src.isRecurring,
-          frequency: src.frequency
+          frequency: src.frequency,
+          accountId,
+          nextBillingDate: src.nextBillingDate || today
         })
-        await window.api.income.setEntry({
-          sourceId: created.id,
-          year: now.getFullYear(),
-          month: now.getMonth() + 1,
-          amount: parseFloat(src.amount)
-        })
+        if (src.isRecurring) {
+          await window.api.income.setEntry({
+            sourceId: created.id,
+            year: now.getFullYear(),
+            month: now.getMonth() + 1,
+            amount
+          })
+        }
       }
     }
 
@@ -129,11 +174,11 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
   const Icon = steps[step].icon
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 p-4 backdrop-blur">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-xl"
+        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border bg-card p-8 shadow-xl"
       >
         <AnimatePresence mode="wait">
           <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
@@ -152,6 +197,36 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
                 </div>
               )}
               {step === 1 && (
+                <div className="space-y-4">
+                  <div className="grid gap-2">
+                    <Label>Main account name</Label>
+                    <Input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Main" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Account type</Label>
+                    <select
+                      value={accountType}
+                      onChange={(e) => setAccountType(e.target.value as AccountType)}
+                      className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="checking">Checking</option>
+                      <option value="savings">Savings</option>
+                      <option value="cash">Cash</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Starting balance (SEK)</Label>
+                    <Input
+                      type="number"
+                      value={openingBalance}
+                      onChange={(e) => setOpeningBalance(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              )}
+              {step === 2 && (
                 <div className="space-y-4">
                   {incomeSources.map((src, index) => (
                     <div key={index} className="rounded-lg border p-4 space-y-3">
@@ -178,6 +253,14 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
                           value={src.amount}
                           onChange={(e) => updateIncomeSource(index, 'amount', e.target.value)}
                           placeholder="25000"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Next income date</Label>
+                        <Input
+                          type="date"
+                          value={src.nextBillingDate}
+                          onChange={(e) => updateIncomeSource(index, 'nextBillingDate', e.target.value)}
                         />
                       </div>
                       <div className="flex items-center gap-2">
@@ -231,7 +314,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
                       )}
                       {!src.isRecurring && (
                         <p className="text-xs text-muted-foreground">
-                          Non-recurring income is saved but does not count toward monthly baseline.
+                          Non-recurring income is saved for its selected date and linked back to this source.
                         </p>
                       )}
                     </div>
@@ -242,13 +325,13 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }): JSX.
                   </Button>
                 </div>
               )}
-              {step === 2 && (
+              {step === 3 && (
                 <div className="grid gap-2">
                   <Label>Categories (comma-separated)</Label>
                   <Input value={categories} onChange={(e) => setCategories(e.target.value)} />
                 </div>
               )}
-              {step === 3 && (
+              {step === 4 && (
                 <>
                   <div className="grid gap-2">
                     <Label>Goal name</Label>
