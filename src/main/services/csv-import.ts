@@ -144,7 +144,7 @@ export interface TransactionRow {
   description: string
   amount: number
   date: string
-  type: 'expense' | 'income' | 'transfer'
+  type: 'expense' | 'income' | 'savings' | 'transfer'
   category_name?: string
 }
 

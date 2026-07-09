@@ -17,7 +17,9 @@ import {
   importTransactionsFromCsv,
   parseCsvPreview,
   guessColumnIndexes,
-  type CsvMapping
+  exportTransactionsToCsv,
+  type CsvMapping,
+  type TransactionRow
 } from '../services/csv-import'
 import { parseOfx } from '../services/ofx-import'
 import {
@@ -293,6 +295,11 @@ function normalizeAccountOpeningBalance(value: unknown): number {
   return roundCurrency(parsed)
 }
 
+function normalizeDateInput(value: unknown, fallback = new Date().toISOString().slice(0, 10)): string {
+  const text = String(value ?? '').trim()
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : fallback
+}
+
 function accountTransactionBalanceExpression(): string {
   return `
     CASE
@@ -420,7 +427,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return true
   })
 
-  ipcMain.handle('privacy:auditState', () => {
+  ipcMain.handle('privacy:auditState', async () => {
     const backupRow = db().prepare("SELECT value FROM settings WHERE key = 'lastDbBackup'").get() as
       | { value: string }
       | undefined
@@ -429,7 +436,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       appDataPath: app.getPath('appData'),
       databasePath: getDbPath(),
       databaseReady: isDatabaseInitialized(),
-      apiKeyPresent: hasApiKey(),
+      apiKeyPresent: await hasApiKey(),
       lastBackup: backupRow ? JSON.parse(backupRow.value) : null,
       integrityWarningCount: warningRow.count
     }
@@ -825,8 +832,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Use command pattern for transaction updates
   ipcMain.handle('transactions:update', (_, id: number, tx) => {
     // Get current state before update
-    const current = db().prepare('SELECT is_recurring, description, amount, date, type, account_id FROM transactions WHERE id = ?').get(id) as
-      | { is_recurring: number; description: string; amount: number; date: string; type: string; account_id: number | null }
+    const current = db().prepare('SELECT is_recurring, description, amount, date, type, account_id, notes FROM transactions WHERE id = ?').get(id) as
+      | { is_recurring: number; description: string; amount: number; date: string; type: string; account_id: number | null; notes: string | null }
       | undefined
 
     if (!current) {
@@ -836,7 +843,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const result = updateTransaction({
       id,
       description: tx.description,
-      amount: tx.amount,
+      amount: tx.amount !== undefined && (tx.type ?? current.type) === 'income' ? Math.abs(tx.amount) : tx.amount,
       type: tx.type,
       account_id: tx.accountId !== undefined ? normalizeAccountId(tx.accountId) : undefined,
       category_id: tx.categoryId !== undefined ? tx.categoryId : undefined,
@@ -848,9 +855,24 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     })
 
     const description = tx.description ?? current.description
-    const amount = tx.amount ?? current.amount
+    const amount = tx.amount !== undefined && (tx.type ?? current.type) === 'income' ? Math.abs(tx.amount) : (tx.amount ?? current.amount)
     const date = tx.date ?? current.date
     const accountId = tx.accountId !== undefined ? normalizeAccountId(tx.accountId) : current.account_id
+    const notes = tx.notes !== undefined ? tx.notes : current.notes
+
+    const incomeSourceMatch = typeof notes === 'string' ? notes.match(/^income_source:(\d+)$/) : null
+    if (incomeSourceMatch && (tx.type ?? current.type) === 'income') {
+      const sourceId = Number(incomeSourceMatch[1])
+      const normalizedAmount = Math.abs(Number(amount) || 0)
+      const { year, month } = parseDateToLocalYearMonth(date)
+      db()
+        .prepare('UPDATE income_sources SET name = ?, amount = ?, account_id = ?, next_billing_date = ? WHERE id = ?')
+        .run(description.replace(/\s+\(one-time\)$/, ''), normalizedAmount, accountId, date, sourceId)
+      db().prepare('DELETE FROM income_entries WHERE source_id = ?').run(sourceId)
+      db()
+        .prepare('INSERT OR IGNORE INTO income_entries (source_id, year, month, amount, is_irregular) VALUES (?, ?, ?, ?, 1)')
+        .run(sourceId, year, month, normalizedAmount)
+    }
 
     if (tx.isRecurring !== undefined) {
       const wasRecurring = current.is_recurring === 1
@@ -947,8 +969,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
          LEFT JOIN accounts a ON t.account_id = a.id
          ORDER BY t.date DESC, t.id DESC`
       )
-      .all() as { description: string; amount: number; date: string; type: string; category_name?: string; account_name?: string }[]
-    const { exportTransactionsToCsv } = require('../services/csv-import')
+      .all() as TransactionRow[]
     return exportTransactionsToCsv(rows)
   })
 
@@ -1006,7 +1027,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       target_amount: number
     }>
 
-    return goals.map((g) => ({ ...g, current_amount: getGoalCurrentAmount(db(), g.type) }))
+    return goals.map((g) => ({ ...g, current_amount: getGoalCurrentAmount(db(), g.type) ?? g.current_amount }))
   })
 
   ipcMain.handle('goals:autoCreateFromCategories', () => {
@@ -1448,8 +1469,9 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       .all()
   )
   ipcMain.handle('income:createSource', (_, src) => {
-    const amount = Number.isFinite(src.amount) ? src.amount : 0
+    const amount = Math.abs(Number.isFinite(src.amount) ? src.amount : 0)
     const accountId = normalizeAccountId(src.accountId)
+    const nextBillingDate = normalizeDateInput(src.nextBillingDate ?? src.date)
     const grossOrNet = src.grossOrNet === 'gross' ? 'gross' : src.isGross ? 'gross' : 'net'
     const frequency =
       src.frequency === 'weekly' ||
@@ -1461,7 +1483,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const isRecurring = src.isRecurring !== false ? 1 : 0
     const r = db()
       .prepare(
-        'INSERT INTO income_sources (name, amount, is_gross, gross_or_net, is_recurring, frequency, color, account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO income_sources (name, amount, is_gross, gross_or_net, is_recurring, frequency, color, account_id, next_billing_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
       .run(
         src.name,
@@ -1471,15 +1493,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         isRecurring,
         frequency,
         src.color ?? '#22c55e',
-        accountId
+        accountId,
+        nextBillingDate
       )
     const newId = Number(r.lastInsertRowid)
     // Non-recurring: create entry + transaction scoped to current month only
     if (isRecurring === 0) {
-      const now = new Date()
-      const year = now.getFullYear()
-      const month = now.getMonth() + 1
-      const dateStr = now.toISOString().slice(0, 10)
+      const { year, month } = parseDateToLocalYearMonth(nextBillingDate)
       db().prepare(
         'INSERT OR IGNORE INTO income_entries (source_id, year, month, amount, is_irregular) VALUES (?, ?, ?, ?, 1)'
       ).run(newId, year, month, amount)
@@ -1488,7 +1508,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         amount,
         type: 'income',
         account_id: accountId,
-        date: dateStr,
+        date: nextBillingDate,
         is_recurring: false,
         notes: 'income_source:' + newId
       })
@@ -1496,8 +1516,9 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return { id: newId }
   })
   ipcMain.handle('income:updateSource', (_, src) => {
-    const amount = Number.isFinite(src.amount) ? src.amount : 0
+    const amount = Math.abs(Number.isFinite(src.amount) ? src.amount : 0)
     const accountId = normalizeAccountId(src.accountId)
+    const nextBillingDate = normalizeDateInput(src.nextBillingDate ?? src.date)
     const grossOrNet = src.grossOrNet === 'gross' ? 'gross' : src.isGross ? 'gross' : 'net'
     const frequency =
       src.frequency === 'weekly' ||
@@ -1512,7 +1533,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const oldAmount = oldRow?.amount ?? amount
     db()
       .prepare(
-        'UPDATE income_sources SET name = ?, amount = ?, is_gross = ?, gross_or_net = ?, is_recurring = ?, frequency = ?, color = ?, account_id = ? WHERE id = ?'
+        'UPDATE income_sources SET name = ?, amount = ?, is_gross = ?, gross_or_net = ?, is_recurring = ?, frequency = ?, color = ?, account_id = ?, next_billing_date = ? WHERE id = ?'
       )
       .run(
         src.name,
@@ -1523,6 +1544,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         frequency,
         src.color ?? '#22c55e',
         accountId,
+        nextBillingDate,
         src.id
       )
     // Update all existing entries for this source (covers recurring 12-row and non-recurring 1-row)
@@ -1539,28 +1561,36 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
             description: src.name + ' (one-time)',
             amount,
             account_id: accountId,
-            date: new Date().toISOString().slice(0, 10)
+            date: nextBillingDate
           })
         }
       }
     }
     // Non-recurring: ensure entry + transaction exist (covers toggle from recurring)
     if (isRecurring === 0) {
-      const now = new Date()
-      const year = now.getFullYear()
-      const month = now.getMonth() + 1
-      const dateStr = now.toISOString().slice(0, 10)
+      const { year, month } = parseDateToLocalYearMonth(nextBillingDate)
+      db().prepare('DELETE FROM income_entries WHERE source_id = ?').run(src.id)
       db().prepare(
         'INSERT OR IGNORE INTO income_entries (source_id, year, month, amount, is_irregular) VALUES (?, ?, ?, ?, 1)'
       ).run(src.id, year, month, amount)
       const existingTx = db().prepare("SELECT id FROM transactions WHERE notes = ?").get('income_source:' + src.id) as { id: number } | undefined
-      if (!existingTx) {
+      if (existingTx) {
+        updateTransaction({
+          id: existingTx.id,
+          description: src.name + ' (one-time)',
+          amount,
+          type: 'income',
+          account_id: accountId,
+          date: nextBillingDate,
+          notes: 'income_source:' + src.id
+        })
+      } else {
         createTransaction({
           description: src.name + ' (one-time)',
           amount,
           type: 'income',
           account_id: accountId,
-          date: dateStr,
+          date: nextBillingDate,
           is_recurring: false,
           notes: 'income_source:' + src.id
         })
@@ -2129,7 +2159,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       target_amount: number
     }>
 
-    const goals = rawGoals.map((g) => ({ ...g, current_amount: getGoalCurrentAmount(db(), g.type) }))
+    const goals = rawGoals.map((g) => ({ ...g, current_amount: getGoalCurrentAmount(db(), g.type) ?? g.current_amount }))
 
     const budgetTotal = db()
       .prepare('SELECT COALESCE(SUM(amount),0) as v FROM budget_entries WHERE year=? AND month=?')
@@ -2769,7 +2799,7 @@ function calculateBudgetHealth(
   return Math.max(0, Math.min(100, Math.round(score)))
 }
 
-function getGoalCurrentAmount(database: ReturnType<typeof getDatabase>, goalType: string): number {
+function getGoalCurrentAmount(database: ReturnType<typeof getDatabase>, goalType: string): number | null {
   if (goalType === 'investment') {
     const total = database
       .prepare('SELECT COALESCE(SUM(current_value), 0) as v FROM investment_holdings')
@@ -2796,7 +2826,7 @@ function getGoalCurrentAmount(database: ReturnType<typeof getDatabase>, goalType
     return totalSaved.v
   }
 
-  return 0
+  return null
 }
 
 function exportAllTables(): Record<string, unknown[]> {

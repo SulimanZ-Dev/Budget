@@ -47,6 +47,22 @@ function getPrimaryAccountId(): number {
   return Number(result.lastInsertRowid)
 }
 
+function existingIdOrNull(table: string, id: unknown): number | null {
+  const parsed = Number(id)
+  if (!Number.isInteger(parsed) || parsed <= 0) return null
+  const db = getDatabase()
+  try {
+    const row = db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(parsed) as { id: number } | undefined
+    return row ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function existingAccountIdOrPrimary(id: unknown): number {
+  return existingIdOrNull('accounts', id) ?? getPrimaryAccountId()
+}
+
 function roundAmount(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.round(value * 100) / 100
@@ -382,16 +398,20 @@ export function undoLastChange(id: number): boolean {
     if (!previousState) {
       return false // Nothing to undo
     }
+
+    const restoredAccountId = existingAccountIdOrPrimary(previousState.account_id)
+    const restoredCategoryId = existingIdOrNull('categories', previousState.category_id)
+    const restoredMemberId = existingIdOrNull('household_members', previousState.member_id)
     
     // Recompute HMAC from state
     const hmac = signTransaction({
       description: previousState.description || '',
       amount: previousState.amount || 0,
       type: previousState.type || 'expense',
-      account_id: previousState.account_id || null,
-      category_id: previousState.category_id || null,
+      account_id: restoredAccountId,
+      category_id: restoredCategoryId,
       date: previousState.date || new Date().toISOString().split('T')[0],
-      member_id: previousState.member_id || null
+      member_id: restoredMemberId
     })
     
     // Determine if we need to INSERT (undoing a delete) or UPDATE
@@ -408,12 +428,12 @@ export function undoLastChange(id: number): boolean {
         previousState.description,
         previousState.amount,
         previousState.type,
-        previousState.account_id,
-        previousState.category_id,
+        restoredAccountId,
+        restoredCategoryId,
         previousState.date,
         previousState.is_recurring ? 1 : 0,
         previousState.is_unnecessary ? 1 : 0,
-        previousState.member_id,
+        restoredMemberId,
         previousState.notes,
         hmac
       )
@@ -423,12 +443,12 @@ export function undoLastChange(id: number): boolean {
         description: previousState.description,
         amount: previousState.amount,
         type: previousState.type,
-        account_id: previousState.account_id,
-        category_id: previousState.category_id,
+        account_id: restoredAccountId,
+        category_id: restoredCategoryId,
         date: previousState.date,
         is_recurring: previousState.is_recurring ?? false,
         is_unnecessary: previousState.is_unnecessary ?? false,
-        member_id: previousState.member_id ?? null,
+        member_id: restoredMemberId,
         notes: previousState.notes ?? null
       })
     } else {
@@ -442,12 +462,12 @@ export function undoLastChange(id: number): boolean {
         previousState.description,
         previousState.amount,
         previousState.type,
-        previousState.account_id,
-        previousState.category_id,
+        restoredAccountId,
+        restoredCategoryId,
         previousState.date,
         previousState.is_recurring ? 1 : 0,
         previousState.is_unnecessary ? 1 : 0,
-        previousState.member_id,
+        restoredMemberId,
         previousState.notes,
         hmac,
         txId

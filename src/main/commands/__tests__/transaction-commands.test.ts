@@ -4,6 +4,8 @@ type Row = Record<string, any>
 
 class FakeDb {
   accounts: Row[] = []
+  categories: Row[] = []
+  members: Row[] = []
   transactions: Row[] = []
   events: Row[] = []
   nextAccountId = 1
@@ -118,6 +120,18 @@ class FakeDb {
   private get(sql: string, args: any[]): any {
     if (sql.includes('SELECT id FROM accounts WHERE is_archived = 0')) {
       return this.accounts.find((row) => row.is_archived === 0)
+    }
+    if (sql.includes('SELECT id FROM accounts WHERE id = ?')) {
+      const found = this.accounts.find((row) => row.id === args[0])
+      return found ? { id: found.id } : undefined
+    }
+    if (sql.includes('SELECT id FROM categories WHERE id = ?')) {
+      const found = this.categories.find((row) => row.id === args[0])
+      return found ? { id: found.id } : undefined
+    }
+    if (sql.includes('SELECT id FROM household_members WHERE id = ?')) {
+      const found = this.members.find((row) => row.id === args[0])
+      return found ? { id: found.id } : undefined
     }
     if (sql.includes('SELECT * FROM transactions WHERE id = ?')) {
       return this.transactions.find((row) => row.id === args[0])
@@ -278,6 +292,34 @@ describe('transaction command account and undo behavior', () => {
     expect(first).toEqual({ imported: 1, skippedDuplicates: 0 })
     expect(second).toEqual({ imported: 0, skippedDuplicates: 1 })
     expect(testDb.transactions).toHaveLength(1)
+  })
+
+  it('restores a deleted transaction with a missing category as uncategorized', async () => {
+    const { createTransaction, deleteTransaction, undoLastChange } = await import('../transaction-commands')
+    const testDb = dbRef.current!
+    testDb.prepare("INSERT INTO accounts (name, type, currency, is_archived) VALUES ('Main', 'checking', 'SEK', 0)").run()
+    testDb.categories.push({ id: 7, name: 'Old category' })
+
+    const { id } = createTransaction({
+      description: 'Old categorized spend',
+      amount: 50,
+      type: 'expense',
+      account_id: 1,
+      category_id: 7,
+      date: '2026-01-05'
+    })
+    testDb.categories = []
+
+    expect(deleteTransaction(id)).toBe(true)
+    expect(undoLastChange(id)).toBe(true)
+
+    const restored = testDb.transactions.find((row) => row.id === id)
+    const restoredEvent = testDb
+      .prepare("SELECT payload_json FROM transaction_events WHERE transaction_id = ? AND event_type = 'RESTORED'")
+      .get(id) as { payload_json: string }
+
+    expect(restored?.category_id).toBeNull()
+    expect(JSON.parse(restoredEvent.payload_json)).toMatchObject({ category_id: null })
   })
 
   it('updates account_id and records the previous account in the event payload', async () => {

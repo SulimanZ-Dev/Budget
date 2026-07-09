@@ -94,6 +94,7 @@ function runAccountMigration(database: Database.Database): void {
     addColumnIfMissing(database, 'subscriptions', 'account_id', 'account_id INTEGER')
     addColumnIfMissing(database, 'savings_sources', 'account_id', 'account_id INTEGER')
     addColumnIfMissing(database, 'income_sources', 'account_id', 'account_id INTEGER')
+    addColumnIfMissing(database, 'income_sources', 'next_billing_date', 'next_billing_date TEXT')
 
     database.prepare('UPDATE transactions SET account_id = ? WHERE account_id IS NULL').run(mainAccountId)
     database.prepare('UPDATE subscriptions SET account_id = ? WHERE account_id IS NULL').run(mainAccountId)
@@ -283,6 +284,7 @@ function runMigrations(database: Database.Database): void {
       gross_or_net TEXT DEFAULT 'net',
       is_recurring INTEGER DEFAULT 1,
       frequency TEXT DEFAULT 'monthly',
+      next_billing_date TEXT,
       account_id INTEGER,
       color TEXT DEFAULT '#22c55e'
     );

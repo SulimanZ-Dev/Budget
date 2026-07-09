@@ -87,10 +87,12 @@ export function SubscriptionsPage(): JSX.Element {
           amount: src.amount,
           frequency: src.frequency ?? 'monthly',
           color: src.color ?? '#22c55e',
-          next_billing_date: undefined,
+          next_billing_date: src.next_billing_date,
           website_url: undefined,
           transaction_id: null,
-          transaction_description: null
+          transaction_description: null,
+          account_id: src.account_id,
+          account_name: src.account_name
         })),
         ...(savingsSources as SavingsSource[]).map((src) => ({
           type: 'savings' as const,
@@ -139,7 +141,7 @@ export function SubscriptionsPage(): JSX.Element {
   const annualSavings = monthlySavings * 12
 
   async function save(): Promise<void> {
-    const amount = parseFloat(form.amount)
+    const amount = Math.abs(parseFloat(form.amount))
     if (!form.name.trim() || !Number.isFinite(amount) || amount <= 0) return
     try {
       if (editingType === 'subscription') {
@@ -166,6 +168,21 @@ export function SubscriptionsPage(): JSX.Element {
             accountId: form.accountId ? parseInt(form.accountId) : undefined
           })
         }
+      } else if (editingType === 'income') {
+        const payload = {
+          id: editingId ?? undefined,
+          name: form.name,
+          amount,
+          frequency: 'monthly',
+          isRecurring: true,
+          nextBillingDate: form.date || undefined,
+          accountId: form.accountId ? parseInt(form.accountId) : undefined
+        }
+        if (editingId) {
+          await window.api.income.updateSource(payload)
+        } else {
+          await window.api.income.createSource(payload)
+        }
       }
       setEditingId(null)
       setEditingType('subscription')
@@ -186,6 +203,8 @@ export function SubscriptionsPage(): JSX.Element {
     try {
       if (type === 'subscription') {
         await window.api.subscriptions.delete(id)
+      } else if (type === 'income') {
+        await window.api.income.deleteSource(id)
       } else if (type === 'savings') {
         await window.api.savings.deleteSource(id)
         // Also trigger refresh so budget/savings pages update
@@ -215,7 +234,16 @@ export function SubscriptionsPage(): JSX.Element {
             setModalOpen(true)
           }}>
             <Plus className="h-4 w-4" />
-            Add
+            Add expense
+          </Button>
+          <Button variant="outline" onClick={() => {
+            setEditingId(null)
+            setEditingType('income')
+            setForm({ name: '', amount: '', url: '', date: new Date().toISOString().slice(0, 10), taxDeductible: false, onHold: false, accountId: accounts[0] ? String(accounts[0].id) : '' })
+            setModalOpen(true)
+          }}>
+            <Plus className="h-4 w-4" />
+            Add income
           </Button>
         </div>
       </div>
@@ -355,7 +383,7 @@ export function SubscriptionsPage(): JSX.Element {
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {sign}{formatMoney(monthly, profile.displayCurrency, rates)}/mo
                     </p>
-                    {item.type === 'subscription' && item.next_billing_date && (
+                    {(item.type === 'subscription' || item.type === 'income') && item.next_billing_date && (
                       <p className="mt-1 text-xs text-muted-foreground">Next: {item.next_billing_date}</p>
                     )}
                     {item.website_url && (
@@ -414,6 +442,35 @@ export function SubscriptionsPage(): JSX.Element {
                         </Button>
                       </div>
                     )}
+                    {item.type === 'income' && (
+                      <div className="mt-3 flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditingId(item.id)
+                            setEditingType('income')
+                            setForm({
+                              name: item.name,
+                              amount: String(Math.abs(item.amount)),
+                              url: '',
+                              date: item.next_billing_date ?? new Date().toISOString().slice(0, 10),
+                              taxDeductible: false,
+                              onHold: false,
+                              accountId: item.account_id ? String(item.account_id) : (accounts[0] ? String(accounts[0].id) : '')
+                            })
+                            setModalOpen(true)
+                          }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Edit
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => remove(item.id, 'income')}>
+                          <Trash2 className="h-3 w-3" />
+                          Delete
+                        </Button>
+                      </div>
+                    )}
                     {item.type === 'savings' && (
                       <div className="mt-3 flex gap-2">
                         <Button variant="destructive" size="sm" onClick={() => remove(item.id, 'savings')}>
@@ -433,11 +490,13 @@ export function SubscriptionsPage(): JSX.Element {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingId ? 'Edit subscription' : 'Add subscription'}</DialogTitle>
+            <DialogTitle>
+              {editingId ? `Edit ${editingType === 'income' ? 'income' : 'subscription'}` : `Add ${editingType === 'income' ? 'income' : 'subscription'}`}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4">
             <div className="grid gap-2">
-              <Label>Service name</Label>
+              <Label>{editingType === 'income' ? 'Income name' : 'Service name'}</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="grid gap-2">
@@ -448,12 +507,14 @@ export function SubscriptionsPage(): JSX.Element {
                 onChange={(e) => setForm({ ...form, amount: e.target.value })}
               />
             </div>
+            {editingType === 'subscription' && (
+              <div className="grid gap-2">
+                <Label>Website URL</Label>
+                <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+              </div>
+            )}
             <div className="grid gap-2">
-              <Label>Website URL</Label>
-              <Input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
-            </div>
-            <div className="grid gap-2">
-              <Label>Next billing date</Label>
+              <Label>{editingType === 'income' ? 'Next income date' : 'Next billing date'}</Label>
               <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </div>
             <div className="grid gap-2">
@@ -470,26 +531,30 @@ export function SubscriptionsPage(): JSX.Element {
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="taxDeductible"
-                checked={form.taxDeductible}
-                onChange={(e) => setForm({ ...form, taxDeductible: e.target.checked })}
-                className="h-4 w-4 rounded border-gray-300"
-              />
-              <Label htmlFor="taxDeductible">Tax deductible</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="onHold"
-                checked={form.onHold}
-                onChange={(e) => setForm({ ...form, onHold: e.target.checked })}
-                className="h-4 w-4 rounded border-gray-300"
-              />
-              <Label htmlFor="onHold">On hold (holiday mode)</Label>
-            </div>
+            {editingType === 'subscription' && (
+              <>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="taxDeductible"
+                    checked={form.taxDeductible}
+                    onChange={(e) => setForm({ ...form, taxDeductible: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <Label htmlFor="taxDeductible">Tax deductible</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="onHold"
+                    checked={form.onHold}
+                    onChange={(e) => setForm({ ...form, onHold: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  <Label htmlFor="onHold">On hold (holiday mode)</Label>
+                </div>
+              </>
+            )}
             <Button onClick={save}>Save</Button>
           </div>
         </DialogContent>
@@ -523,6 +588,9 @@ interface IncomeSource {
   is_recurring?: number
   frequency?: string
   color?: string
+  next_billing_date?: string
+  account_id?: number | null
+  account_name?: string | null
 }
 
 interface SavingsSource {

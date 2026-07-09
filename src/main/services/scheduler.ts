@@ -131,29 +131,38 @@ function runBillingChecks(): void {
       }
 
       const incomeSources = db.prepare('SELECT * FROM income_sources WHERE is_recurring = 1').all() as Array<{
-        id: number; name: string; amount: number; frequency: string; account_id: number | null
+        id: number; name: string; amount: number; frequency: string; account_id: number | null; next_billing_date?: string | null
       }>
 
       for (const source of incomeSources) {
+        const billingDate = source.next_billing_date || today
+        if (billingDate > today) continue
+        const billing = {
+          year: Number(billingDate.slice(0, 4)),
+          month: Number(billingDate.slice(5, 7))
+        }
         const existingEntry = db.prepare(
           'SELECT id FROM income_entries WHERE source_id = ? AND year = ? AND month = ?'
-        ).get(source.id, year, month) as { id: number } | undefined
+        ).get(source.id, billing.year, billing.month) as { id: number } | undefined
 
         if (!existingEntry) {
           const occurrences = source.frequency === 'weekly' ? 4 : source.frequency === 'fortnightly' ? 2 : 1
-          const monthlyAmount = Math.round(source.amount * occurrences * 100) / 100
+          const monthlyAmount = Math.round(Math.abs(source.amount) * occurrences * 100) / 100
           createTransaction({
             description: source.name,
             amount: monthlyAmount,
             type: 'income',
             account_id: normalizeAccountId(source.account_id),
-            date: today,
+            date: billingDate,
             notes: `income_source:${source.id}`
           })
           db.prepare(
             'INSERT OR IGNORE INTO income_entries (source_id, year, month, amount, is_irregular) VALUES (?, ?, ?, ?, 0)'
-          ).run(source.id, year, month, monthlyAmount)
+          ).run(source.id, billing.year, billing.month, monthlyAmount)
         }
+
+        db.prepare('UPDATE income_sources SET next_billing_date = ? WHERE id = ?')
+          .run(advanceDate(billingDate, source.frequency), source.id)
       }
     })
 

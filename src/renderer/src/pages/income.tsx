@@ -27,7 +27,7 @@ export function IncomePage(): JSX.Element {
   const { profile, rates, setProfile, refreshTrigger, triggerRefresh } = useAppStore()
   const dialog = useAppDialog()
   const [sources, setSources] = useState<
-    (IncomeSourceRow & { name: string; color: string; is_gross: number; is_recurring: number; account_id?: number | null; account_name?: string | null })[]
+    (IncomeSourceRow & { name: string; color: string; is_gross: number; is_recurring: number; account_id?: number | null; account_name?: string | null; next_billing_date?: string | null })[]
   >([])
   const [accounts, setAccounts] = useState<{ id: number; name: string; is_archived: number }[]>([])
   const [entries, setEntries] = useState<
@@ -53,7 +53,8 @@ export function IncomePage(): JSX.Element {
     isRecurring: true,
     frequency: 'monthly' as 'weekly' | 'fortnightly' | 'monthly' | 'yearly',
     color: '#22c55e',
-    accountId: ''
+    accountId: '',
+    date: new Date().toISOString().slice(0, 10)
   })
 
   useEffect(() => {
@@ -98,7 +99,8 @@ export function IncomePage(): JSX.Element {
           grossOrNet: form.isGross ? 'gross' : 'net',
           frequency: form.frequency,
           color: form.color,
-          accountId: form.accountId ? parseInt(form.accountId) : undefined
+          accountId: form.accountId ? parseInt(form.accountId) : undefined,
+          nextBillingDate: form.date
         })
       } else {
         await window.api.income.createSource({
@@ -109,7 +111,8 @@ export function IncomePage(): JSX.Element {
           grossOrNet: form.isGross ? 'gross' : 'net',
           frequency: form.frequency,
           color: form.color,
-          accountId: form.accountId ? parseInt(form.accountId) : undefined
+          accountId: form.accountId ? parseInt(form.accountId) : undefined,
+          nextBillingDate: form.date
         })
       }
       setModalOpen(false)
@@ -121,7 +124,8 @@ export function IncomePage(): JSX.Element {
         isRecurring: true,
         frequency: 'monthly',
         color: '#22c55e',
-        accountId: accounts[0] ? String(accounts[0].id) : ''
+        accountId: accounts[0] ? String(accounts[0].id) : '',
+        date: new Date().toISOString().slice(0, 10)
       })
       await load()
       triggerRefresh()
@@ -154,7 +158,8 @@ export function IncomePage(): JSX.Element {
       isRecurring: src.is_recurring !== 0,
       frequency: src.frequency ?? 'monthly',
       color: src.color,
-      accountId: src.account_id ? String(src.account_id) : (accounts[0] ? String(accounts[0].id) : '')
+      accountId: src.account_id ? String(src.account_id) : (accounts[0] ? String(accounts[0].id) : ''),
+      date: src.next_billing_date ?? new Date().toISOString().slice(0, 10)
     })
     setModalOpen(true)
   }
@@ -169,7 +174,8 @@ export function IncomePage(): JSX.Element {
       isRecurring: true,
       frequency: 'monthly',
       color: '#22c55e',
-      accountId: accounts[0] ? String(accounts[0].id) : ''
+      accountId: accounts[0] ? String(accounts[0].id) : '',
+      date: new Date().toISOString().slice(0, 10)
     })
   }
 
@@ -291,6 +297,7 @@ export function IncomePage(): JSX.Element {
                     <span className="font-medium">{src.name}</span>
                     <p className="text-xs text-muted-foreground">
                       {src.is_recurring === 1 ? 'Recurring' : 'One-time'} • {(src.gross_or_net ?? (src.is_gross === 1 ? 'gross' : 'net')).toUpperCase()} • {(src.frequency ?? 'monthly').toUpperCase()}
+                      {src.next_billing_date ? ` • Next: ${src.next_billing_date}` : ''}
                       {src.account_name ? ` • ${src.account_name}` : ''}
                     </p>
                   </div>
@@ -402,6 +409,14 @@ export function IncomePage(): JSX.Element {
                 </div>
               </div>
             )}
+            <div className="grid gap-2">
+              <Label>{form.isRecurring ? 'Next income date' : 'Income date'}</Label>
+              <Input
+                type="date"
+                value={form.date}
+                onChange={(e) => setForm({ ...form, date: e.target.value })}
+              />
+            </div>
             <div className="grid gap-2">
               <Label>Account</Label>
               <select

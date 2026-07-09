@@ -24,6 +24,7 @@ export function TransactionDetailDrawer({
 }: TransactionDetailDrawerProps): JSX.Element {
   const [description, setDescription] = useState(t.description)
   const [amount, setAmount] = useState(String(t.amount))
+  const [date, setDate] = useState(t.date)
   const [notes, setNotes] = useState(t.notes ?? '')
   const [categoryId, setCategoryId] = useState(String(t.category_id ?? ''))
   const [accountId, setAccountId] = useState(String(t.account_id ?? ''))
@@ -55,7 +56,7 @@ export function TransactionDetailDrawer({
         type: t.type,
         accountId: accountId ? parseInt(accountId) : undefined,
         categoryId: categoryId ? parseInt(categoryId) : null,
-        date: t.date,
+        date,
         isRecurring,
         isUnnecessary: !!t.is_unnecessary,
         memberId: memberId && memberId !== 'none' ? parseInt(memberId) : null,
@@ -91,6 +92,10 @@ export function TransactionDetailDrawer({
       <div className="grid gap-2">
         <Label>Amount (SEK)</Label>
         <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      </div>
+      <div className="grid gap-2">
+        <Label>Date</Label>
+        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
       <div className="grid gap-2">
         <Label>Account</Label>

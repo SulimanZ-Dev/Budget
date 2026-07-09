@@ -55,6 +55,11 @@ class SchedulerFakeDb {
       if (sub) sub.next_billing_date = args[0]
       return { changes: sub ? 1 : 0 }
     }
+    if (sql.startsWith('UPDATE income_sources SET next_billing_date')) {
+      const source = this.incomeSources.find((row) => row.id === args[1])
+      if (source) source.next_billing_date = args[0]
+      return { changes: source ? 1 : 0 }
+    }
     if (sql.includes('INSERT OR IGNORE INTO income_entries')) {
       if (!this.incomeEntries.some((row) => row.source_id === args[0] && row.year === args[1] && row.month === args[2])) {
         this.incomeEntries.push({ source_id: args[0], year: args[1], month: args[2], amount: args[3], is_irregular: args[4] })
