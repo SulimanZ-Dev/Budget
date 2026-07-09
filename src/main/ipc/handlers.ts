@@ -37,7 +37,8 @@ import {
   bulkFlagTransactions,
   undoLastChange,
   importTransactionsFromCsvWithEvents,
-  rebuildTransactionsProjection
+  rebuildTransactionsProjection,
+  findDuplicateTransactions
 } from '../commands/transaction-commands'
 import {
   getTransactions,
@@ -766,6 +767,19 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     }
     const assignedCategoryId = tx.type === 'savings' && !tx.categoryId ? savingsCategoryId : (tx.categoryId ?? null)
     const accountId = normalizeAccountId(tx.accountId)
+
+    if (!tx.allowDuplicate) {
+      const duplicates = findDuplicateTransactions({
+        description: tx.description,
+        amount: tx.amount,
+        type: tx.type,
+        account_id: accountId,
+        date: tx.date
+      })
+      if (duplicates.length > 0) {
+        return { duplicate: true, matches: duplicates }
+      }
+    }
 
     const result = createTransaction({
       description: tx.description,
@@ -1821,6 +1835,19 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       result.push({ month: (period % 12) + 1, spent: map[period] || 0 })
     }
     return result
+  })
+
+  ipcMain.handle('transactions:duplicates', (_, tx) => {
+    if (!Number.isFinite(tx.amount) || tx.amount <= 0 || !tx.description?.trim()) {
+      return []
+    }
+    return findDuplicateTransactions({
+      description: tx.description,
+      amount: tx.amount,
+      type: tx.type,
+      account_id: normalizeAccountId(tx.accountId),
+      date: tx.date
+    })
   })
 
   ipcMain.handle('transactions:categoryVariance', (_, categoryId: number, year: number, month: number) => {

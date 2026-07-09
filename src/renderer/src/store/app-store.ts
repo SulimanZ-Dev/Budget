@@ -90,7 +90,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   loading: true,
   refreshTrigger: 0,
 
-  setProfile: (p) => set({ profile: { ...get().profile, ...p } }),
+  setProfile: (p) => {
+    const nextProfile = { ...get().profile, ...p }
+    set({ profile: nextProfile })
+    window.api.settings.setProfile(nextProfile).catch(() => {})
+  },
   setRates: (rates) => set({ rates }),
   setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
   openDrawer: (content) => set({ drawerOpen: true, drawerContent: content }),
@@ -99,7 +103,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ selectedMonth: m })
     window.api.settings.set('selectedMonth', m).catch(() => {})
   },
-  setYear: (y) => set({ profile: { ...get().profile, year: y } }),
+  setYear: (y) => {
+    const nextProfile = { ...get().profile, year: y }
+    set({ profile: nextProfile })
+    window.api.settings.setProfile(nextProfile).catch(() => {})
+  },
   setCommandOpen: (v) => set({ commandOpen: v }),
   setTransactionModalOpen: (v) => set({ transactionModalOpen: v }),
   openAI: (prefill = '', context = '') =>

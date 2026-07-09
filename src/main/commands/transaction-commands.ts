@@ -25,6 +25,15 @@ export interface CreateTransactionCommand {
   notes?: string | null
 }
 
+export interface DuplicateTransactionHit {
+  id: number
+  description: string
+  amount: number
+  type: string
+  account_id: number | null
+  date: string
+}
+
 function getPrimaryAccountId(): number {
   const db = getDatabase()
   const existing = db
@@ -36,6 +45,36 @@ function getPrimaryAccountId(): number {
     .prepare("INSERT INTO accounts (name, type, currency, is_archived) VALUES ('Main', 'checking', 'SEK', 0)")
     .run()
   return Number(result.lastInsertRowid)
+}
+
+function roundAmount(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.round(value * 100) / 100
+}
+
+export function findDuplicateTransactions(
+  command: Pick<CreateTransactionCommand, 'description' | 'amount' | 'type' | 'account_id' | 'date'>
+): DuplicateTransactionHit[] {
+  const db = getDatabase()
+  const description = String(command.description ?? '').trim()
+  const accountId = command.account_id ?? getPrimaryAccountId()
+
+  return db.prepare(`
+    SELECT id, description, amount, type, account_id, date
+    FROM transactions
+    WHERE lower(trim(description)) = lower(trim(?))
+      AND round(amount, 2) = round(?, 2)
+      AND type = ?
+      AND account_id = ?
+      AND date = ?
+    ORDER BY id DESC
+  `).all(description, roundAmount(command.amount), command.type, accountId, command.date) as DuplicateTransactionHit[]
+}
+
+export function hasDuplicateTransaction(
+  command: Pick<CreateTransactionCommand, 'description' | 'amount' | 'type' | 'account_id' | 'date'>
+): boolean {
+  return findDuplicateTransactions(command).length > 0
 }
 
 export function createTransaction(command: CreateTransactionCommand): { id: number } {
@@ -475,23 +514,36 @@ export function bulkFlagTransactions(ids: number[]): boolean {
 export function importTransactionsFromCsvWithEvents(
   rows: Array<{ description: string; amount: number; date: string; type?: string; category_id?: number | null }>,
   accountId?: number | null
-): { imported: number } {
+): { imported: number; skippedDuplicates: number } {
   const db = getDatabase()
   
   const tx = db.transaction((txRows: Array<{ description: string; amount: number; date: string; type?: string; category_id?: number | null }>, importAccountId?: number | null) => {
     let imported = 0
+    let skippedDuplicates = 0
     for (const row of txRows) {
+      const type = (row.type === 'income' || row.type === 'transfer') ? row.type : 'expense'
+      if (hasDuplicateTransaction({
+        description: row.description,
+        amount: row.amount,
+        type,
+        account_id: importAccountId ?? undefined,
+        date: row.date
+      })) {
+        skippedDuplicates++
+        continue
+      }
+
       createTransaction({
         description: row.description,
         amount: row.amount,
-        type: (row.type === 'income' || row.type === 'transfer') ? row.type : 'expense',
+        type,
         category_id: row.category_id ?? null,
         date: row.date,
         account_id: importAccountId ?? undefined
       })
       imported++
     }
-    return { imported }
+    return { imported, skippedDuplicates }
   })
   
   return tx(rows, accountId)

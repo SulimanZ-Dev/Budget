@@ -154,6 +154,16 @@ class FakeDb {
   }
 
   private all(sql: string, args: any[]): any[] {
+    if (sql.includes('FROM transactions') && sql.includes('lower(trim(description))')) {
+      const [description, amount, type, accountId, date] = args
+      return this.transactions.filter((row) =>
+        String(row.description).trim().toLowerCase() === String(description).trim().toLowerCase() &&
+        Math.round(Number(row.amount) * 100) / 100 === Math.round(Number(amount) * 100) / 100 &&
+        row.type === type &&
+        row.account_id === accountId &&
+        row.date === date
+      )
+    }
     if (sql.includes('FROM transaction_events') && sql.includes('WHERE transaction_id = ?')) {
       return this.events.filter((row) => row.transaction_id === args[0]).sort((a, b) => a.event_id - b.event_id)
     }
@@ -249,6 +259,25 @@ describe('transaction command account and undo behavior', () => {
 
     expect(restored.account_id).toBe(2)
     expect(JSON.parse(restoredEvent.payload_json)).toMatchObject({ account_id: 2 })
+  })
+
+  it('skips duplicate imported transactions for the same account', async () => {
+    const { importTransactionsFromCsvWithEvents } = await import('../transaction-commands')
+    const testDb = dbRef.current!
+    testDb.prepare("INSERT INTO accounts (name, type, currency, is_archived) VALUES ('Main', 'checking', 'SEK', 0)").run()
+
+    const first = importTransactionsFromCsvWithEvents(
+      [{ description: 'Imported shop', amount: 100, date: '2026-01-03', type: 'expense' }],
+      1
+    )
+    const second = importTransactionsFromCsvWithEvents(
+      [{ description: ' imported shop ', amount: 100, date: '2026-01-03', type: 'expense' }],
+      1
+    )
+
+    expect(first).toEqual({ imported: 1, skippedDuplicates: 0 })
+    expect(second).toEqual({ imported: 0, skippedDuplicates: 1 })
+    expect(testDb.transactions).toHaveLength(1)
   })
 
   it('updates account_id and records the previous account in the event payload', async () => {

@@ -98,6 +98,7 @@ const api = {
     list: (filters?: Record<string, unknown>) => ipcRenderer.invoke('transactions:list', filters),
     count: (filters?: Record<string, unknown>) => ipcRenderer.invoke('transactions:count', filters),
     search: (query: string, limit?: number) => ipcRenderer.invoke('transactions:search', query, limit),
+    duplicates: (tx: unknown) => ipcRenderer.invoke('transactions:duplicates', tx),
     create: (tx: unknown) => ipcRenderer.invoke('transactions:create', tx),
     update: (id: number, tx: unknown) => ipcRenderer.invoke('transactions:update', id, tx),
     delete: (id: number) => ipcRenderer.invoke('transactions:delete', id),

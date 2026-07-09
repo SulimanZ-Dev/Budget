@@ -28,6 +28,23 @@ import { useAppDialog } from '@/components/shared/app-dialog'
 
 type RecurringFilter = 'all' | 'recurring' | 'oneoff'
 const PAGE_SIZE = 100
+const TRANSACTION_PREFS_KEY = 'transactionViewPreferences'
+
+interface TransactionViewPreferences {
+  flaggedOnly?: boolean
+  categoryFilter?: string
+  typeFilter?: string
+  recurringFilter?: RecurringFilter
+  sort?: string
+  weeklyView?: boolean
+  splitView?: boolean
+  calendarView?: boolean
+  importAccountId?: string
+}
+
+function isRecurringFilter(value: unknown): value is RecurringFilter {
+  return value === 'all' || value === 'recurring' || value === 'oneoff'
+}
 
 export function TransactionsPage(): JSX.Element {
   const { profile, selectedMonth, rates, openAI, openDrawer, closeDrawer, refreshTrigger } = useAppStore()
@@ -52,7 +69,8 @@ export function TransactionsPage(): JSX.Element {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [csvOpen, setCsvOpen] = useState(false)
   const [csvText, setCsvText] = useState('')
-  const [toast, setToast] = useState<{ message: string; undo?: () => void } | null>(null)
+  const [toast, setToast] = useState<{ message: string; undo?: () => void | Promise<void> } | null>(null)
+  const [prefsLoaded, setPrefsLoaded] = useState(false)
 
   useEffect(() => {
     window.api.categories.list().then((c) => setCategories(c as { id: number; name: string }[]))
@@ -62,6 +80,61 @@ export function TransactionsPage(): JSX.Element {
       setImportAccountId((current) => current || (active[0] ? String(active[0].id) : ''))
     })
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadPreferences(): Promise<void> {
+      try {
+        const prefs = (await window.api.settings.get(TRANSACTION_PREFS_KEY)) as TransactionViewPreferences | null
+        if (cancelled || !prefs || typeof prefs !== 'object') return
+
+        setFlaggedOnly(Boolean(prefs.flaggedOnly))
+        if (typeof prefs.categoryFilter === 'string') setCategoryFilter(prefs.categoryFilter)
+        if (typeof prefs.typeFilter === 'string') setTypeFilter(prefs.typeFilter)
+        if (isRecurringFilter(prefs.recurringFilter)) setRecurringFilter(prefs.recurringFilter)
+        if (typeof prefs.sort === 'string') setSort(prefs.sort)
+        setWeeklyView(Boolean(prefs.weeklyView))
+        setSplitView(Boolean(prefs.splitView))
+        setCalendarView(Boolean(prefs.calendarView))
+        if (typeof prefs.importAccountId === 'string') setImportAccountId(prefs.importAccountId)
+      } finally {
+        if (!cancelled) setPrefsLoaded(true)
+      }
+    }
+
+    loadPreferences()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!prefsLoaded) return
+    const prefs: TransactionViewPreferences = {
+      flaggedOnly,
+      categoryFilter,
+      typeFilter,
+      recurringFilter,
+      sort,
+      weeklyView,
+      splitView,
+      calendarView,
+      importAccountId
+    }
+    window.api.settings.set(TRANSACTION_PREFS_KEY, prefs).catch(() => {})
+  }, [
+    prefsLoaded,
+    flaggedOnly,
+    categoryFilter,
+    typeFilter,
+    recurringFilter,
+    sort,
+    weeklyView,
+    splitView,
+    calendarView,
+    importAccountId
+  ])
 
   useEffect(() => {
     setPage(1)
@@ -141,8 +214,19 @@ export function TransactionsPage(): JSX.Element {
     )
   }
 
-  function handleDeleted(undo: () => void): void {
+  function handleDeleted(undo: () => void | Promise<void>): void {
     setToast({ message: 'Transaction deleted', undo })
+    setTimeout(() => setToast(null), 5000)
+  }
+
+  function handleBulkAction(message: string, ids: number[]): void {
+    setToast({
+      message,
+      undo: async () => {
+        await Promise.all(ids.map((id) => window.api.transactions.undo(id)))
+        await load()
+      }
+    })
     setTimeout(() => setToast(null), 5000)
   }
 
@@ -312,7 +396,15 @@ export function TransactionsPage(): JSX.Element {
           </div>
         </div>
       )}
-      <BulkBar selected={selected} categories={categories} onDone={() => { setSelected(new Set()); load() }} />
+      <BulkBar
+        selected={selected}
+        categories={categories}
+        onDone={() => {
+          setSelected(new Set())
+          load()
+        }}
+        onBulkAction={handleBulkAction}
+      />
       <CsvImportModal
         open={csvOpen}
         onOpenChange={setCsvOpen}
@@ -329,7 +421,14 @@ export function TransactionsPage(): JSX.Element {
           >
             <span className="text-sm text-muted-foreground">{toast.message}</span>
             {toast.undo && (
-              <Button variant="secondary" size="sm" onClick={toast.undo}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  toast.undo?.()
+                  setToast(null)
+                }}
+              >
                 Undo
               </Button>
             )}
@@ -423,9 +522,10 @@ function TransactionsShell({
             Export CSV
           </Button>
           <Button variant="outline" size="sm" onClick={async () => {
-            const result = await window.api.transactions.importOfx(importAccountId ? parseInt(importAccountId) : undefined)
-            if (result && result.imported > 0) {
-              await dialog.alert(`Imported ${result.imported} transactions from OFX.`, 'Import complete')
+            const result = await window.api.transactions.importOfx(importAccountId ? parseInt(importAccountId) : undefined) as { imported: number; skippedDuplicates?: number }
+            if (result && (result.imported > 0 || (result.skippedDuplicates ?? 0) > 0)) {
+              const skipped = result.skippedDuplicates ? ` Skipped ${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'}.` : ''
+              await dialog.alert(`Imported ${result.imported} transactions from OFX.${skipped}`, 'Import complete')
               loadData()
             }
           }}>
@@ -553,11 +653,13 @@ function SkeletonList(): JSX.Element {
 function BulkBar({
   selected,
   categories,
-  onDone
+  onDone,
+  onBulkAction
 }: {
   selected: Set<number>
   categories: { id: number; name: string }[]
   onDone: () => void
+  onBulkAction: (message: string, ids: number[]) => void
 }): JSX.Element | null {
   const [recatId, setRecatId] = useState('')
   if (selected.size === 0) return null
@@ -582,16 +684,28 @@ function BulkBar({
         variant="outline"
         disabled={!recatId}
         onClick={async () => {
+          const affectedIds = [...ids]
           await window.api.transactions.bulk('recategorize', ids, { categoryId: parseInt(recatId) })
+          onBulkAction(`Recategorized ${affectedIds.length} transaction${affectedIds.length === 1 ? '' : 's'}`, affectedIds)
           onDone()
         }}
       >
         Apply
       </Button>
-      <Button size="sm" variant="destructive" onClick={async () => { await window.api.transactions.bulk('delete', ids); onDone() }}>
+      <Button size="sm" variant="destructive" onClick={async () => {
+        const affectedIds = [...ids]
+        await window.api.transactions.bulk('delete', ids)
+        onBulkAction(`Deleted ${affectedIds.length} transaction${affectedIds.length === 1 ? '' : 's'}`, affectedIds)
+        onDone()
+      }}>
         Delete ({selected.size})
       </Button>
-      <Button size="sm" onClick={async () => { await window.api.transactions.bulk('flag', ids); onDone() }}>
+      <Button size="sm" onClick={async () => {
+        const affectedIds = [...ids]
+        await window.api.transactions.bulk('flag', ids)
+        onBulkAction(`Flagged ${affectedIds.length} transaction${affectedIds.length === 1 ? '' : 's'}`, affectedIds)
+        onDone()
+      }}>
         Flag
       </Button>
     </div>

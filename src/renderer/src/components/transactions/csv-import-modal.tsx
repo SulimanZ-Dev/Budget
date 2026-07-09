@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import { useAppDialog } from '@/components/shared/app-dialog'
 
 interface CsvImportModalProps {
   open: boolean
@@ -23,6 +24,7 @@ export function CsvImportModal({
   csvText,
   onImported
 }: CsvImportModalProps): JSX.Element {
+  const dialog = useAppDialog()
   const [headers, setHeaders] = useState<string[]>([])
   const [previewRows, setPreviewRows] = useState<string[][]>([])
   const [descCol, setDescCol] = useState('0')
@@ -74,9 +76,16 @@ export function CsvImportModal({
         hasHeader: true,
         accountId: accountId ? parseInt(accountId) : undefined
       })
-      onImported((result as { imported: number }).imported)
+      const summary = result as { imported: number; skippedDuplicates?: number }
+      onImported(summary.imported)
       onOpenChange(false)
       setLoaded(false)
+      if (summary.skippedDuplicates) {
+        await dialog.alert(
+          `Imported ${summary.imported} transactions and skipped ${summary.skippedDuplicates} duplicate${summary.skippedDuplicates === 1 ? '' : 's'}.`,
+          'Import complete'
+        )
+      }
     } finally {
       setImporting(false)
     }

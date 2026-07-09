@@ -11,7 +11,14 @@ import {
   Sparkles,
   Plus,
   Receipt,
-  PiggyBank
+  PiggyBank,
+  Landmark,
+  BarChart3,
+  CreditCard,
+  Banknote,
+  Heart,
+  Calculator,
+  ShieldCheck
 } from 'lucide-react'
 import { formatMoney } from '@/lib/utils'
 
@@ -38,6 +45,15 @@ export function CommandPalette(): JSX.Element | null {
   }, [commandOpen])
 
   useEffect(() => {
+    if (!commandOpen) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setCommandOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [commandOpen, setCommandOpen])
+
+  useEffect(() => {
     if (!search.trim() || search.length < 2) {
       setTxHits([])
       return
@@ -57,10 +73,18 @@ export function CommandPalette(): JSX.Element | null {
 
   const navItems = [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
+    { label: 'Accounts', icon: Landmark, path: '/accounts' },
     { label: 'Budget', icon: Wallet, path: '/budget' },
     { label: 'Transactions', icon: ArrowLeftRight, path: '/transactions' },
     { label: 'Goals', icon: Target, path: '/goals' },
+    { label: 'Wealth', icon: Landmark, path: '/wealth' },
+    { label: 'Analytics', icon: BarChart3, path: '/analytics' },
+    { label: 'Subscriptions', icon: CreditCard, path: '/subscriptions' },
+    { label: 'Income', icon: Banknote, path: '/income' },
     { label: 'Savings', icon: PiggyBank, path: '/savings' },
+    { label: 'Habits', icon: Heart, path: '/habits' },
+    { label: 'Tax', icon: Calculator, path: '/tax' },
+    { label: 'Privacy', icon: ShieldCheck, path: '/privacy' },
     { label: 'AI Assistant', icon: Sparkles, path: '/ai' },
     { label: 'Settings', icon: Settings, path: '/settings' }
   ]
@@ -70,7 +94,12 @@ export function CommandPalette(): JSX.Element | null {
   )
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[20vh]">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[20vh]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
+    >
       <Command
         className="w-full max-w-lg overflow-hidden rounded-xl border bg-popover shadow-2xl"
         label="Command palette"

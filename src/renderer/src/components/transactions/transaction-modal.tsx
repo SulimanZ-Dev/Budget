@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useAppStore } from '@/store/app-store'
+import { useAppDialog } from '@/components/shared/app-dialog'
 import { Sparkles } from 'lucide-react'
 
 interface Category {
@@ -28,6 +29,7 @@ export function TransactionModal({
   onOpenChange: (v: boolean) => void
   onSaved?: () => void
 }): JSX.Element {
+  const dialog = useAppDialog()
   const [categories, setCategories] = useState<Category[]>([])
   const [members, setMembers] = useState<{ id: number; name: string }[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -69,11 +71,11 @@ export function TransactionModal({
     }
   }
 
-  async function save(): Promise<void> {
+  async function save(allowDuplicate = false): Promise<void> {
     const amt = parseFloat(amount)
     if (!description || isNaN(amt)) return
     try {
-      await window.api.transactions.create({
+      const payload = {
         description,
         amount: amt,
         type,
@@ -83,8 +85,22 @@ export function TransactionModal({
         isRecurring,
         isUnnecessary,
         memberId: memberId ? parseInt(memberId) : null,
-        notes: notes || null
-      })
+        notes: notes || null,
+        allowDuplicate
+      }
+      const result = await window.api.transactions.create(payload)
+      if ((result as { duplicate?: boolean } | null)?.duplicate) {
+        const confirmed = await dialog.confirm(
+          'A transaction with the same date, amount, description, account, and type already exists. Save it anyway?',
+          {
+            title: 'Possible duplicate',
+            confirmLabel: 'Save anyway',
+            cancelLabel: 'Review'
+          }
+        )
+        if (confirmed) await save(true)
+        return
+      }
       setDescription('')
       setAmount('')
       setNotes('')
@@ -201,7 +217,7 @@ export function TransactionModal({
             <Label>Unnecessary spend</Label>
             <Switch checked={isUnnecessary} onCheckedChange={setIsUnnecessary} />
           </div>
-          <Button onClick={save} className="w-full">
+          <Button onClick={() => save()} className="w-full">
             Save transaction
           </Button>
         </div>
