@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Calculator, Save, Trash2 } from 'lucide-react'
+import { Calculator, Pencil, Save, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -42,6 +42,7 @@ export function TaxEstimatorPage(): JSX.Element {
   const [entries, setEntries] = useState<TaxEntry[]>([])
   const [expectedYearlyTaxOwed, setExpectedYearlyTaxOwed] = useState('')
   const [yearSettingsLoaded, setYearSettingsLoaded] = useState(false)
+  const [toast, setToast] = useState<{ message: string; undo?: () => void | Promise<void> } | null>(null)
   const [form, setForm] = useState({
     month: String(selectedMonth),
     incomeGross: '',
@@ -115,6 +116,15 @@ export function TaxEstimatorPage(): JSX.Element {
     })
   }
 
+  function editEntry(entry: TaxEntry): void {
+    setForm({
+      month: String(entry.month),
+      incomeGross: String(entry.income_gross),
+      incomeNetActual: String(entry.income_net_actual),
+      supposedNetIncome: String(entry.supposed_net_income)
+    })
+  }
+
   async function saveEntry(): Promise<void> {
     await window.api.tax.setEntry({
       year: profile.year,
@@ -127,6 +137,7 @@ export function TaxEstimatorPage(): JSX.Element {
   }
 
   async function deleteEntry(month: number): Promise<void> {
+    const deleted = savedByMonth.get(month)
     await window.api.tax.deleteEntry(profile.year, month)
     await load()
     if (Number.parseInt(form.month) === month) {
@@ -136,6 +147,28 @@ export function TaxEstimatorPage(): JSX.Element {
         incomeNetActual: '',
         supposedNetIncome: ''
       })
+    }
+    if (deleted) {
+      setToast({
+        message: `${MONTH_NAMES[month - 1]} tax estimate deleted`,
+        undo: async () => {
+          await window.api.tax.setEntry({
+            year: deleted.year,
+            month: deleted.month,
+            incomeGross: deleted.income_gross,
+            incomeNetActual: deleted.income_net_actual,
+            supposedNetIncome: deleted.supposed_net_income
+          })
+          setForm({
+            month: String(deleted.month),
+            incomeGross: String(deleted.income_gross),
+            incomeNetActual: String(deleted.income_net_actual),
+            supposedNetIncome: String(deleted.supposed_net_income)
+          })
+          await load()
+        }
+      })
+      window.setTimeout(() => setToast(null), 5000)
     }
   }
 
@@ -291,6 +324,14 @@ export function TaxEstimatorPage(): JSX.Element {
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label={`Edit ${MONTH_NAMES[entry.month - 1]} tax estimate`}
+                            onClick={() => editEntry(entry)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             aria-label={`Delete ${MONTH_NAMES[entry.month - 1]} tax estimate`}
                             onClick={() => deleteEntry(entry.month)}
                           >
@@ -306,6 +347,23 @@ export function TaxEstimatorPage(): JSX.Element {
           )}
         </CardContent>
       </Card>
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border bg-muted/90 px-4 py-2 shadow-lg">
+          <span className="text-sm text-muted-foreground">{toast.message}</span>
+          {toast.undo && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                toast.undo?.()
+                setToast(null)
+              }}
+            >
+              Undo
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
