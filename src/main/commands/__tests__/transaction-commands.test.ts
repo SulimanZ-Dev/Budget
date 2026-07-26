@@ -31,7 +31,7 @@ class FakeDb {
       return { lastInsertRowid: row.id }
     }
 
-    if (sql.includes('INSERT INTO transactions') && sql.includes('VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')) {
+    if (sql.includes('INSERT INTO transactions') && sql.includes('VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')) {
       const row = {
         id: this.nextTransactionId++,
         description: args[0],
@@ -40,17 +40,18 @@ class FakeDb {
         account_id: args[3],
         category_id: args[4],
         date: args[5],
-        is_recurring: args[6],
-        is_unnecessary: args[7],
-        member_id: args[8],
-        notes: args[9],
-        hmac: args[10]
+        transfer_account_id: args[6],
+        is_recurring: args[7],
+        is_unnecessary: args[8],
+        member_id: args[9],
+        notes: args[10],
+        hmac: args[11]
       }
       this.transactions.push(row)
       return { lastInsertRowid: row.id }
     }
 
-    if (sql.includes('INSERT INTO transactions') && sql.includes('VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')) {
+    if (sql.includes('INSERT INTO transactions') && sql.includes('VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')) {
       const row = {
         id: args[0],
         description: args[1],
@@ -59,11 +60,12 @@ class FakeDb {
         account_id: args[4],
         category_id: args[5],
         date: args[6],
-        is_recurring: args[7],
-        is_unnecessary: args[8],
-        member_id: args[9],
-        notes: args[10],
-        hmac: args[11]
+        transfer_account_id: args[7],
+        is_recurring: args[8],
+        is_unnecessary: args[9],
+        member_id: args[10],
+        notes: args[11],
+        hmac: args[12]
       }
       this.transactions.push(row)
       this.nextTransactionId = Math.max(this.nextTransactionId, row.id + 1)
@@ -102,11 +104,12 @@ class FakeDb {
           account_id: args[3],
           category_id: args[4],
           date: args[5],
-          is_recurring: args[6],
-          is_unnecessary: args[7],
-          member_id: args[8],
-          notes: args[9],
-          hmac: args[10]
+          transfer_account_id: args[6],
+          is_recurring: args[7],
+          is_unnecessary: args[8],
+          member_id: args[9],
+          notes: args[10],
+          hmac: args[11]
         })
       } else {
         row.hmac = args[args.length - 2]
@@ -169,12 +172,13 @@ class FakeDb {
 
   private all(sql: string, args: any[]): any[] {
     if (sql.includes('FROM transactions') && sql.includes('lower(trim(description))')) {
-      const [description, amount, type, accountId, date] = args
+      const [description, amount, type, accountId, transferAccountId, date] = args
       return this.transactions.filter((row) =>
         String(row.description).trim().toLowerCase() === String(description).trim().toLowerCase() &&
         Math.round(Number(row.amount) * 100) / 100 === Math.round(Number(amount) * 100) / 100 &&
         row.type === type &&
         row.account_id === accountId &&
+        (row.transfer_account_id ?? null) === (transferAccountId ?? null) &&
         row.date === date
       )
     }

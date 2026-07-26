@@ -30,6 +30,16 @@ type RecurringFilter = 'all' | 'recurring' | 'oneoff'
 const PAGE_SIZE = 100
 const TRANSACTION_PREFS_KEY = 'transactionViewPreferences'
 
+interface TransactionSummary {
+  count: number
+  income: number
+  expenses: number
+  savings: number
+  internal_transfers: number
+  external_transfers: number
+  net: number
+}
+
 interface TransactionViewPreferences {
   flaggedOnly?: boolean
   categoryFilter?: string
@@ -51,6 +61,7 @@ export function TransactionsPage(): JSX.Element {
   const navigate = useNavigate()
   const [transactions, setTransactions] = useState<TransactionRowData[]>([])
   const [totalTransactions, setTotalTransactions] = useState(0)
+  const [summary, setSummary] = useState<TransactionSummary | null>(null)
   const [page, setPage] = useState(1)
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [accounts, setAccounts] = useState<{ id: number; name: string; is_archived: number }[]>([])
@@ -164,12 +175,14 @@ export function TransactionsPage(): JSX.Element {
       limit: PAGE_SIZE,
       offset: (page - 1) * PAGE_SIZE
     }
-    const [data, count] = await Promise.all([
+    const [data, count, summaryData] = await Promise.all([
       window.api.transactions.list(pagedFilters),
-      window.api.transactions.count(filters)
+      window.api.transactions.count(filters),
+      window.api.transactions.summary(filters)
     ])
     setTransactions(data as TransactionRowData[])
     setTotalTransactions(Number(count) || 0)
+    setSummary(summaryData as TransactionSummary)
     setSelected(new Set())
     setLoading(false)
   }
@@ -348,6 +361,7 @@ export function TransactionsPage(): JSX.Element {
       importAccountId={importAccountId}
       setImportAccountId={setImportAccountId}
     >
+      <TransactionSummaryStrip summary={summary} currency={profile.displayCurrency} rates={rates} />
       {calendarView && calendarDays && (
         <div className="mb-6 grid grid-cols-7 gap-1">
           {calendarDays.map((d) => (
@@ -436,6 +450,61 @@ export function TransactionsPage(): JSX.Element {
         )}
       </AnimatePresence>
     </TransactionsShell>
+  )
+}
+
+function TransactionSummaryStrip({
+  summary,
+  currency,
+  rates
+}: {
+  summary: TransactionSummary | null
+  currency: string
+  rates: Record<string, number>
+}): JSX.Element | null {
+  if (!summary) return null
+  return (
+    <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5">
+      <SummaryMetric label="Shown net" value={summary.net} currency={currency} rates={rates} emphasize />
+      <SummaryMetric label="Income" value={summary.income} currency={currency} rates={rates} tone="positive" />
+      <SummaryMetric label="Expenses" value={summary.expenses} currency={currency} rates={rates} tone="negative" />
+      <SummaryMetric label="Savings" value={summary.savings} currency={currency} rates={rates} />
+      <div>
+        <p className="text-xs text-muted-foreground">Transfers</p>
+        <p className="text-lg font-semibold tabular-nums">
+          {formatMoney(summary.internal_transfers + summary.external_transfers, currency, rates)}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {summary.count} transaction{summary.count === 1 ? '' : 's'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function SummaryMetric({
+  label,
+  value,
+  currency,
+  rates,
+  tone,
+  emphasize
+}: {
+  label: string
+  value: number
+  currency: string
+  rates: Record<string, number>
+  tone?: 'positive' | 'negative'
+  emphasize?: boolean
+}): JSX.Element {
+  const toneClass = tone === 'positive' ? 'text-success' : tone === 'negative' ? 'text-destructive' : ''
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`${emphasize ? 'text-2xl' : 'text-lg'} font-semibold tabular-nums ${toneClass}`}>
+        {formatMoney(value, currency, rates)}
+      </p>
+    </div>
   )
 }
 
@@ -582,6 +651,8 @@ function TransactionsShell({
             <SelectItem value="all">All types</SelectItem>
             <SelectItem value="expense">Expense</SelectItem>
             <SelectItem value="income">Income</SelectItem>
+            <SelectItem value="savings">Savings</SelectItem>
+            <SelectItem value="transfer">Transfer</SelectItem>
           </SelectContent>
         </Select>
         <Select value={recurringFilter} onValueChange={(v) => setRecurringFilter(v as RecurringFilter)}>

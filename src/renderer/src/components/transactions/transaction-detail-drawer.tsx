@@ -28,6 +28,7 @@ export function TransactionDetailDrawer({
   const [notes, setNotes] = useState(t.notes ?? '')
   const [categoryId, setCategoryId] = useState(String(t.category_id ?? ''))
   const [accountId, setAccountId] = useState(String(t.account_id ?? ''))
+  const [transferAccountId, setTransferAccountId] = useState(String(t.transfer_account_id ?? ''))
   const [memberId, setMemberId] = useState(String(t.member_id ?? ''))
   const [isRecurring, setIsRecurring] = useState(!!t.is_recurring)
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
@@ -41,9 +42,18 @@ export function TransactionDetailDrawer({
       const active = (rows as { id: number; name: string; is_archived: number }[]).filter((account) => account.is_archived !== 1)
       setAccounts(active)
       setAccountId((current) => current || (active[0] ? String(active[0].id) : ''))
+      setTransferAccountId((current) => current || (active[1] ? String(active[1].id) : ''))
     })
     window.api.members.list().then((m) => setMembers(m as { id: number; name: string }[]))
   }, [])
+
+  useEffect(() => {
+    if (t.type !== 'transfer') return
+    if (!transferAccountId || transferAccountId === accountId) {
+      const next = accounts.find((account) => String(account.id) !== accountId)
+      setTransferAccountId(next ? String(next.id) : '')
+    }
+  }, [accountId, accounts, t.type, transferAccountId])
 
   async function save(): Promise<void> {
     if (!description.trim()) return
@@ -55,6 +65,7 @@ export function TransactionDetailDrawer({
         amount: numAmount,
         type: t.type,
         accountId: accountId ? parseInt(accountId) : undefined,
+        transferAccountId: t.type === 'transfer' && transferAccountId ? parseInt(transferAccountId) : null,
         categoryId: categoryId ? parseInt(categoryId) : null,
         date,
         isRecurring,
@@ -98,7 +109,7 @@ export function TransactionDetailDrawer({
         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
       <div className="grid gap-2">
-        <Label>Account</Label>
+        <Label>{t.type === 'transfer' ? 'From account' : 'Account'}</Label>
         <Select value={accountId} onValueChange={setAccountId}>
           <SelectTrigger>
             <SelectValue placeholder="Main" />
@@ -112,6 +123,26 @@ export function TransactionDetailDrawer({
           </SelectContent>
         </Select>
       </div>
+      {t.type === 'transfer' && (
+        <div className="grid gap-2">
+          <Label>To account</Label>
+          <Select value={transferAccountId || 'none'} onValueChange={(v) => setTransferAccountId(v === 'none' ? '' : v)}>
+            <SelectTrigger>
+              <SelectValue placeholder="No internal destination" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No internal destination</SelectItem>
+              {accounts
+                .filter((account) => String(account.id) !== accountId)
+                .map((account) => (
+                  <SelectItem key={account.id} value={String(account.id)}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="grid gap-2">
         <Label>Category</Label>
         <Select value={categoryId} onValueChange={setCategoryId}>

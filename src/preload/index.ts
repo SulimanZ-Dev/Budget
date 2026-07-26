@@ -97,6 +97,7 @@ const api = {
   transactions: {
     list: (filters?: Record<string, unknown>) => ipcRenderer.invoke('transactions:list', filters),
     count: (filters?: Record<string, unknown>) => ipcRenderer.invoke('transactions:count', filters),
+    summary: (filters?: Record<string, unknown>) => ipcRenderer.invoke('transactions:summary', filters),
     search: (query: string, limit?: number) => ipcRenderer.invoke('transactions:search', query, limit),
     duplicates: (tx: unknown) => ipcRenderer.invoke('transactions:duplicates', tx),
     create: (tx: unknown) => ipcRenderer.invoke('transactions:create', tx),

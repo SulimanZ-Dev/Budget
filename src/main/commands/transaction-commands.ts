@@ -3,8 +3,6 @@ import { signTransaction } from '../crypto/integrity'
 import { 
   appendEvent, 
   TransactionEventType, 
-  TransactionEventPayload,
-  replayTransactionEvents,
   undoLastEvents,
   replayAllEvents
 } from '../events/event-store'
@@ -17,6 +15,7 @@ export interface CreateTransactionCommand {
   amount: number
   type: 'expense' | 'income' | 'savings' | 'transfer'
   account_id?: number | null
+  transfer_account_id?: number | null
   category_id?: number | null
   date: string
   is_recurring?: boolean
@@ -31,6 +30,7 @@ export interface DuplicateTransactionHit {
   amount: number
   type: string
   account_id: number | null
+  transfer_account_id: number | null
   date: string
 }
 
@@ -69,26 +69,27 @@ function roundAmount(value: number): number {
 }
 
 export function findDuplicateTransactions(
-  command: Pick<CreateTransactionCommand, 'description' | 'amount' | 'type' | 'account_id' | 'date'>
+  command: Pick<CreateTransactionCommand, 'description' | 'amount' | 'type' | 'account_id' | 'transfer_account_id' | 'date'>
 ): DuplicateTransactionHit[] {
   const db = getDatabase()
   const description = String(command.description ?? '').trim()
   const accountId = command.account_id ?? getPrimaryAccountId()
 
   return db.prepare(`
-    SELECT id, description, amount, type, account_id, date
+    SELECT id, description, amount, type, account_id, transfer_account_id, date
     FROM transactions
     WHERE lower(trim(description)) = lower(trim(?))
       AND round(amount, 2) = round(?, 2)
       AND type = ?
       AND account_id = ?
+      AND COALESCE(transfer_account_id, 0) = COALESCE(?, 0)
       AND date = ?
     ORDER BY id DESC
-  `).all(description, roundAmount(command.amount), command.type, accountId, command.date) as DuplicateTransactionHit[]
+  `).all(description, roundAmount(command.amount), command.type, accountId, command.transfer_account_id ?? null, command.date) as DuplicateTransactionHit[]
 }
 
 export function hasDuplicateTransaction(
-  command: Pick<CreateTransactionCommand, 'description' | 'amount' | 'type' | 'account_id' | 'date'>
+  command: Pick<CreateTransactionCommand, 'description' | 'amount' | 'type' | 'account_id' | 'transfer_account_id' | 'date'>
 ): boolean {
   return findDuplicateTransactions(command).length > 0
 }
@@ -98,12 +99,17 @@ export function createTransaction(command: CreateTransactionCommand): { id: numb
   
   const tx = db.transaction((cmd: CreateTransactionCommand) => {
     const accountId = cmd.account_id ?? getPrimaryAccountId()
+    const transferAccountId = cmd.type === 'transfer' ? existingIdOrNull('accounts', cmd.transfer_account_id) : null
+    if (cmd.type === 'transfer' && transferAccountId !== null && transferAccountId === accountId) {
+      throw new Error('Transfer destination must be different from source account')
+    }
     // Compute HMAC for the transaction
     const hmac = signTransaction({
       description: cmd.description,
       amount: cmd.amount,
       type: cmd.type,
       account_id: accountId,
+      transfer_account_id: transferAccountId,
       category_id: cmd.category_id ?? null,
       date: cmd.date,
       member_id: cmd.member_id ?? null
@@ -113,9 +119,9 @@ export function createTransaction(command: CreateTransactionCommand): { id: numb
     const result = db.prepare(`
       INSERT INTO transactions (
         description, amount, type, account_id, category_id, date,
-        is_recurring, is_unnecessary, member_id, notes, hmac
+        transfer_account_id, is_recurring, is_unnecessary, member_id, notes, hmac
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       cmd.description,
       cmd.amount,
@@ -123,6 +129,7 @@ export function createTransaction(command: CreateTransactionCommand): { id: numb
       accountId,
       cmd.category_id ?? null,
       cmd.date,
+      transferAccountId,
       cmd.is_recurring ? 1 : 0,
       cmd.is_unnecessary ? 1 : 0,
       cmd.member_id ?? null,
@@ -138,6 +145,7 @@ export function createTransaction(command: CreateTransactionCommand): { id: numb
       amount: cmd.amount,
       type: cmd.type,
       account_id: accountId,
+      transfer_account_id: transferAccountId,
       category_id: cmd.category_id ?? null,
       date: cmd.date,
       is_recurring: cmd.is_recurring ?? false,
@@ -161,6 +169,7 @@ export interface UpdateTransactionCommand {
   amount?: number
   type?: 'expense' | 'income' | 'savings' | 'transfer'
   account_id?: number | null
+  transfer_account_id?: number | null
   category_id?: number | null
   date?: string
   is_recurring?: boolean
@@ -200,6 +209,10 @@ export function updateTransaction(command: UpdateTransactionCommand): boolean {
       updates.account_id = cmd.account_id
       previousValues.account_id = current.account_id
     }
+    if (cmd.transfer_account_id !== undefined && cmd.transfer_account_id !== current.transfer_account_id) {
+      updates.transfer_account_id = cmd.transfer_account_id
+      previousValues.transfer_account_id = current.transfer_account_id
+    }
     if (cmd.category_id !== undefined && cmd.category_id !== current.category_id) {
       updates.category_id = cmd.category_id
       previousValues.category_id = current.category_id
@@ -235,6 +248,7 @@ export function updateTransaction(command: UpdateTransactionCommand): boolean {
       amount: cmd.amount ?? current.amount,
       type: cmd.type ?? current.type,
       account_id: cmd.account_id !== undefined ? cmd.account_id : current.account_id,
+      transfer_account_id: cmd.transfer_account_id !== undefined ? cmd.transfer_account_id : current.transfer_account_id,
       category_id: cmd.category_id !== undefined ? cmd.category_id : current.category_id,
       date: cmd.date ?? current.date,
       member_id: cmd.member_id !== undefined ? cmd.member_id : current.member_id
@@ -259,6 +273,10 @@ export function updateTransaction(command: UpdateTransactionCommand): boolean {
     if (cmd.account_id !== undefined) {
       setClauses.push('account_id = ?')
       values.push(cmd.account_id)
+    }
+    if (cmd.transfer_account_id !== undefined) {
+      setClauses.push('transfer_account_id = ?')
+      values.push(cmd.transfer_account_id)
     }
     if (cmd.category_id !== undefined) {
       setClauses.push('category_id = ?')
@@ -400,6 +418,9 @@ export function undoLastChange(id: number): boolean {
     }
 
     const restoredAccountId = existingAccountIdOrPrimary(previousState.account_id)
+    const restoredTransferAccountId = previousState.type === 'transfer'
+      ? existingIdOrNull('accounts', previousState.transfer_account_id)
+      : null
     const restoredCategoryId = existingIdOrNull('categories', previousState.category_id)
     const restoredMemberId = existingIdOrNull('household_members', previousState.member_id)
     
@@ -409,6 +430,7 @@ export function undoLastChange(id: number): boolean {
       amount: previousState.amount || 0,
       type: previousState.type || 'expense',
       account_id: restoredAccountId,
+      transfer_account_id: restoredTransferAccountId,
       category_id: restoredCategoryId,
       date: previousState.date || new Date().toISOString().split('T')[0],
       member_id: restoredMemberId
@@ -421,8 +443,8 @@ export function undoLastChange(id: number): boolean {
       // Undoing a delete – re-insert the row
       db.prepare(`
         INSERT INTO transactions (id, description, amount, type, account_id, category_id, date,
-            is_recurring, is_unnecessary, member_id, notes, hmac)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            transfer_account_id, is_recurring, is_unnecessary, member_id, notes, hmac)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         txId,
         previousState.description,
@@ -431,6 +453,7 @@ export function undoLastChange(id: number): boolean {
         restoredAccountId,
         restoredCategoryId,
         previousState.date,
+        restoredTransferAccountId,
         previousState.is_recurring ? 1 : 0,
         previousState.is_unnecessary ? 1 : 0,
         restoredMemberId,
@@ -444,6 +467,7 @@ export function undoLastChange(id: number): boolean {
         amount: previousState.amount,
         type: previousState.type,
         account_id: restoredAccountId,
+        transfer_account_id: restoredTransferAccountId,
         category_id: restoredCategoryId,
         date: previousState.date,
         is_recurring: previousState.is_recurring ?? false,
@@ -456,7 +480,7 @@ export function undoLastChange(id: number): boolean {
       db.prepare(`
         UPDATE transactions 
         SET description = ?, amount = ?, type = ?, account_id = ?, category_id = ?, date = ?,
-            is_recurring = ?, is_unnecessary = ?, member_id = ?, notes = ?, hmac = ?
+            transfer_account_id = ?, is_recurring = ?, is_unnecessary = ?, member_id = ?, notes = ?, hmac = ?
         WHERE id = ?
       `).run(
         previousState.description,
@@ -465,6 +489,7 @@ export function undoLastChange(id: number): boolean {
         restoredAccountId,
         restoredCategoryId,
         previousState.date,
+        restoredTransferAccountId,
         previousState.is_recurring ? 1 : 0,
         previousState.is_unnecessary ? 1 : 0,
         restoredMemberId,
@@ -547,6 +572,7 @@ export function importTransactionsFromCsvWithEvents(
         amount: row.amount,
         type,
         account_id: importAccountId ?? undefined,
+        transfer_account_id: null,
         date: row.date
       })) {
         skippedDuplicates++
@@ -590,6 +616,7 @@ export function rebuildTransactionsProjection(): number {
         amount: state.amount || 0,
         type: state.type || 'expense',
         account_id: state.account_id || null,
+        transfer_account_id: state.transfer_account_id || null,
         category_id: state.category_id || null,
         date: state.date || new Date().toISOString().split('T')[0],
         member_id: state.member_id || null
@@ -598,9 +625,9 @@ export function rebuildTransactionsProjection(): number {
       db.prepare(`
         INSERT INTO transactions (
           id, description, amount, type, account_id, category_id, date,
-          is_recurring, is_unnecessary, member_id, notes, hmac
+          transfer_account_id, is_recurring, is_unnecessary, member_id, notes, hmac
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         transactionId,
         state.description,
@@ -609,6 +636,7 @@ export function rebuildTransactionsProjection(): number {
         state.account_id,
         state.category_id,
         state.date,
+        state.transfer_account_id ?? null,
         state.is_recurring ? 1 : 0,
         state.is_unnecessary ? 1 : 0,
         state.member_id,

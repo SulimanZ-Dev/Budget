@@ -100,6 +100,7 @@ function runAccountMigration(database: SqlCipher.Database): void {
     const mainAccountId = ensureMainAccount(database)
     addColumnIfMissing(database, 'accounts', 'opening_balance', 'opening_balance REAL DEFAULT 0')
     const transactionColumnAdded = addColumnIfMissing(database, 'transactions', 'account_id', 'account_id INTEGER')
+    const transferColumnAdded = addColumnIfMissing(database, 'transactions', 'transfer_account_id', 'transfer_account_id INTEGER')
     addColumnIfMissing(database, 'subscriptions', 'account_id', 'account_id INTEGER')
     addColumnIfMissing(database, 'savings_sources', 'account_id', 'account_id INTEGER')
     addColumnIfMissing(database, 'income_sources', 'account_id', 'account_id INTEGER')
@@ -112,6 +113,7 @@ function runAccountMigration(database: SqlCipher.Database): void {
 
     database.exec(`
       CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
+      CREATE INDEX IF NOT EXISTS idx_transactions_transfer_account ON transactions(transfer_account_id);
       CREATE INDEX IF NOT EXISTS idx_transactions_date_id ON transactions(date DESC, id DESC);
       CREATE INDEX IF NOT EXISTS idx_transactions_account_date ON transactions(account_id, date DESC);
       CREATE INDEX IF NOT EXISTS idx_transactions_category_date ON transactions(category_id, date DESC);
@@ -122,7 +124,7 @@ function runAccountMigration(database: SqlCipher.Database): void {
       CREATE INDEX IF NOT EXISTS idx_subscriptions_account ON subscriptions(account_id);
     `)
 
-    if (transactionColumnAdded) {
+    if (transactionColumnAdded || transferColumnAdded) {
       database.prepare('UPDATE transactions SET hmac = NULL').run()
     }
   } catch (e) {
@@ -285,6 +287,7 @@ function runMigrations(database: SqlCipher.Database): void {
       amount REAL NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('expense', 'income', 'savings', 'transfer')),
       account_id INTEGER,
+      transfer_account_id INTEGER,
       category_id INTEGER,
       date TEXT NOT NULL,
       is_recurring INTEGER DEFAULT 0,
@@ -294,6 +297,7 @@ function runMigrations(database: SqlCipher.Database): void {
       created_at TEXT DEFAULT (datetime('now')),
       hmac TEXT,
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
+      FOREIGN KEY (transfer_account_id) REFERENCES accounts(id) ON DELETE SET NULL,
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
       FOREIGN KEY (member_id) REFERENCES household_members(id) ON DELETE SET NULL
     );

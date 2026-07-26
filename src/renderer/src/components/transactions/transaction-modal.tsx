@@ -5,7 +5,6 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { useAppStore } from '@/store/app-store'
 import { useAppDialog } from '@/components/shared/app-dialog'
 import { Sparkles } from 'lucide-react'
 
@@ -39,6 +38,7 @@ export function TransactionModal({
   const [type, setType] = useState<'expense' | 'income' | 'savings' | 'transfer'>('expense')
   const [categoryId, setCategoryId] = useState<string>('')
   const [accountId, setAccountId] = useState<string>('')
+  const [transferAccountId, setTransferAccountId] = useState<string>('')
   const [memberId, setMemberId] = useState<string>('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [isRecurring, setIsRecurring] = useState(false)
@@ -53,9 +53,18 @@ export function TransactionModal({
         const active = (rows as Account[]).filter((account) => account.is_archived !== 1)
         setAccounts(active)
         setAccountId((current) => current || (active[0] ? String(active[0].id) : ''))
+        setTransferAccountId((current) => current || (active[1] ? String(active[1].id) : ''))
       })
     }
   }, [open])
+
+  useEffect(() => {
+    if (type !== 'transfer') return
+    if (!transferAccountId || transferAccountId === accountId) {
+      const next = accounts.find((account) => String(account.id) !== accountId)
+      setTransferAccountId(next ? String(next.id) : '')
+    }
+  }, [accountId, accounts, transferAccountId, type])
 
   async function suggestCategory(): Promise<void> {
     if (!description.trim()) return
@@ -74,12 +83,17 @@ export function TransactionModal({
   async function save(allowDuplicate = false): Promise<void> {
     const amt = parseFloat(amount)
     if (!description || isNaN(amt)) return
+    if (type === 'transfer' && transferAccountId && transferAccountId === accountId) {
+      await dialog.alert('Choose a different destination account for this transfer.', 'Transfer account')
+      return
+    }
     try {
       const payload = {
         description,
         amount: amt,
         type,
         accountId: accountId ? parseInt(accountId) : undefined,
+        transferAccountId: type === 'transfer' && transferAccountId ? parseInt(transferAccountId) : null,
         categoryId: categoryId ? parseInt(categoryId) : null,
         date,
         isRecurring,
@@ -105,10 +119,11 @@ export function TransactionModal({
       setAmount('')
       setNotes('')
       setAccountId(accounts[0] ? String(accounts[0].id) : '')
+      setTransferAccountId(accounts[1] ? String(accounts[1].id) : '')
       onOpenChange(false)
       onSaved?.()
-    } catch {
-      // Silently fail
+    } catch (error) {
+      await dialog.alert(error instanceof Error ? error.message : 'Transaction could not be saved.', 'Save failed')
     }
   }
 
@@ -158,7 +173,7 @@ export function TransactionModal({
             </Select>
           </div>
           <div className="grid gap-2">
-            <Label>Account</Label>
+            <Label>{type === 'transfer' ? 'From account' : 'Account'}</Label>
             <Select value={accountId} onValueChange={setAccountId}>
               <SelectTrigger>
                 <SelectValue placeholder="Main" />
@@ -172,6 +187,26 @@ export function TransactionModal({
               </SelectContent>
             </Select>
           </div>
+          {type === 'transfer' && (
+            <div className="grid gap-2">
+              <Label>To account</Label>
+              <Select value={transferAccountId || 'none'} onValueChange={(v) => setTransferAccountId(v === 'none' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="No internal destination" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No internal destination</SelectItem>
+                  {accounts
+                    .filter((account) => String(account.id) !== accountId)
+                    .map((account) => (
+                      <SelectItem key={account.id} value={String(account.id)}>
+                        {account.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="grid gap-2">
             <Label>Category</Label>
             <Select value={categoryId} onValueChange={setCategoryId}>

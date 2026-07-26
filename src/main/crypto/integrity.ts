@@ -50,6 +50,7 @@ function serializeTransaction(row: {
   amount: number
   type: string
   account_id?: number | null
+  transfer_account_id?: number | null
   category_id: number | null
   date: string
   member_id?: number | null
@@ -60,6 +61,7 @@ function serializeTransaction(row: {
     amount: row.amount,
     type: row.type,
     account_id: row.account_id || null,
+    transfer_account_id: row.transfer_account_id || null,
     category_id: row.category_id,
     date: row.date,
     member_id: row.member_id || null
@@ -126,6 +128,7 @@ export function signTransaction(row: {
   amount: number
   type: string
   account_id?: number | null
+  transfer_account_id?: number | null
   category_id: number | null
   date: string
   member_id?: number | null
@@ -143,6 +146,7 @@ export function verifyTransaction(row: {
   amount: number
   type: string
   account_id?: number | null
+  transfer_account_id?: number | null
   category_id: number | null
   date: string
   member_id?: number | null

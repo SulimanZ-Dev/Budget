@@ -264,8 +264,8 @@ function buildTransactionWhere(filters?: TransactionFilters): { sql: string; par
     params.push(filters.type)
   }
   if (filters?.accountId) {
-    sql += ' AND t.account_id = ?'
-    params.push(filters.accountId)
+    sql += ' AND (t.account_id = ? OR t.transfer_account_id = ?)'
+    params.push(filters.accountId, filters.accountId)
   }
   if (filters?.flagged) {
     sql += ' AND t.is_unnecessary = 1'
@@ -329,6 +329,8 @@ function normalizeDateInput(value: unknown, fallback = new Date().toISOString().
 function accountTransactionBalanceExpression(): string {
   return `
     CASE
+      WHEN t.type = 'transfer' AND t.transfer_account_id = a.id THEN t.amount
+      WHEN t.type = 'transfer' AND t.account_id = a.id THEN -t.amount
       WHEN t.type = 'income' THEN t.amount
       WHEN t.type = 'savings' AND a.type = 'savings' THEN t.amount
       ELSE -t.amount
@@ -402,12 +404,12 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         `SELECT a.*,
          COALESCE(a.opening_balance, 0) + COALESCE(SUM(${transactionBalance}), 0) as balance,
          COALESCE(SUM(${transactionBalance}), 0) as activity_balance,
-         COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0) as income_total,
-         COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) as expense_total,
-         COALESCE(SUM(CASE WHEN t.type = 'savings' THEN t.amount ELSE 0 END), 0) as savings_total,
+         COALESCE(SUM(CASE WHEN t.type = 'income' AND t.account_id = a.id THEN t.amount ELSE 0 END), 0) as income_total,
+         COALESCE(SUM(CASE WHEN t.type = 'expense' AND t.account_id = a.id THEN t.amount ELSE 0 END), 0) as expense_total,
+         COALESCE(SUM(CASE WHEN t.type = 'savings' AND t.account_id = a.id THEN t.amount ELSE 0 END), 0) as savings_total,
          COUNT(t.id) as transaction_count
          FROM accounts a
-         LEFT JOIN transactions t ON t.account_id = a.id
+         LEFT JOIN transactions t ON t.account_id = a.id OR (t.type = 'transfer' AND t.transfer_account_id = a.id)
          GROUP BY a.id
          ORDER BY a.is_archived ASC, a.id ASC`
       )
@@ -760,11 +762,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Transactions
   ipcMain.handle('transactions:list', (_, filters?: Record<string, unknown>) => {
     let sql = `SELECT t.*, c.name as category_name, c.icon as category_icon, c.color as category_color,
-               m.name as member_name, a.name as account_name, a.type as account_type, a.currency as account_currency
+               m.name as member_name, a.name as account_name, a.type as account_type, a.currency as account_currency,
+               ta.name as transfer_account_name
                FROM transactions t
                LEFT JOIN categories c ON t.category_id = c.id
                LEFT JOIN household_members m ON t.member_id = m.id
-               LEFT JOIN accounts a ON t.account_id = a.id`
+               LEFT JOIN accounts a ON t.account_id = a.id
+               LEFT JOIN accounts ta ON t.transfer_account_id = ta.id`
     const { sql: whereSql, params } = buildTransactionWhere(filters)
     sql += whereSql
     sql += getTransactionOrderBy(filters?.sort)
@@ -785,6 +789,36 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return row.count
   })
 
+  ipcMain.handle('transactions:summary', (_, filters?: Record<string, unknown>) => {
+    const { sql: whereSql, params } = buildTransactionWhere(filters)
+    const row = db()
+      .prepare(
+        `SELECT
+           COUNT(*) as count,
+           COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) as income,
+           COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expenses,
+           COALESCE(SUM(CASE WHEN type = 'savings' THEN amount ELSE 0 END), 0) as savings,
+           COALESCE(SUM(CASE WHEN type = 'transfer' AND transfer_account_id IS NOT NULL THEN amount ELSE 0 END), 0) as internal_transfers,
+           COALESCE(SUM(CASE WHEN type = 'transfer' AND transfer_account_id IS NULL THEN amount ELSE 0 END), 0) as external_transfers,
+           COALESCE(SUM(CASE
+             WHEN type = 'income' THEN amount
+             WHEN type = 'transfer' AND transfer_account_id IS NOT NULL THEN 0
+             ELSE -amount
+           END), 0) as net
+         FROM transactions t${whereSql}`
+      )
+      .get(...params) as {
+        count: number
+        income: number
+        expenses: number
+        savings: number
+        internal_transfers: number
+        external_transfers: number
+        net: number
+      }
+    return row
+  })
+
   // Use command pattern for transaction creation
   ipcMain.handle('transactions:create', (_, tx) => {
     if (!Number.isFinite(tx.amount) || tx.amount <= 0) {
@@ -800,6 +834,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     }
     const assignedCategoryId = tx.type === 'savings' && !tx.categoryId ? savingsCategoryId : (tx.categoryId ?? null)
     const accountId = normalizeAccountId(tx.accountId)
+    const transferAccountId = tx.type === 'transfer' && tx.transferAccountId
+      ? normalizeAccountId(tx.transferAccountId)
+      : null
+
+    if (tx.type === 'transfer' && transferAccountId !== null && transferAccountId === accountId) {
+      throw new Error('Transfer destination must be different from source account')
+    }
 
     if (!tx.allowDuplicate) {
       const duplicates = findDuplicateTransactions({
@@ -807,6 +848,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         amount: tx.amount,
         type: tx.type,
         account_id: accountId,
+        transfer_account_id: transferAccountId,
         date: tx.date
       })
       if (duplicates.length > 0) {
@@ -819,6 +861,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       amount: tx.amount,
       type: tx.type,
       account_id: accountId,
+      transfer_account_id: transferAccountId,
       category_id: assignedCategoryId,
       date: tx.date,
       is_recurring: tx.isRecurring ?? false,
@@ -838,7 +881,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         const marker = 'savings_source:' + sourceId
         const newNotes = tx.notes ? tx.notes + ' | ' + marker : marker
         db().prepare('UPDATE transactions SET notes = ? WHERE id = ?').run(newNotes, result.id)
-      } else {
+      } else if (tx.type !== 'transfer' || transferAccountId === null) {
         // Start next billing one month from now — the current transaction is the first bill
         const nextDate = addMonths(tx.date, 1)
         db().prepare(
@@ -858,20 +901,33 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Use command pattern for transaction updates
   ipcMain.handle('transactions:update', (_, id: number, tx) => {
     // Get current state before update
-    const current = db().prepare('SELECT is_recurring, description, amount, date, type, account_id, notes FROM transactions WHERE id = ?').get(id) as
-      | { is_recurring: number; description: string; amount: number; date: string; type: string; account_id: number | null; notes: string | null }
+    const current = db().prepare('SELECT is_recurring, description, amount, date, type, account_id, transfer_account_id, notes FROM transactions WHERE id = ?').get(id) as
+      | { is_recurring: number; description: string; amount: number; date: string; type: string; account_id: number | null; transfer_account_id: number | null; notes: string | null }
       | undefined
 
     if (!current) {
       throw new Error(`Transaction ${id} not found`)
     }
 
+    const nextType = tx.type ?? current.type
+    const nextAccountId = tx.accountId !== undefined ? normalizeAccountId(tx.accountId) : current.account_id
+    const nextTransferAccountId = nextType === 'transfer'
+      ? tx.transferAccountId !== undefined
+        ? (tx.transferAccountId ? normalizeAccountId(tx.transferAccountId) : null)
+        : current.transfer_account_id
+      : null
+
+    if (nextType === 'transfer' && nextTransferAccountId !== null && nextTransferAccountId === nextAccountId) {
+      throw new Error('Transfer destination must be different from source account')
+    }
+
     const result = updateTransaction({
       id,
       description: tx.description,
-      amount: tx.amount !== undefined && (tx.type ?? current.type) === 'income' ? Math.abs(tx.amount) : tx.amount,
+      amount: tx.amount !== undefined && nextType === 'income' ? Math.abs(tx.amount) : tx.amount,
       type: tx.type,
-      account_id: tx.accountId !== undefined ? normalizeAccountId(tx.accountId) : undefined,
+      account_id: tx.accountId !== undefined ? nextAccountId : undefined,
+      transfer_account_id: tx.transferAccountId !== undefined || nextType !== current.type ? nextTransferAccountId : undefined,
       category_id: tx.categoryId !== undefined ? tx.categoryId : undefined,
       date: tx.date,
       is_recurring: tx.isRecurring ? true : tx.isRecurring === false ? false : undefined,
@@ -881,13 +937,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     })
 
     const description = tx.description ?? current.description
-    const amount = tx.amount !== undefined && (tx.type ?? current.type) === 'income' ? Math.abs(tx.amount) : (tx.amount ?? current.amount)
+    const amount = tx.amount !== undefined && nextType === 'income' ? Math.abs(tx.amount) : (tx.amount ?? current.amount)
     const date = tx.date ?? current.date
-    const accountId = tx.accountId !== undefined ? normalizeAccountId(tx.accountId) : current.account_id
+    const accountId = nextAccountId
     const notes = tx.notes !== undefined ? tx.notes : current.notes
 
     const incomeSourceMatch = typeof notes === 'string' ? notes.match(/^income_source:(\d+)$/) : null
-    if (incomeSourceMatch && (tx.type ?? current.type) === 'income') {
+    if (incomeSourceMatch && nextType === 'income') {
       const sourceId = Number(incomeSourceMatch[1])
       const normalizedAmount = Math.abs(Number(amount) || 0)
       const { year, month } = parseDateToLocalYearMonth(date)
@@ -903,7 +959,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (tx.isRecurring !== undefined) {
       const wasRecurring = current.is_recurring === 1
       const isRecurring = tx.isRecurring
-      const txType = tx.type ?? current.type
+      const txType = nextType
 
       if (wasRecurring && !isRecurring) {
         db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(id)
@@ -921,7 +977,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
           const currentNotes = existingNotes?.notes ?? ''
           const newNotes = currentNotes ? currentNotes + ' | ' + marker : marker
           db().prepare('UPDATE transactions SET notes = ? WHERE id = ?').run(newNotes, id)
-        } else {
+        } else if (txType !== 'transfer' || nextTransferAccountId === null) {
           const nextDate = addMonths(date, 1)
           db().prepare(
             `INSERT INTO subscriptions (name, amount, frequency, next_billing_date, account_id, transaction_id)
@@ -934,10 +990,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
           db().prepare(
             `UPDATE savings_sources SET description = ?, amount = ?, account_id = ? WHERE transaction_id = ?`
           ).run(description, amount, accountId, id)
-        } else {
+        } else if (txType !== 'transfer' || nextTransferAccountId === null) {
           db().prepare(
             `UPDATE subscriptions SET name = ?, amount = ?, account_id = ? WHERE transaction_id = ?`
           ).run(description, amount, accountId, id)
+        } else {
+          db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(id)
+          db().prepare('DELETE FROM savings_sources WHERE transaction_id = ?').run(id)
         }
       }
     }
@@ -989,10 +1048,12 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   ipcMain.handle('transactions:exportCsv', () => {
     const rows = db()
       .prepare(
-        `SELECT t.description, t.amount, t.date, t.type, c.name as category_name, a.name as account_name
+        `SELECT t.description, t.amount, t.date, t.type, c.name as category_name,
+                a.name as account_name, ta.name as transfer_account_name
          FROM transactions t
          LEFT JOIN categories c ON t.category_id = c.id
          LEFT JOIN accounts a ON t.account_id = a.id
+         LEFT JOIN accounts ta ON t.transfer_account_id = ta.id
          ORDER BY t.date DESC, t.id DESC`
       )
       .all() as TransactionRow[]
@@ -2142,6 +2203,20 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         (wealth.assets_property || 0) -
         (wealth.liabilities_loans || 0) -
         (wealth.liabilities_credit || 0)
+    } else {
+      const transactionBalance = accountTransactionBalanceExpression()
+      const accountsTotal = db()
+        .prepare(
+          `SELECT COALESCE(SUM(balance), 0) as v FROM (
+             SELECT COALESCE(a.opening_balance, 0) + COALESCE(SUM(${transactionBalance}), 0) as balance
+             FROM accounts a
+             LEFT JOIN transactions t ON t.account_id = a.id OR (t.type = 'transfer' AND t.transfer_account_id = a.id)
+             WHERE a.is_archived = 0
+             GROUP BY a.id
+           )`
+        )
+        .get() as { v: number }
+      netWorth = accountsTotal.v
     }
 
     const savingsRate = income.v > 0 ? ((income.v - spending.v) / income.v) * 100 : 0

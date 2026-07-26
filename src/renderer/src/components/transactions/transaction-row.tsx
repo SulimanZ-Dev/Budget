@@ -37,6 +37,8 @@ export interface TransactionRowData {
   member_name?: string
   account_id?: number
   account_name?: string
+  transfer_account_id?: number
+  transfer_account_name?: string
   notes?: string
 }
 
@@ -84,6 +86,7 @@ export function TransactionRow({
         amount: val,
         type: t.type,
         accountId: t.account_id,
+        transferAccountId: t.transfer_account_id,
         categoryId: t.category_id,
         date: t.date,
         isRecurring: !!t.is_recurring,
@@ -105,6 +108,7 @@ export function TransactionRow({
         amount: t.amount,
         type: t.type,
         accountId: t.account_id,
+        transferAccountId: t.transfer_account_id,
         categoryId: parseInt(catId),
         date: t.date,
         isRecurring: !!t.is_recurring,
@@ -126,6 +130,7 @@ export function TransactionRow({
         amount: t.amount,
         type: t.type,
         accountId: t.account_id,
+        transferAccountId: t.transfer_account_id,
         categoryId: t.category_id,
         date: t.date,
         isRecurring: !!t.is_recurring,
@@ -152,6 +157,10 @@ export function TransactionRow({
       // Silently fail
     }
   }
+
+  const accountLabel = t.type === 'transfer' && t.transfer_account_name
+    ? `${t.account_name ?? 'Unknown account'} -> ${t.transfer_account_name}`
+    : t.account_name
 
   return (
     <motion.div
@@ -205,7 +214,7 @@ export function TransactionRow({
             </button>
           )}
           {t.is_recurring ? <span className="text-info">Recurring</span> : null}
-          {t.account_name ? <span>{t.account_name}</span> : null}
+          {accountLabel ? <span>{accountLabel}</span> : null}
           {t.is_unnecessary ? <span className="text-warning">Flagged</span> : null}
         </p>
       </div>
@@ -227,7 +236,7 @@ export function TransactionRow({
             t.type === 'income' ? 'text-success' : t.type === 'savings' || t.type === 'transfer' ? 'text-info' : 'text-foreground'
           }`}
         >
-          {t.type === 'income' ? '+' : t.type === 'savings' || t.type === 'transfer' ? '→' : '-'}
+          {t.type === 'income' ? '+' : t.type === 'savings' || t.type === 'transfer' ? '->' : '-'}
           {formatMoney(t.amount, profile.displayCurrency, rates)}
           <span className="ml-1 text-[10px] text-muted-foreground/50">{profile.displayCurrency}</span>
         </button>

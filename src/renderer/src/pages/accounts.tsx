@@ -28,7 +28,7 @@ const accountTypes = ['checking', 'savings', 'cash', 'other'] as const
 const currencies = ['SEK', 'EUR', 'USD'] as const
 
 export function AccountsPage(): JSX.Element {
-  const { profile, rates, triggerRefresh } = useAppStore()
+  const { profile, rates, triggerRefresh, refreshTrigger } = useAppStore()
   const appDialog = useAppDialog()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [open, setOpen] = useState(false)
@@ -42,7 +42,7 @@ export function AccountsPage(): JSX.Element {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [refreshTrigger])
 
   async function load(): Promise<void> {
     setAccounts((await window.api.accounts.list()) as Account[])
