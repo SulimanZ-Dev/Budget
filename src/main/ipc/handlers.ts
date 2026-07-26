@@ -1358,13 +1358,28 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const tx = sub.transaction_id
       ? { success: false, error: 'Already linked to a transaction' }
       : (() => {
+          const noteMarker = `subscription:${id}`
+          const existing = db().prepare(
+            `SELECT id FROM transactions
+             WHERE notes = ? AND type = 'expense'
+             ORDER BY date DESC, id DESC
+             LIMIT 1`
+          ).get(noteMarker) as { id: number } | undefined
+
+          if (existing) {
+            updateTransaction({ id: existing.id, is_recurring: true })
+            db().prepare('UPDATE subscriptions SET transaction_id = ? WHERE id = ?').run(existing.id, id)
+            return { success: true, transactionId: existing.id }
+          }
+
           const result = createTransaction({
             description: sub.name as string,
             amount: sub.amount as number,
             type: 'expense',
             account_id: normalizeAccountId(sub.account_id),
-            date: new Date().toISOString().slice(0, 10),
-            is_recurring: true
+            date: (sub.next_billing_date as string | null) || new Date().toISOString().slice(0, 10),
+            is_recurring: true,
+            notes: noteMarker
           })
           db().prepare('UPDATE subscriptions SET transaction_id = ? WHERE id = ?').run(result.id, id)
           return { success: true, transactionId: result.id }
