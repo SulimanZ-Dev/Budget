@@ -329,8 +329,8 @@ export function deleteTransaction(id: number): boolean {
   
   const tx = db.transaction((txId: number) => {
     // Check if exists
-    const exists = db.prepare('SELECT id FROM transactions WHERE id = ?').get(txId)
-    if (!exists) {
+    const existing = db.prepare('SELECT * FROM transactions WHERE id = ?').get(txId) as any
+    if (!existing) {
       return false
     }
     
@@ -338,7 +338,19 @@ export function deleteTransaction(id: number): boolean {
     db.prepare('DELETE FROM transactions WHERE id = ?').run(txId)
     
     // Append event
-    appendEvent(txId, TransactionEventType.DELETED, {})
+    appendEvent(txId, TransactionEventType.DELETED, {
+      description: existing.description,
+      amount: existing.amount,
+      type: existing.type,
+      account_id: existing.account_id,
+      transfer_account_id: existing.transfer_account_id,
+      category_id: existing.category_id,
+      date: existing.date,
+      is_recurring: existing.is_recurring === 1,
+      is_unnecessary: existing.is_unnecessary === 1,
+      member_id: existing.member_id,
+      notes: existing.notes
+    })
     
     return true
   })

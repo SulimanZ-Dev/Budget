@@ -25,6 +25,7 @@ class FakeDb {
   }
 
   private run(sql: string, args: any[]): any {
+    const normalizedSql = sql.trimStart()
     if (sql.includes('INSERT INTO accounts')) {
       const row = { id: this.nextAccountId++, name: args[0] ?? 'Main', type: args[1] ?? 'checking', currency: args[2] ?? 'SEK', is_archived: args[3] ?? 0 }
       this.accounts.push(row)
@@ -86,12 +87,12 @@ class FakeDb {
       return { lastInsertRowid: row.event_id }
     }
 
-    if (sql.startsWith('DELETE FROM transactions')) {
+    if (normalizedSql.startsWith('DELETE FROM transactions')) {
       this.transactions = this.transactions.filter((row) => row.id !== args[0])
       return { changes: 1 }
     }
 
-    if (sql.startsWith('UPDATE transactions SET')) {
+    if (/^UPDATE transactions\s+SET/.test(normalizedSql)) {
       const id = args[args.length - 1]
       const row = this.transactions.find((tx) => tx.id === id)
       if (!row) return { changes: 0 }
@@ -324,6 +325,28 @@ describe('transaction command account and undo behavior', () => {
 
     expect(restored?.category_id).toBeNull()
     expect(JSON.parse(restoredEvent.payload_json)).toMatchObject({ category_id: null })
+  })
+
+  it('restores the current state after an update is undone before delete undo', async () => {
+    const { createTransaction, deleteTransaction, undoLastChange, updateTransaction } = await import('../transaction-commands')
+    const testDb = dbRef.current!
+    testDb.prepare("INSERT INTO accounts (name, type, currency, is_archived) VALUES ('Main', 'checking', 'SEK', 0)").run()
+
+    const { id } = createTransaction({
+      description: 'Undo chain spend',
+      amount: 123,
+      type: 'expense',
+      account_id: 1,
+      date: '2026-01-05'
+    })
+
+    expect(updateTransaction({ id, amount: 130 })).toBe(true)
+    expect(undoLastChange(id)).toBe(true)
+    expect(deleteTransaction(id)).toBe(true)
+    expect(undoLastChange(id)).toBe(true)
+
+    const restored = testDb.transactions.find((row) => row.id === id)
+    expect(restored?.amount).toBe(123)
   })
 
   it('updates account_id and records the previous account in the event payload', async () => {

@@ -192,10 +192,7 @@ export function replayTransactionEvents(transactionId: number): TransactionEvent
         break
         
       case TransactionEventType.RESTORED:
-        // Restore clears deleted flag
-        if (state) {
-          state = { ...state, _deleted: false, _restored: true } as any
-        }
+        state = { ...event.payload, _deleted: false, _restored: true } as TransactionEventPayload
         break
         
       case TransactionEventType.FLAGGED:
@@ -247,7 +244,7 @@ export function replayAllEvents(): Map<number, TransactionEventPayload> {
         break
         
       case TransactionEventType.RESTORED:
-        // Restoration is handled by the event after restore
+        transactions.set(event.transaction_id, { ...event.payload })
         break
         
       case TransactionEventType.FLAGGED:
@@ -285,6 +282,15 @@ export function undoLastEvents(transactionId: number, count: number = 1): Transa
   
   if (events.length === 0 || count <= 0) {
     return null
+  }
+
+  const lastEvent = events[events.length - 1]
+  if (
+    count === 1 &&
+    lastEvent.event_type === TransactionEventType.DELETED &&
+    Object.keys(lastEvent.payload).length > 0
+  ) {
+    return { ...lastEvent.payload }
   }
   
   // Replay all events except the last N
@@ -325,9 +331,7 @@ export function undoLastEvents(transactionId: number, count: number = 1): Transa
         break
         
       case TransactionEventType.RESTORED:
-        if (state) {
-          state = { ...state, _restored: true } as any
-        }
+        state = { ...event.payload, _restored: true } as TransactionEventPayload
         break
         
       case TransactionEventType.FLAGGED:

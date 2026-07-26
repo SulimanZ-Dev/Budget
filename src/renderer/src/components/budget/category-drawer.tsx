@@ -51,6 +51,11 @@ export function CategoryDrawerContent({
   const [notes, setNotes] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [editAmount, setEditAmount] = useState('')
+  const [localBudgetAmount, setLocalBudgetAmount] = useState(budgetAmount)
+
+  useEffect(() => {
+    setLocalBudgetAmount(budgetAmount)
+  }, [budgetAmount])
 
   useEffect(() => {
     setLoading(true)
@@ -69,7 +74,7 @@ export function CategoryDrawerContent({
         categoryId,
         year: profile.year,
         month: selectedMonth,
-        amount: budgetAmount,
+        amount: localBudgetAmount,
         notes
       })
     } catch (error) {
@@ -93,14 +98,16 @@ export function CategoryDrawerContent({
   }
 
   async function saveBudgetAmount(): Promise<void> {
+    const amount = parseFloat(editAmount) || 0
     try {
       await window.api.budget.setEntry({
         categoryId,
         year: profile.year,
         month: selectedMonth,
-        amount: parseFloat(editAmount) || 0,
+        amount,
         notes
       })
+      setLocalBudgetAmount(amount)
       setIsEditing(false)
       onRefresh()
     } catch (error) {
@@ -118,7 +125,7 @@ export function CategoryDrawerContent({
     )
   }
 
-  const budget = budgetAmount * cpi
+  const budget = localBudgetAmount * cpi
   const category = detail?.category
   const remaining = budget - spent
   const chartData = detail.history.map((h) => ({
@@ -135,7 +142,7 @@ export function CategoryDrawerContent({
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => {
             setIsEditing(true)
-            setEditAmount(String(budgetAmount))
+            setEditAmount(String(localBudgetAmount))
           }}>
             <Pencil className="h-4 w-4" />
           </Button>

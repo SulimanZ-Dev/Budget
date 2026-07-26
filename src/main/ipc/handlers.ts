@@ -2192,18 +2192,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       )
       .get(ym.y, ym.m) as { v: number }
 
-    const wealth = db().prepare('SELECT * FROM wealth_snapshots ORDER BY date DESC LIMIT 1').get() as
-      | Record<string, number>
-      | undefined
-    let netWorth = 0
-    if (wealth) {
-      netWorth =
-        (wealth.assets_savings || 0) +
-        (wealth.assets_investments || 0) +
-        (wealth.assets_property || 0) -
-        (wealth.liabilities_loans || 0) -
-        (wealth.liabilities_credit || 0)
-    } else {
+    function getAccountsNetWorth(): number {
       const transactionBalance = accountTransactionBalanceExpression()
       const accountsTotal = db()
         .prepare(
@@ -2216,7 +2205,24 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
            )`
         )
         .get() as { v: number }
-      netWorth = accountsTotal.v
+      return accountsTotal.v
+    }
+
+    const wealth = db().prepare('SELECT * FROM wealth_snapshots ORDER BY date DESC LIMIT 1').get() as
+      | Record<string, number>
+      | undefined
+    const accountsNetWorth = getAccountsNetWorth()
+    let netWorth = 0
+    if (wealth) {
+      netWorth =
+        (wealth.assets_savings || 0) +
+        (wealth.assets_investments || 0) +
+        (wealth.assets_property || 0) -
+        (wealth.liabilities_loans || 0) -
+        (wealth.liabilities_credit || 0)
+      if (netWorth === 0 && accountsNetWorth !== 0) netWorth = accountsNetWorth
+    } else {
+      netWorth = accountsNetWorth
     }
 
     const savingsRate = income.v > 0 ? ((income.v - spending.v) / income.v) * 100 : 0

@@ -438,9 +438,12 @@ export function TransactionsPage(): JSX.Element {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => {
-                  toast.undo?.()
-                  setToast(null)
+                onClick={async () => {
+                  try {
+                    await toast.undo?.()
+                  } finally {
+                    setToast(null)
+                  }
                 }}
               >
                 Undo

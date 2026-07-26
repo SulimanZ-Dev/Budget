@@ -5,14 +5,11 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Clock, Undo2, Edit, Trash2, Flag, FlagOff, Tag } from 'lucide-react'
 
 interface HistoryEvent {
-  id: number
-  transaction_id: number
-  event_type: string
-  event_data: string
-  previous_values: string | null
+  event_id: number
+  action: string
+  details: string
   actor: string
   timestamp: string
-  hmac: string
 }
 
 interface TransactionHistoryProps {
@@ -32,7 +29,7 @@ export function TransactionHistory({ transactionId, onUndo }: TransactionHistory
     setLoading(true)
     try {
       const events = await window.api.transactions.history(transactionId)
-      setHistory(events as HistoryEvent[])
+      setHistory([...(events as HistoryEvent[])].sort((a, b) => b.event_id - a.event_id))
     } catch (error) {
       console.error('Failed to load transaction history:', error)
     } finally {
@@ -50,11 +47,12 @@ export function TransactionHistory({ transactionId, onUndo }: TransactionHistory
     }
   }
 
-  function getEventIcon(eventType: string): JSX.Element {
-    switch (eventType) {
+  function getEventIcon(action: string): JSX.Element {
+    switch (action.toUpperCase()) {
       case 'CREATED':
         return <Edit className="h-4 w-4 text-success" />
       case 'UPDATED':
+      case 'RESTORED':
         return <Edit className="h-4 w-4 text-info" />
       case 'DELETED':
         return <Trash2 className="h-4 w-4 text-destructive" />
@@ -66,56 +64,6 @@ export function TransactionHistory({ transactionId, onUndo }: TransactionHistory
         return <Tag className="h-4 w-4 text-purple-500" />
       default:
         return <Clock className="h-4 w-4 text-muted-foreground" />
-    }
-  }
-
-  function getEventDescription(event: HistoryEvent): string {
-    let eventData: Record<string, unknown>
-    try {
-      eventData = JSON.parse(event.event_data)
-    } catch {
-      eventData = {}
-    }
-    let previousValues: Record<string, unknown> | null = null
-    if (event.previous_values) {
-      try {
-        previousValues = JSON.parse(event.previous_values)
-      } catch {
-        previousValues = null
-      }
-    }
-
-    switch (event.event_type) {
-      case 'CREATED':
-        return `Transaction created: ${eventData.description} (${eventData.amount} SEK)`
-      case 'UPDATED': {
-        const changes: string[] = []
-        if (previousValues) {
-          if (previousValues.description !== undefined) {
-            changes.push(`description changed from "${previousValues.description}" to "${eventData.description}"`)
-          }
-          if (previousValues.amount !== undefined) {
-            changes.push(`amount changed from ${previousValues.amount} to ${eventData.amount} SEK`)
-          }
-          if (previousValues.category_id !== undefined) {
-            changes.push(`category changed`)
-          }
-          if (previousValues.date !== undefined) {
-            changes.push(`date changed from ${previousValues.date} to ${eventData.date}`)
-          }
-        }
-        return changes.length > 0 ? changes.join(', ') : 'Transaction updated'
-      }
-      case 'DELETED':
-        return 'Transaction deleted'
-      case 'FLAGGED':
-        return 'Transaction flagged as unnecessary'
-      case 'UNFLAGGED':
-        return 'Transaction unflagged'
-      case 'RECATEGORIZED':
-        return `Category changed`
-      default:
-        return event.event_type
     }
   }
 
@@ -157,7 +105,7 @@ export function TransactionHistory({ transactionId, onUndo }: TransactionHistory
     )
   }
 
-  const canUndo = history.length > 1 && history[0].event_type !== 'DELETED'
+  const canUndo = history.length > 1 && history[0].action.toUpperCase() !== 'DELETED'
 
   return (
     <div className="space-y-4">
@@ -179,22 +127,22 @@ export function TransactionHistory({ transactionId, onUndo }: TransactionHistory
       <ScrollArea className="h-[300px]">
         <div className="space-y-3">
           {history.map((event, index) => (
-            <Card key={event.id} className="p-3">
+            <Card key={event.event_id} className="p-3">
               <div className="flex gap-3">
                 <div className="flex-shrink-0 mt-0.5">
-                  {getEventIcon(event.event_type)}
+                  {getEventIcon(event.action)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-sm font-medium">
-                      {event.event_type.charAt(0) + event.event_type.slice(1).toLowerCase()}
+                      {event.action}
                     </p>
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
                       {formatTimestamp(event.timestamp)}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {getEventDescription(event)}
+                    {event.details || 'No details'}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     by {event.actor || 'system'}
