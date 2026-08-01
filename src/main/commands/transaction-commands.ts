@@ -1,10 +1,13 @@
 import { getDatabase } from '../database-encrypted'
 import { signTransaction } from '../crypto/integrity'
+import { assertMonthOpen } from '../services/month-lock'
 import { 
   appendEvent, 
   TransactionEventType, 
   undoLastEvents,
-  replayAllEvents
+  replayAllEvents,
+  getTransactionEvents,
+  type TransactionEventPayload
 } from '../events/event-store'
 
 /**
@@ -96,6 +99,7 @@ export function hasDuplicateTransaction(
 
 export function createTransaction(command: CreateTransactionCommand): { id: number } {
   const db = getDatabase()
+  assertMonthOpen(command.date)
   
   const tx = db.transaction((cmd: CreateTransactionCommand) => {
     const accountId = cmd.account_id ?? getPrimaryAccountId()
@@ -188,6 +192,8 @@ export function updateTransaction(command: UpdateTransactionCommand): boolean {
     if (!current) {
       throw new Error(`Transaction ${cmd.id} not found`)
     }
+    assertMonthOpen(current.date)
+    if (cmd.date && cmd.date !== current.date) assertMonthOpen(cmd.date)
     
     // Build update payload with only changed fields
     const updates: Partial<CreateTransactionCommand> = {}
@@ -333,6 +339,7 @@ export function deleteTransaction(id: number): boolean {
     if (!existing) {
       return false
     }
+    assertMonthOpen(existing.date)
     
     // Delete from materialized view
     db.prepare('DELETE FROM transactions WHERE id = ?').run(txId)
@@ -365,6 +372,9 @@ export function flagTransaction(id: number): boolean {
   const db = getDatabase()
   
   const tx = db.transaction((txId: number) => {
+    const current = db.prepare('SELECT * FROM transactions WHERE id = ?').get(txId) as { date: string } | undefined
+    if (!current) return false
+    assertMonthOpen(current.date)
     db.prepare('UPDATE transactions SET is_unnecessary = 1 WHERE id = ?').run(txId)
     appendEvent(txId, TransactionEventType.FLAGGED, { is_unnecessary: true })
     return true
@@ -380,6 +390,9 @@ export function unflagTransaction(id: number): boolean {
   const db = getDatabase()
   
   const tx = db.transaction((txId: number) => {
+    const current = db.prepare('SELECT * FROM transactions WHERE id = ?').get(txId) as { date: string } | undefined
+    if (!current) return false
+    assertMonthOpen(current.date)
     db.prepare('UPDATE transactions SET is_unnecessary = 0 WHERE id = ?').run(txId)
     appendEvent(txId, TransactionEventType.UNFLAGGED, { is_unnecessary: false })
     return true
@@ -396,11 +409,12 @@ export function recategorizeTransaction(id: number, categoryId: number | null): 
   
   const tx = db.transaction((txId: number, catId: number | null) => {
     // Get current category for event history
-    const current = db.prepare('SELECT category_id FROM transactions WHERE id = ?').get(txId) as any
+    const current = db.prepare('SELECT * FROM transactions WHERE id = ?').get(txId) as any
     
     if (!current) {
       return false
     }
+    assertMonthOpen(current.date)
     
     db.prepare('UPDATE transactions SET category_id = ? WHERE id = ?').run(catId, txId)
     
@@ -422,12 +436,15 @@ export function undoLastChange(id: number): boolean {
   const db = getDatabase()
   
   const tx = db.transaction((txId: number) => {
+    const current = db.prepare('SELECT * FROM transactions WHERE id = ?').get(txId) as { date: string } | undefined
+    if (current) assertMonthOpen(current.date)
     // Get the state before the last event
     const previousState = undoLastEvents(txId, 1)
     
     if (!previousState) {
       return false // Nothing to undo
     }
+    if (previousState.date) assertMonthOpen(previousState.date)
 
     const restoredAccountId = existingAccountIdOrPrimary(previousState.account_id)
     const restoredTransferAccountId = previousState.type === 'transfer'
@@ -515,6 +532,78 @@ export function undoLastChange(id: number): boolean {
   })
   
   return tx(id)
+}
+
+export function restoreTransactionToEvent(id: number, eventId: number): boolean {
+  const db = getDatabase()
+  const events = getTransactionEvents(id).filter((event) => event.event_id <= eventId)
+  if (events.length === 0 || events[events.length - 1].event_id !== eventId) {
+    throw new Error('History event not found.')
+  }
+
+  let state: TransactionEventPayload | null = null
+  for (const event of events) {
+    if (event.event_type === TransactionEventType.CREATED || event.event_type === TransactionEventType.RESTORED) {
+      state = { ...event.payload }
+    } else if (event.event_type === TransactionEventType.UPDATED && state) {
+      state = Object.assign({}, state, event.payload) as TransactionEventPayload
+    } else if (event.event_type === TransactionEventType.DELETED) {
+      state = null
+    } else if (event.event_type === TransactionEventType.FLAGGED && state) {
+      state.is_unnecessary = true
+    } else if (event.event_type === TransactionEventType.UNFLAGGED && state) {
+      state.is_unnecessary = false
+    } else if (event.event_type === TransactionEventType.RECATEGORIZED && state) {
+      state.category_id = event.payload.category_id
+    }
+  }
+
+  const current = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id) as any
+  if (current?.date) assertMonthOpen(current.date)
+  if (!state) return current ? deleteTransaction(id) : true
+  if (state.date) assertMonthOpen(state.date)
+
+  const restoredAccountId = existingAccountIdOrPrimary(state.account_id)
+  const restoredTransferAccountId = state.type === 'transfer'
+    ? existingIdOrNull('accounts', state.transfer_account_id)
+    : null
+  const restoredCategoryId = existingIdOrNull('categories', state.category_id)
+  const restoredMemberId = existingIdOrNull('household_members', state.member_id)
+
+  if (current) {
+    return updateTransaction({
+      id,
+      description: state.description ?? '',
+      amount: state.amount ?? 0,
+      type: state.type ?? 'expense',
+      account_id: restoredAccountId,
+      transfer_account_id: restoredTransferAccountId,
+      category_id: restoredCategoryId,
+      date: state.date ?? current.date,
+      is_recurring: state.is_recurring ?? false,
+      is_unnecessary: state.is_unnecessary ?? false,
+      member_id: restoredMemberId,
+      notes: state.notes ?? null
+    })
+  }
+
+  const restoredDate = state.date ?? new Date().toISOString().slice(0, 10)
+  const hmac = signTransaction({
+    description: state.description ?? '', amount: state.amount ?? 0, type: state.type ?? 'expense',
+    account_id: restoredAccountId, transfer_account_id: restoredTransferAccountId,
+    category_id: restoredCategoryId, date: restoredDate, member_id: restoredMemberId
+  })
+  db.prepare(`
+    INSERT INTO transactions (id,description,amount,type,account_id,transfer_account_id,category_id,date,is_recurring,is_unnecessary,member_id,notes,hmac)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(id, state.description ?? '', state.amount ?? 0, state.type ?? 'expense', restoredAccountId,
+    restoredTransferAccountId, restoredCategoryId, restoredDate, state.is_recurring ? 1 : 0,
+    state.is_unnecessary ? 1 : 0, restoredMemberId, state.notes ?? null, hmac)
+  appendEvent(id, TransactionEventType.RESTORED, {
+    ...state, account_id: restoredAccountId, transfer_account_id: restoredTransferAccountId,
+    category_id: restoredCategoryId, member_id: restoredMemberId
+  })
+  return true
 }
 
 /**

@@ -25,6 +25,7 @@ import { useAppStore } from '@/store/app-store'
 import { formatMoney, MONTH_NAMES, COLORBLIND_PALETTE } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { cardHoverVariants } from '@/lib/motion'
+import { FinancialOverview } from '@/components/dashboard/financial-overview'
 
 interface DashboardStats {
   netWorth: number
@@ -38,6 +39,59 @@ interface DashboardStats {
   savingsByMonth: { month: string; rate: number }[]
   budgetHealth: number
   insights: { content: string }[]
+}
+
+function ReviewDelta({
+  label,
+  value,
+  currency,
+  rates,
+  negativeIsBad
+}: {
+  label: string
+  value: number
+  currency: string
+  rates: Record<string, number>
+  negativeIsBad?: boolean
+}): JSX.Element {
+  const good = negativeIsBad ? value <= 0 : value >= 0
+  const tone = value === 0 ? 'text-muted-foreground' : good ? 'text-success' : 'text-destructive'
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`text-xl font-semibold tabular-nums ${tone}`}>
+        {value >= 0 ? '+' : ''}{formatMoney(value, currency, rates)}
+      </p>
+    </div>
+  )
+}
+
+function ReviewList({
+  title,
+  empty,
+  rows
+}: {
+  title: string
+  empty: string
+  rows: { key: string; title: string; detail: string }[]
+}): JSX.Element {
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <p className="text-sm font-medium">{title}</p>
+      {rows.length === 0 ? (
+        <p className="mt-2 text-xs text-muted-foreground">{empty}</p>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {rows.map((row) => (
+            <div key={row.key} className="text-xs">
+              <p className="font-medium">{row.title}</p>
+              <p className="text-muted-foreground">{row.detail}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface CashFlowForecastRow {
@@ -64,6 +118,15 @@ interface RecurringMerchantPattern {
   lastDate: string
 }
 
+interface MonthlyReview {
+  currentTotals: { income: number; expenses: number; savings: number; count: number }
+  previousTotals: { income: number; expenses: number; savings: number; count: number }
+  deltas: { income: number; expenses: number; savings: number; count: number }
+  increasedSubscriptions: { id: number; name: string; amount: number; previous_amount: number; next_billing_date?: string }[]
+  newRecurring: { id: number; name: string; amount: number; next_billing_date?: string }[]
+  unusualTransactions: { id: number; description: string; amount: number; date: string; type: string; category_name?: string | null }[]
+}
+
 export function DashboardPage(): JSX.Element {
   const { profile, selectedMonth, rates, loading: appLoading, refreshTrigger } = useAppStore()
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -73,6 +136,7 @@ export function DashboardPage(): JSX.Element {
   const [generatingInsight, setGeneratingInsight] = useState(false)
   const [anomalies, setAnomalies] = useState<{ category: string; current: number; avg: number; stddev: number; severity: string }[]>([])
   const [recurringPatterns, setRecurringPatterns] = useState<RecurringMerchantPattern[]>([])
+  const [monthlyReview, setMonthlyReview] = useState<MonthlyReview | null>(null)
   const [upcomingSubs, setUpcomingSubs] = useState<
     { id: number; name: string; amount: number; frequency: string; next_billing_date?: string }[]
   >([])
@@ -98,6 +162,9 @@ export function DashboardPage(): JSX.Element {
           window.api.ai.detectAnomalies().then(setAnomalies).catch(() => {})
           window.api.transactions.recurringMerchantPatterns(profile.year, selectedMonth).then((patterns) => {
             setRecurringPatterns(patterns as RecurringMerchantPattern[])
+          }).catch(() => {})
+          window.api.dashboard.monthlyReview(profile.year, selectedMonth).then((review) => {
+            setMonthlyReview(review as MonthlyReview)
           }).catch(() => {})
           window.api.subscriptions.upcoming().then((u) => setUpcomingSubs(u as typeof upcomingSubs)).catch(() => {})
         }
@@ -233,6 +300,56 @@ export function DashboardPage(): JSX.Element {
           ))}
         </div>
       )}
+
+      {monthlyReview && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Monthly review</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-4">
+              <ReviewDelta label="Income" value={monthlyReview.deltas.income} currency={profile.displayCurrency} rates={rates} />
+              <ReviewDelta label="Expenses" value={monthlyReview.deltas.expenses} currency={profile.displayCurrency} rates={rates} negativeIsBad />
+              <ReviewDelta label="Savings" value={monthlyReview.deltas.savings} currency={profile.displayCurrency} rates={rates} />
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Transaction count</p>
+                <p className="text-xl font-semibold tabular-nums">{monthlyReview.deltas.count >= 0 ? '+' : ''}{monthlyReview.deltas.count}</p>
+              </div>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-3">
+              <ReviewList
+                title="Higher subscriptions"
+                empty="No price increases found."
+                rows={monthlyReview.increasedSubscriptions.map((item) => ({
+                  key: `sub-${item.id}`,
+                  title: item.name,
+                  detail: `${formatMoney(item.previous_amount, profile.displayCurrency, rates)} to ${formatMoney(item.amount, profile.displayCurrency, rates)}`
+                }))}
+              />
+              <ReviewList
+                title="New recurring"
+                empty="No new recurring costs found."
+                rows={monthlyReview.newRecurring.map((item) => ({
+                  key: `new-${item.id}`,
+                  title: item.name,
+                  detail: `${formatMoney(item.amount, profile.displayCurrency, rates)}${item.next_billing_date ? ` due ${item.next_billing_date}` : ''}`
+                }))}
+              />
+              <ReviewList
+                title="Unusual transactions"
+                empty="No unusual transactions found."
+                rows={monthlyReview.unusualTransactions.map((item) => ({
+                  key: `tx-${item.id}`,
+                  title: item.description,
+                  detail: `${formatMoney(item.amount, profile.displayCurrency, rates)} on ${item.date}`
+                }))}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <FinancialOverview />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <motion.div

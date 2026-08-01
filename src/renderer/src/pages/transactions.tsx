@@ -17,6 +17,7 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { ArrowLeftRight } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import * as LucideIcons from 'lucide-react'
 import { TransactionRow, type TransactionRowData } from '@/components/transactions/transaction-row'
 import { CsvImportModal } from '@/components/transactions/csv-import-modal'
@@ -25,6 +26,7 @@ import { useNavigate } from 'react-router-dom'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppDialog } from '@/components/shared/app-dialog'
+import { TransactionToolsPanel, type AdvancedTransactionFilters } from '@/components/transactions/transaction-tools-panel'
 
 type RecurringFilter = 'all' | 'recurring' | 'oneoff'
 const PAGE_SIZE = 100
@@ -50,6 +52,15 @@ interface TransactionViewPreferences {
   splitView?: boolean
   calendarView?: boolean
   importAccountId?: string
+  advancedFilters?: AdvancedTransactionFilters
+}
+
+interface UncategorizedTransaction {
+  id: number
+  description: string
+  amount: number
+  date: string
+  account_name?: string | null
 }
 
 function isRecurringFilter(value: unknown): value is RecurringFilter {
@@ -82,6 +93,9 @@ export function TransactionsPage(): JSX.Element {
   const [csvText, setCsvText] = useState('')
   const [toast, setToast] = useState<{ message: string; undo?: () => void | Promise<void> } | null>(null)
   const [prefsLoaded, setPrefsLoaded] = useState(false)
+  const [uncategorized, setUncategorized] = useState<UncategorizedTransaction[]>([])
+  const [cleanupCategoryIds, setCleanupCategoryIds] = useState<Record<number, string>>({})
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedTransactionFilters>({ minAmount: '', maxAmount: '', dateFrom: '', dateTo: '', reconciled: 'all' })
 
   useEffect(() => {
     window.api.categories.list().then((c) => setCategories(c as { id: number; name: string }[]))
@@ -109,6 +123,7 @@ export function TransactionsPage(): JSX.Element {
         setSplitView(Boolean(prefs.splitView))
         setCalendarView(Boolean(prefs.calendarView))
         if (typeof prefs.importAccountId === 'string') setImportAccountId(prefs.importAccountId)
+        if (prefs.advancedFilters) setAdvancedFilters(prefs.advancedFilters)
       } finally {
         if (!cancelled) setPrefsLoaded(true)
       }
@@ -131,7 +146,8 @@ export function TransactionsPage(): JSX.Element {
       weeklyView,
       splitView,
       calendarView,
-      importAccountId
+      importAccountId,
+      advancedFilters
     }
     window.api.settings.set(TRANSACTION_PREFS_KEY, prefs).catch(() => {})
   }, [
@@ -144,26 +160,33 @@ export function TransactionsPage(): JSX.Element {
     weeklyView,
     splitView,
     calendarView,
-    importAccountId
+    importAccountId,
+    advancedFilters
   ])
 
   useEffect(() => {
     setPage(1)
-  }, [profile.year, selectedMonth, debouncedSearch, flaggedOnly, categoryFilter, typeFilter, recurringFilter, sort, refreshTrigger])
+  }, [profile.year, selectedMonth, debouncedSearch, flaggedOnly, categoryFilter, typeFilter, recurringFilter, sort, advancedFilters, refreshTrigger])
 
   useEffect(() => {
     load()
-  }, [profile.year, selectedMonth, debouncedSearch, flaggedOnly, categoryFilter, typeFilter, recurringFilter, sort, page, refreshTrigger])
+    loadCleanup()
+  }, [profile.year, selectedMonth, debouncedSearch, flaggedOnly, categoryFilter, typeFilter, recurringFilter, sort, advancedFilters, page, refreshTrigger])
 
   async function load(): Promise<void> {
     setLoading(true)
     const filters: Record<string, unknown> = {
-      year: profile.year,
-      month: selectedMonth,
+      year: advancedFilters.dateFrom || advancedFilters.dateTo ? undefined : profile.year,
+      month: advancedFilters.dateFrom || advancedFilters.dateTo ? undefined : selectedMonth,
       search: debouncedSearch || undefined,
       flagged: flaggedOnly || undefined,
       sort
     }
+    if (advancedFilters.minAmount) filters.minAmount = Number(advancedFilters.minAmount)
+    if (advancedFilters.maxAmount) filters.maxAmount = Number(advancedFilters.maxAmount)
+    if (advancedFilters.dateFrom) filters.dateFrom = advancedFilters.dateFrom
+    if (advancedFilters.dateTo) filters.dateTo = advancedFilters.dateTo
+    if (advancedFilters.reconciled !== 'all') filters.reconciled = advancedFilters.reconciled === 'yes'
     if (categoryFilter !== 'all') filters.categoryId = parseInt(categoryFilter)
     if (typeFilter !== 'all') filters.type = typeFilter
     if (recurringFilter === 'recurring') filters.recurring = true
@@ -185,6 +208,23 @@ export function TransactionsPage(): JSX.Element {
     setSummary(summaryData as TransactionSummary)
     setSelected(new Set())
     setLoading(false)
+  }
+
+  async function loadCleanup(): Promise<void> {
+    const rows = await window.api.transactions.uncategorized(profile.year, selectedMonth)
+    setUncategorized(rows as UncategorizedTransaction[])
+  }
+
+  async function applyCleanup(id: number): Promise<void> {
+    const categoryId = cleanupCategoryIds[id]
+    if (!categoryId) return
+    await window.api.transactions.categorize(id, parseInt(categoryId))
+    setCleanupCategoryIds((current) => {
+      const next = { ...current }
+      delete next[id]
+      return next
+    })
+    await Promise.all([load(), loadCleanup()])
   }
 
   async function pickCsv(): Promise<void> {
@@ -362,6 +402,16 @@ export function TransactionsPage(): JSX.Element {
       setImportAccountId={setImportAccountId}
     >
       <TransactionSummaryStrip summary={summary} currency={profile.displayCurrency} rates={rates} />
+      <TransactionToolsPanel value={advancedFilters} onChange={setAdvancedFilters} onRefresh={load} />
+      <CategoryCleanup
+        rows={uncategorized}
+        categories={categories}
+        values={cleanupCategoryIds}
+        setValues={setCleanupCategoryIds}
+        onApply={applyCleanup}
+        currency={profile.displayCurrency}
+        rates={rates}
+      />
       {calendarView && calendarDays && (
         <div className="mb-6 grid grid-cols-7 gap-1">
           {calendarDays.map((d) => (
@@ -482,6 +532,63 @@ function TransactionSummaryStrip({
         </p>
       </div>
     </div>
+  )
+}
+
+function CategoryCleanup({
+  rows,
+  categories,
+  values,
+  setValues,
+  onApply,
+  currency,
+  rates
+}: {
+  rows: UncategorizedTransaction[]
+  categories: { id: number; name: string }[]
+  values: Record<number, string>
+  setValues: (next: Record<number, string>) => void
+  onApply: (id: number) => void
+  currency: string
+  rates: Record<string, number>
+}): JSX.Element | null {
+  if (rows.length === 0) return null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Category cleanup</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.id} className="grid gap-2 rounded-lg border p-3 text-sm md:grid-cols-[1fr_160px_96px] md:items-center">
+            <div className="min-w-0">
+              <p className="truncate font-medium">{row.description}</p>
+              <p className="text-xs text-muted-foreground">
+                {row.date} - {row.account_name ?? 'No account'} - {formatMoney(row.amount, currency, rates)}
+              </p>
+            </div>
+            <Select
+              value={values[row.id] ?? ''}
+              onValueChange={(value) => setValues({ ...values, [row.id]: value })}
+            >
+              <SelectTrigger className="h-8">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={String(category.id)}>
+                    {category.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="sm" disabled={!values[row.id]} onClick={() => onApply(row.id)}>
+              Apply
+            </Button>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   )
 }
 

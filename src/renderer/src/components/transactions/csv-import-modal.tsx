@@ -35,6 +35,7 @@ export function CsvImportModal({
   const [accountId, setAccountId] = useState('')
   const [importing, setImporting] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [analysis, setAnalysis] = useState<{ total: number; duplicates: number; rows: Array<{ description: string; amount: number; date: string; duplicate: boolean }> } | null>(null)
 
   async function loadPreview(): Promise<void> {
     const data = await window.api.transactions.csvPreview(csvText)
@@ -64,6 +65,14 @@ export function CsvImportModal({
     }
     if (!open) setLoaded(false)
   }, [open, csvText])
+
+  useEffect(() => {
+    if (!open || !loaded || !headers.length) return
+    window.api.transactions.csvAnalyze(csvText, {
+      descriptionCol: Number(descCol), amountCol: Number(amtCol), dateCol: Number(dateCol),
+      delimiter, hasHeader: true, accountId: accountId ? Number(accountId) : undefined
+    }).then((result) => setAnalysis(result as typeof analysis))
+  }, [open, loaded, csvText, descCol, amtCol, dateCol, delimiter, accountId, headers.length])
 
   async function importRows(): Promise<void> {
     setImporting(true)
@@ -192,6 +201,19 @@ export function CsvImportModal({
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {analysis && (
+          <div className="rounded-md border p-3 text-sm">
+            <p className="font-medium">{analysis.total} rows ready · {analysis.duplicates} duplicate{analysis.duplicates === 1 ? '' : 's'} will be skipped</p>
+            <div className="mt-2 max-h-24 space-y-1 overflow-auto text-xs text-muted-foreground">
+              {analysis.rows.slice(0, 8).map((row, index) => (
+                <div key={`${row.date}-${row.description}-${index}`} className="flex justify-between gap-2">
+                  <span className="truncate">{row.date} · {row.description} · {row.amount}</span>
+                  <span className={row.duplicate ? 'text-warning' : 'text-success'}>{row.duplicate ? 'Duplicate' : 'Ready'}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         <Button onClick={importRows} disabled={importing || !headers.length} className="w-full">

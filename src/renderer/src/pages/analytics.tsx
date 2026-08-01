@@ -9,6 +9,7 @@ import { AskAiButton } from '@/components/shared/ask-ai-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SpendingHeatmap } from '@/components/shared/spending-heatmap'
 import { cardHoverVariants } from '@/lib/motion'
+import { ScenarioPlanner } from '@/components/analytics/scenario-planner'
 import {
   BarChart,
   Bar,
@@ -127,6 +128,8 @@ export function AnalyticsPage(): JSX.Element {
           </Button>
         </div>
       </div>
+
+      <ScenarioPlanner />
 
       {biggestMover && (
         <Card className="border-primary/30 bg-primary/5">

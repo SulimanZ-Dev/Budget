@@ -31,6 +31,7 @@ export interface TransactionRowData {
   category_name?: string
   category_color?: string
   category_icon?: string
+  has_splits?: number
   is_recurring: number
   is_unnecessary: number
   member_id?: number
@@ -40,6 +41,8 @@ export interface TransactionRowData {
   transfer_account_id?: number
   transfer_account_name?: string
   notes?: string
+  merchant_name?: string | null
+  reconciled?: number
 }
 
 interface Category {
@@ -179,10 +182,17 @@ export function TransactionRow({
         {icon}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-medium truncate">{t.description}</p>
+        <p className="font-medium truncate">{t.merchant_name || t.description}</p>
         <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-1">
           {new Date(t.date).toLocaleDateString('sv-SE')}
-          {editingCategory ? (
+          {t.has_splits ? (
+            <span
+              className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground"
+              title="Edit category splits in transaction details"
+            >
+              {t.category_name ?? 'Split'}
+            </span>
+          ) : editingCategory ? (
             <Select
               value={String(t.category_id ?? '')}
               onValueChange={(v) => saveCategory(v)}
@@ -216,6 +226,8 @@ export function TransactionRow({
           {t.is_recurring ? <span className="text-info">Recurring</span> : null}
           {accountLabel ? <span>{accountLabel}</span> : null}
           {t.is_unnecessary ? <span className="text-warning">Flagged</span> : null}
+          {t.reconciled ? <span className="text-success">Verified</span> : null}
+          {t.merchant_name && t.merchant_name !== t.description ? <span title={t.description}>Normalized</span> : null}
         </p>
       </div>
       {editingAmount ? (

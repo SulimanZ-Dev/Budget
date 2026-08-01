@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useAppDialog } from '@/components/shared/app-dialog'
-import { Sparkles } from 'lucide-react'
+import { Plus, Sparkles, Trash2 } from 'lucide-react'
 
 interface Category {
   id: number
@@ -44,6 +44,11 @@ export function TransactionModal({
   const [isRecurring, setIsRecurring] = useState(false)
   const [isUnnecessary, setIsUnnecessary] = useState(false)
   const [suggesting, setSuggesting] = useState(false)
+  const [splitEnabled, setSplitEnabled] = useState(false)
+  const [splits, setSplits] = useState<Array<{ categoryId: string; amount: string }>>([
+    { categoryId: '', amount: '' },
+    { categoryId: '', amount: '' }
+  ])
 
   useEffect(() => {
     if (open) {
@@ -87,6 +92,13 @@ export function TransactionModal({
       await dialog.alert('Choose a different destination account for this transfer.', 'Transfer account')
       return
     }
+    const splitRows = splitEnabled
+      ? splits.filter((split) => split.categoryId && Number(split.amount) > 0).map((split) => ({ categoryId: Number(split.categoryId), amount: Number(split.amount) }))
+      : []
+    if (splitEnabled && (splitRows.length < 2 || Math.abs(splitRows.reduce((sum, split) => sum + split.amount, 0) - amt) > 0.01)) {
+      await dialog.alert(`Split amounts must use at least two categories and total ${amt}.`, 'Check split')
+      return
+    }
     try {
       const payload = {
         description,
@@ -94,13 +106,14 @@ export function TransactionModal({
         type,
         accountId: accountId ? parseInt(accountId) : undefined,
         transferAccountId: type === 'transfer' && transferAccountId ? parseInt(transferAccountId) : null,
-        categoryId: categoryId ? parseInt(categoryId) : null,
+        categoryId: splitRows.length > 0 ? null : (categoryId ? parseInt(categoryId) : null),
         date,
         isRecurring,
         isUnnecessary,
         memberId: memberId ? parseInt(memberId) : null,
         notes: notes || null,
-        allowDuplicate
+        allowDuplicate,
+        splits: splitRows
       }
       const result = await window.api.transactions.create(payload)
       if ((result as { duplicate?: boolean } | null)?.duplicate) {
@@ -120,6 +133,8 @@ export function TransactionModal({
       setNotes('')
       setAccountId(accounts[0] ? String(accounts[0].id) : '')
       setTransferAccountId(accounts[1] ? String(accounts[1].id) : '')
+      setSplitEnabled(false)
+      setSplits([{ categoryId: '', amount: '' }, { categoryId: '', amount: '' }])
       onOpenChange(false)
       onSaved?.()
     } catch (error) {
@@ -172,6 +187,35 @@ export function TransactionModal({
               </SelectContent>
             </Select>
           </div>
+          {type === 'expense' && (
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <Label>Split across categories</Label>
+                <Switch checked={splitEnabled} onCheckedChange={setSplitEnabled} />
+              </div>
+              {splitEnabled && (
+                <div className="space-y-2">
+                  {splits.map((split, index) => (
+                    <div key={index} className="grid grid-cols-[1fr_110px_36px] gap-2">
+                      <Select value={split.categoryId} onValueChange={(value) => setSplits((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, categoryId: value } : item))}>
+                        <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
+                        <SelectContent>
+                          {categories.map((category) => <SelectItem key={category.id} value={String(category.id)}>{category.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <Input type="number" min="0" value={split.amount} onChange={(event) => setSplits((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, amount: event.target.value } : item))} placeholder="Amount" />
+                      <Button variant="ghost" size="icon" aria-label="Remove split" disabled={splits.length <= 2} onClick={() => setSplits((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button variant="outline" size="sm" onClick={() => setSplits((current) => [...current, { categoryId: '', amount: '' }])}>
+                    <Plus className="h-4 w-4" /> Add split
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
           <div className="grid gap-2">
             <Label>{type === 'transfer' ? 'From account' : 'Account'}</Label>
             <Select value={accountId} onValueChange={setAccountId}>
@@ -207,21 +251,23 @@ export function TransactionModal({
               </Select>
             </div>
           )}
-          <div className="grid gap-2">
-            <Label>Category</Label>
-            <Select value={categoryId} onValueChange={setCategoryId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select category" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {!splitEnabled && (
+            <div className="grid gap-2">
+              <Label>Category</Label>
+              <Select value={categoryId} onValueChange={setCategoryId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {members.length > 0 && (
             <div className="grid gap-2">
               <Label>Household member</Label>

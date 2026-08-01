@@ -11,7 +11,7 @@ It is designed for private day-to-day budgeting: transactions, accounts, budgets
 - Event-sourced/CQRS transaction write path with undo and projection repair.
 - Account-aware transactions, imports, subscriptions, savings sources, and income sources.
 - Verified with `npm test`, `npm run typecheck`, `npm run build`, and `npm run dist`.
-- Latest installer output: `release\Budget Setup 1.0.0.exe`.
+- Latest installer output: `release\Budget Setup 1.1.0.exe`.
 
 ## Features
 
@@ -25,15 +25,27 @@ It is designed for private day-to-day budgeting: transactions, accounts, budgets
 - Paginated transaction list with filters, search, bulk actions, calendar view, history, undo, CSV export, CSV import, and OFX import.
 - Budget categories with monthly entries, category detail drawer, normal-range bands, and factual variance explanations.
 - Goals with target dates and feasibility planning against projected monthly surplus.
+- Debt payoff tracking per person or company with original amount, paid amount, remaining balance, dated payment history, minimum payments, interest, and snowball/avalanche forecasts.
 - Savings and recurring savings-source workflows.
 - Income sources, recurring income checks, and manual income entries.
 - Subscriptions with recurring billing, account assignment, hold state, tax-deductible marking, and transaction linking.
-- Wealth tracking with snapshots, investment entries, ETF holdings, pension projection, and account-balance snapshot auto-fill.
+- Wealth tracking with snapshots, investment entries, ETF holdings, pension projection, and account-balance snapshot auto-fill. Remaining goal debts are deducted automatically from live net worth and new snapshots.
 - Tax estimator for manual monthly overpayment/underpayment tracking.
 - Accountant/tax review CSV export for deductible subscriptions, income, savings, and selected expense categories.
 - Analytics for summary, month-over-month movement, heatmap, year-over-year view, and break-even.
 - Year-end report and printable year summary.
 - Habits and monthly mood tracking.
+
+### Planning And Review
+
+- Smart monthly review, unusual transaction detection, recurring-cost changes, due-date warnings, and subscription price history.
+- Bank reconciliation with statement balance comparison and transaction verification.
+- Cash-flow calendar, month-end expense forecast, budget suggestions, and optional category-budget rollover.
+- Scenario planner for income, expense, and recurring-cost changes.
+- Transaction splits, tags, shared expenses, receipt/PDF attachments, refund links, and automatic transfer-pair detection.
+- Merchant normalization, saved transaction filters, uncategorized-transaction cleanup, and financial alerts.
+- Month locks, data-quality status, change history with restore, and backup verification.
+- Monthly and yearly financial reports in CSV and PDF.
 
 ### Automation And Intelligence
 
@@ -116,7 +128,7 @@ Outputs:
 
 | Artifact | Path |
 | --- | --- |
-| Installer | `release\Budget Setup 1.0.0.exe` |
+| Installer | `release\Budget Setup 1.1.0.exe` |
 | Unpacked executable | `release\win-unpacked\Budget.exe` |
 | Build fingerprint | `release\build-fingerprint.json` |
 
@@ -162,7 +174,7 @@ There is no master-password recovery. If the master password is lost, the encryp
 | Machine key fallback | `%APPDATA%\BudgetApp\.machine_key` |
 | User plugins | `%APPDATA%\BudgetApp\plugins\` |
 | Manual database exports | User-selected path |
-| Installer output | `release\Budget Setup 1.0.0.exe` |
+| Installer output | `release\Budget Setup 1.1.0.exe` |
 
 The Privacy page in the app also shows the active app-data path and encrypted database path.
 
@@ -285,8 +297,8 @@ npm run dist
 
 Expected current test state:
 
-- 5 Vitest files passing.
-- 23 tests passing.
+- 7 Vitest files passing.
+- 33 tests passing.
 - Production build succeeds.
 - Windows installer is generated in `release\`.
 

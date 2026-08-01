@@ -21,6 +21,7 @@ import { formatMoney, formatDate } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 import { addMonths } from 'date-fns'
 import { useAppDialog } from '@/components/shared/app-dialog'
+import { DebtPlanner } from '@/components/goals/debt-planner'
 
 interface Goal {
   id: number
@@ -31,6 +32,7 @@ interface Goal {
   target_date?: string
   interest_rate?: number
   monthly_payment?: number
+  creditor?: string
   notes?: string
 }
 
@@ -46,6 +48,14 @@ interface CashFlowForecastRow {
   projectedBalance: number
 }
 
+interface GoalForecast {
+  id: number
+  projectedDate: string | null
+  months: number | null
+  monthlyAmount: number
+  status: 'complete' | 'projected' | 'needs_monthly_amount'
+}
+
 function statusLabel(progress: number): { text: string; color: string } {
   if (progress >= 0.9) return { text: 'Almost there!', color: 'text-success' }
   if (progress >= 0.5) return { text: 'On track', color: 'text-info' }
@@ -53,10 +63,11 @@ function statusLabel(progress: number): { text: string; color: string } {
 }
 
 export function GoalsPage(): JSX.Element {
-  const { profile, selectedMonth, rates } = useAppStore()
+  const { profile, selectedMonth, rates, refreshTrigger, triggerRefresh } = useAppStore()
   const dialog = useAppDialog()
   const [goals, setGoals] = useState<Goal[]>([])
   const [monthlySurplus, setMonthlySurplus] = useState(0)
+  const [goalForecasts, setGoalForecasts] = useState<Record<number, GoalForecast>>({})
   const [modalOpen, setModalOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null)
   const [form, setForm] = useState({
@@ -67,6 +78,7 @@ export function GoalsPage(): JSX.Element {
     targetDate: '',
     interestRate: '',
     monthlyPayment: '',
+    creditor: '',
     notes: ''
   })
 
@@ -78,11 +90,13 @@ export function GoalsPage(): JSX.Element {
         window.api.dashboard.cashFlowForecast(profile.year, selectedMonth)
       ])
       setGoals(goalRows)
+      const goalForecastRows = await window.api.goals.forecast() as GoalForecast[]
+      setGoalForecasts(Object.fromEntries(goalForecastRows.map((row) => [row.id, row])))
       const forecast = (forecastRows as CashFlowForecastRow[])[0]
       setMonthlySurplus(Math.max(0, forecast?.projectedBalance ?? 0))
     }
     load()
-  }, [profile.year, selectedMonth])
+  }, [profile.year, selectedMonth, refreshTrigger])
 
   async function removeGoal(id: number): Promise<void> {
     if (!await dialog.confirm('Delete this goal?', {
@@ -92,6 +106,7 @@ export function GoalsPage(): JSX.Element {
     })) return
     await window.api.goals.delete(id)
     setGoals(await window.api.goals.list())
+    triggerRefresh()
   }
 
   function openEditModal(goal: Goal): void {
@@ -104,20 +119,32 @@ export function GoalsPage(): JSX.Element {
       targetDate: goal.target_date ?? '',
       interestRate: goal.interest_rate ? String(goal.interest_rate) : '',
       monthlyPayment: goal.monthly_payment ? String(goal.monthly_payment) : '',
+      creditor: goal.creditor ?? '',
       notes: goal.notes || ''
     })
     setModalOpen(true)
   }
 
   async function save(): Promise<void> {
+    const targetAmount = parseFloat(form.targetAmount)
+    const currentAmount = parseFloat(form.currentAmount) || 0
+    if (!form.name.trim() || !Number.isFinite(targetAmount) || targetAmount <= 0) {
+      await dialog.alert('Enter a name and an amount greater than zero.', 'Check goal')
+      return
+    }
+    if (form.type === 'debt' && (!form.creditor.trim() || currentAmount < 0 || currentAmount > targetAmount)) {
+      await dialog.alert('Enter who is owed and keep the amount already paid between zero and the original debt.', 'Check debt')
+      return
+    }
     const goalData = {
-      name: form.name,
+      name: form.name.trim(),
       type: form.type,
-      targetAmount: parseFloat(form.targetAmount),
-      currentAmount: parseFloat(form.currentAmount) || 0,
+      targetAmount,
+      currentAmount,
       targetDate: form.targetDate || undefined,
       interestRate: form.interestRate ? parseFloat(form.interestRate) : undefined,
       monthlyPayment: form.monthlyPayment ? parseFloat(form.monthlyPayment) : undefined,
+      creditor: form.type === 'debt' ? form.creditor.trim() || form.name.trim() : undefined,
       notes: form.notes || undefined
     }
     if (editingGoal) {
@@ -135,9 +162,11 @@ export function GoalsPage(): JSX.Element {
       targetDate: '',
       interestRate: '',
       monthlyPayment: '',
+      creditor: '',
       notes: ''
     })
     setGoals(await window.api.goals.list())
+    triggerRefresh()
   }
 
   function closeModal(): void {
@@ -151,23 +180,9 @@ export function GoalsPage(): JSX.Element {
       targetDate: '',
       interestRate: '',
       monthlyPayment: '',
+      creditor: '',
       notes: ''
     })
-  }
-
-  function debtPayoffMonths(g: Goal): number | null {
-    if (g.type !== 'debt' || !g.monthly_payment || g.monthly_payment <= 0) return null
-    const remaining = g.target_amount - g.current_amount
-    if (remaining <= 0) return 0
-    const rate = (g.interest_rate ?? 0) / 100 / 12
-    if (rate === 0) return Math.ceil(remaining / g.monthly_payment)
-    let balance = remaining
-    let months = 0
-    while (balance > 0 && months < 600) {
-      balance = balance * (1 + rate) - g.monthly_payment!
-      months++
-    }
-    return months
   }
 
   function monthsUntil(targetDate?: string): number | null {
@@ -242,6 +257,8 @@ export function GoalsPage(): JSX.Element {
     destructive: 'bg-destructive',
     info: 'bg-info'
   }
+  const visibleGoals = goals.filter((goal) => goal.type !== 'debt' || goal.target_amount > 0)
+  const nonDebtGoals = visibleGoals.filter((goal) => goal.type !== 'debt')
 
   return (
     <div className="space-y-6 p-6">
@@ -259,7 +276,15 @@ export function GoalsPage(): JSX.Element {
         </div>
       </div>
 
-      {goals.length === 0 ? (
+      <DebtPlanner
+        onEditDebt={(id) => {
+          const goal = goals.find((item) => item.id === id)
+          if (goal) openEditModal(goal)
+        }}
+        onDeleteDebt={removeGoal}
+      />
+
+      {visibleGoals.length === 0 ? (
         <EmptyState
           icon={Target}
           title="No goals yet"
@@ -269,7 +294,7 @@ export function GoalsPage(): JSX.Element {
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {goals.map((g, i) => {
+          {nonDebtGoals.map((g, i) => {
             const progress = g.target_amount > 0 ? (g.current_amount / g.target_amount) * 100 : 0
             const status = statusLabel(progress / 100)
             const remaining = g.target_amount - g.current_amount
@@ -280,6 +305,7 @@ export function GoalsPage(): JSX.Element {
             const projected =
               monthsLeft != null ? formatDate(addMonths(new Date(), monthsLeft), profile.locale) : null
             const plan = feasibility(g)
+            const forecast = goalForecasts[g.id]
 
             return (
               <motion.div
@@ -356,10 +382,20 @@ export function GoalsPage(): JSX.Element {
                       </div>
                       <p className="mt-2 text-xs text-muted-foreground">{plan.detail}</p>
                     </div>
-                    {g.type === 'debt' && debtPayoffMonths(g) != null && (
-                      <p className="mt-2 text-xs text-info">
-                        Payoff in ~{debtPayoffMonths(g)} months at current payment rate
-                      </p>
+                    {forecast && (
+                      <div className="mt-3 rounded-lg border bg-card p-3 text-xs">
+                        {forecast.status === 'complete' ? (
+                          <p className="font-medium text-success">Goal is already funded.</p>
+                        ) : forecast.projectedDate ? (
+                          <p>
+                            At {formatMoney(forecast.monthlyAmount, profile.displayCurrency, rates)}/month, projected date is{' '}
+                            <span className="font-medium">{forecast.projectedDate}</span>
+                            {forecast.months !== null ? ` (${forecast.months} months)` : ''}.
+                          </p>
+                        ) : (
+                          <p className="text-muted-foreground">Add a monthly payment or savings source to forecast this goal.</p>
+                        )}
+                      </div>
                     )}
                     {g.type === 'emergency' && (
                       <p className="mt-2 text-xs text-muted-foreground">
@@ -401,12 +437,12 @@ export function GoalsPage(): JSX.Element {
           </DialogHeader>
           <div className="grid gap-4">
             <div className="grid gap-2">
-              <Label>Name</Label>
+              <Label>{form.type === 'debt' ? 'Debt name' : 'Name'}</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label>Type</Label>
-              <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+              <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })} disabled={editingGoal !== null}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -419,9 +455,15 @@ export function GoalsPage(): JSX.Element {
                 </SelectContent>
               </Select>
             </div>
+            {form.type === 'debt' && (
+              <div className="grid gap-2">
+                <Label>Person or company owed</Label>
+                <Input value={form.creditor} onChange={(e) => setForm({ ...form, creditor: e.target.value })} placeholder="Bank, company, family member..." />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label>Target (SEK)</Label>
+                <Label>{form.type === 'debt' ? 'Original debt (SEK)' : 'Target (SEK)'}</Label>
                 <Input
                   type="number"
                   value={form.targetAmount}
@@ -430,7 +472,7 @@ export function GoalsPage(): JSX.Element {
               </div>
               {['savings', 'emergency', 'fire'].includes(form.type) ? (
                 <div className="grid gap-2">
-                  <Label>Current (SEK)</Label>
+                  <Label>{form.type === 'debt' ? 'Already paid (SEK)' : 'Current (SEK)'}</Label>
                   <div className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm" tabIndex={-1}>
                     Auto-calculated from savings transactions
                   </div>
@@ -447,7 +489,7 @@ export function GoalsPage(): JSX.Element {
               )}
             </div>
             <div className="grid gap-2">
-              <Label>Target date</Label>
+              <Label>{form.type === 'debt' ? 'Desired payoff date' : 'Target date'}</Label>
               <Input
                 type="date"
                 value={form.targetDate}

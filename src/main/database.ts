@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { existsSync, mkdirSync } from 'fs'
+import { runFinancialToolsMigration } from './db/financial-tools-schema'
 
 let db: Database.Database | null = null
 
@@ -230,6 +231,7 @@ function runMigrations(database: Database.Database): void {
       target_date TEXT,
       interest_rate REAL,
       monthly_payment REAL,
+      creditor TEXT,
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
@@ -416,6 +418,7 @@ function runMigrations(database: Database.Database): void {
   }
 
   runAccountMigration(database)
+  runFinancialToolsMigration(database)
 
   // Migration: Add goal_type column to categories and create default categories
   try {

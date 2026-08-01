@@ -1,5 +1,5 @@
 import { ipcMain, dialog, BrowserWindow, app } from 'electron'
-import { copyFileSync, readFileSync, writeFileSync, existsSync } from 'fs'
+import { copyFileSync, readFileSync, writeFileSync, existsSync, rmSync } from 'fs'
 import { join } from 'path'
 import { getDatabase, getDbPath, isDatabaseInitialized } from '../database-encrypted'
 import { fetchExchangeRates, getCachedRates } from '../services/currency'
@@ -22,6 +22,8 @@ import {
   type TransactionRow
 } from '../services/csv-import'
 import { parseOfx } from '../services/ofx-import'
+import { registerFinancialToolsHandlers } from './financial-tools-handlers'
+import { assertYearMonthOpen } from '../services/month-lock'
 import {
   signBudgetEntry,
   signGoal,
@@ -53,6 +55,17 @@ type TransactionFilters = Record<string, unknown>
 type ForecastTier = 'success' | 'warning' | 'destructive'
 
 const DATA_TABLES = [
+  'debt_payments',
+  'transaction_attachments',
+  'transaction_tags',
+  'transaction_splits',
+  'transaction_links',
+  'shared_expenses',
+  'account_reconciliations',
+  'budget_rollover',
+  'saved_filters',
+  'merchant_aliases',
+  'closed_months',
   'transaction_events',
   'budget_entries',
   'categorization_rules',
@@ -72,6 +85,7 @@ const DATA_TABLES = [
   'household_members',
   'currency_cache',
   'integrity_warnings',
+  'tags',
   'categories',
   'accounts'
 ] as const
@@ -104,6 +118,22 @@ function getNow(): Date {
 function roundCurrency(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.round(value * 100) / 100
+}
+
+function isoDate(date: Date): string {
+  return date.toISOString().slice(0, 10)
+}
+
+function daysUntil(dateStr?: string | null): number | null {
+  if (!dateStr) return null
+  const target = new Date(`${dateStr}T00:00:00`)
+  if (Number.isNaN(target.getTime())) return null
+  const today = new Date(`${isoDate(getNow())}T00:00:00`)
+  return Math.ceil((target.getTime() - today.getTime()) / 86400000)
+}
+
+function previousYearMonth(year: number, month: number): { year: number; month: number } {
+  return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 }
 }
 
 function csvCell(value: unknown): string {
@@ -256,7 +286,8 @@ function buildTransactionWhere(filters?: TransactionFilters): { sql: string; par
   }
 
   if (filters?.categoryId) {
-    sql += ' AND t.category_id = ?'
+    sql += ' AND (t.category_id = ? OR EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.transaction_id=t.id AND ts.category_id=?))'
+    params.push(filters.categoryId)
     params.push(filters.categoryId)
   }
   if (filters?.type) {
@@ -271,8 +302,13 @@ function buildTransactionWhere(filters?: TransactionFilters): { sql: string; par
     sql += ' AND t.is_unnecessary = 1'
   }
   if (filters?.search) {
-    sql += ' AND t.description LIKE ? COLLATE NOCASE'
-    params.push(`%${filters.search}%`)
+    sql += ` AND (t.description LIKE ? COLLATE NOCASE OR t.merchant_name LIKE ? COLLATE NOCASE
+      OR t.notes LIKE ? COLLATE NOCASE OR EXISTS (
+        SELECT 1 FROM transaction_tags tt JOIN tags tg ON tg.id=tt.tag_id
+        WHERE tt.transaction_id=t.id AND tg.name LIKE ? COLLATE NOCASE
+      ))`
+    const pattern = `%${filters.search}%`
+    params.push(pattern, pattern, pattern, pattern)
   }
   if (filters?.recurring === true) {
     sql += ' AND t.is_recurring = 1'
@@ -280,6 +316,28 @@ function buildTransactionWhere(filters?: TransactionFilters): { sql: string; par
   if (filters?.recurring === false) {
     sql += ' AND t.is_recurring = 0'
   }
+  if (Number.isFinite(Number(filters?.minAmount))) {
+    sql += ' AND t.amount >= ?'
+    params.push(Number(filters?.minAmount))
+  }
+  if (Number.isFinite(Number(filters?.maxAmount))) {
+    sql += ' AND t.amount <= ?'
+    params.push(Number(filters?.maxAmount))
+  }
+  if (filters?.dateFrom) {
+    sql += ' AND t.date >= ?'
+    params.push(filters.dateFrom)
+  }
+  if (filters?.dateTo) {
+    sql += ' AND t.date <= ?'
+    params.push(filters.dateTo)
+  }
+  if (filters?.tagId) {
+    sql += ' AND EXISTS (SELECT 1 FROM transaction_tags tt WHERE tt.transaction_id=t.id AND tt.tag_id=?)'
+    params.push(filters.tagId)
+  }
+  if (filters?.reconciled === true) sql += ' AND COALESCE(t.reconciled,0)=1'
+  if (filters?.reconciled === false) sql += ' AND COALESCE(t.reconciled,0)=0'
 
   return { sql, params }
 }
@@ -336,6 +394,24 @@ function accountTransactionBalanceExpression(): string {
       ELSE -t.amount
     END
   `
+}
+
+function scaleTransactionSplits(transactionId: number): void {
+  const database = getDatabase()
+  const transaction = database.prepare('SELECT amount FROM transactions WHERE id=?').get(transactionId) as { amount: number } | undefined
+  const splits = database.prepare('SELECT id,amount FROM transaction_splits WHERE transaction_id=? ORDER BY id').all(transactionId) as Array<{ id: number; amount: number }>
+  if (!transaction || splits.length === 0) return
+  const currentTotal = splits.reduce((sum, split) => sum + split.amount, 0)
+  if (currentTotal <= 0 || Math.abs(currentTotal - transaction.amount) <= 0.01) return
+  let allocated = 0
+  const update = database.prepare('UPDATE transaction_splits SET amount=? WHERE id=?')
+  splits.forEach((split, index) => {
+    const amount = index === splits.length - 1
+      ? roundCurrency(transaction.amount - allocated)
+      : roundCurrency(transaction.amount * (split.amount / currentTotal))
+    allocated += amount
+    update.run(amount, split.id)
+  })
 }
 
 export function registerIpcHandlers(getWindow: GetWindow): void {
@@ -446,6 +522,52 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (activeCount.count <= 1) throw new Error('At least one active account is required')
     database.prepare('UPDATE accounts SET is_archived = 1 WHERE id = ?').run(id)
     return true
+  })
+
+  ipcMain.handle('accounts:explainBalance', (_, id: number) => {
+    const account = db().prepare('SELECT id, name, opening_balance FROM accounts WHERE id = ?').get(id) as
+      | { id: number; name: string; opening_balance: number }
+      | undefined
+    if (!account) return null
+    const transactionBalance = accountTransactionBalanceExpression()
+    const totals = db()
+      .prepare(
+         `SELECT
+           COALESCE(SUM(${transactionBalance}), 0) as activity,
+           COALESCE(SUM(CASE WHEN t.type = 'income' AND t.account_id = ? THEN t.amount ELSE 0 END), 0) as income,
+           COALESCE(SUM(CASE WHEN t.type = 'expense' AND t.account_id = ? THEN t.amount ELSE 0 END), 0) as expenses,
+           COALESCE(SUM(CASE WHEN t.type = 'savings' AND t.account_id = ? THEN t.amount ELSE 0 END), 0) as savings,
+           COALESCE(SUM(CASE WHEN t.type = 'transfer' AND t.account_id = ? THEN -t.amount WHEN t.type = 'transfer' AND t.transfer_account_id = ? THEN t.amount ELSE 0 END), 0) as transfers
+         FROM accounts a
+         LEFT JOIN transactions t ON t.account_id = a.id OR (t.type = 'transfer' AND t.transfer_account_id = a.id)
+         WHERE a.id = ?`
+      )
+      .get(id, id, id, id, id, id) as {
+        activity: number
+        income: number
+        expenses: number
+        savings: number
+        transfers: number
+      }
+    const transactions = db()
+      .prepare(
+        `SELECT t.id, t.description, t.amount, t.type, t.date, t.account_id, t.transfer_account_id,
+                c.name as category_name
+         FROM transactions t
+         LEFT JOIN categories c ON t.category_id = c.id
+         WHERE t.account_id = ? OR (t.type = 'transfer' AND t.transfer_account_id = ?)
+         ORDER BY t.date DESC, t.id DESC
+         LIMIT 50`
+      )
+      .all(id, id)
+    return {
+      account,
+      openingBalance: account.opening_balance ?? 0,
+      activityBalance: totals.activity,
+      balance: (account.opening_balance ?? 0) + totals.activity,
+      totals,
+      transactions
+    }
   })
 
   ipcMain.handle('scheduler:getConfig', () => getSchedulerConfig())
@@ -628,15 +750,34 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
   // Budget entries
   ipcMain.handle('budget:getMonth', (_, year: number, month: number) => {
+    const previous = previousYearMonth(year, month)
     return db()
       .prepare(
         `SELECT c.id as category_id, c.name, c.icon, c.color, c.is_fixed,
-         COALESCE(be.amount, c.budget_amount, 0) as amount, be.notes, be.id as entry_id
+         COALESCE(be.amount, c.budget_amount, 0) as base_amount,
+         CASE WHEN COALESCE(br.enabled,0)=1 THEN MAX(0,
+           COALESCE(pbe.amount, c.budget_amount, 0) - COALESCE((
+             SELECT SUM(tca.amount) FROM transaction_category_amounts tca
+             WHERE tca.category_id=c.id AND tca.type='expense'
+               AND strftime('%Y',tca.date)=? AND strftime('%m',tca.date)=?
+           ),0)) ELSE 0 END as rollover,
+         COALESCE(be.amount, c.budget_amount, 0) + CASE WHEN COALESCE(br.enabled,0)=1 THEN MAX(0,
+           COALESCE(pbe.amount, c.budget_amount, 0) - COALESCE((
+             SELECT SUM(tca.amount) FROM transaction_category_amounts tca
+             WHERE tca.category_id=c.id AND tca.type='expense'
+               AND strftime('%Y',tca.date)=? AND strftime('%m',tca.date)=?
+           ),0)) ELSE 0 END as amount,
+         COALESCE((SELECT SUM(tca.amount) FROM transaction_category_amounts tca
+           WHERE tca.category_id=c.id AND tca.type='expense'
+             AND strftime('%Y',tca.date)=? AND strftime('%m',tca.date)=?),0) as spent,
+         COALESCE(br.enabled,0) as rollover_enabled, be.notes, be.id as entry_id
          FROM categories c
          LEFT JOIN budget_entries be ON be.category_id = c.id AND be.year = ? AND be.month = ?
+         LEFT JOIN budget_entries pbe ON pbe.category_id = c.id AND pbe.year = ? AND pbe.month = ?
+         LEFT JOIN budget_rollover br ON br.category_id=c.id
          ORDER BY c.sort_order, c.name`
       )
-      .all(year, month)
+      .all(String(previous.year), String(previous.month).padStart(2, '0'), String(previous.year), String(previous.month).padStart(2, '0'), String(year), String(month).padStart(2, '0'), year, month, previous.year, previous.month)
   })
   ipcMain.handle('budget:categoryDetail', (_, categoryId: number, year: number, month: number) => {
     const ym = String(month).padStart(2, '0')
@@ -646,24 +787,24 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
     const history = db()
       .prepare(
-        `SELECT CAST(strftime('%m', t.date) AS INTEGER) as month,
-         COALESCE(SUM(CASE WHEN t.type='income' THEN -t.amount ELSE t.amount END), 0) as spent
-         FROM transactions t
-         WHERE t.category_id = ? AND t.type IN ('expense','income','transfer') AND strftime('%Y', t.date) = ?
+        `SELECT CAST(strftime('%m', tca.date) AS INTEGER) as month,
+         COALESCE(SUM(CASE WHEN tca.type='income' THEN -tca.amount ELSE tca.amount END), 0) as spent
+         FROM transaction_category_amounts tca
+         WHERE tca.category_id = ? AND tca.type IN ('expense','income','transfer') AND strftime('%Y', tca.date) = ?
          GROUP BY month ORDER BY month`
       )
       .all(categoryId, String(year)) as { month: number; spent: number }[]
 
     const currentSpent = db()
       .prepare(
-        `SELECT COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END), 0) as v FROM transactions
+        `SELECT COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END), 0) as v FROM transaction_category_amounts
          WHERE category_id = ? AND type IN ('expense','income','transfer') AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`
       )
       .get(categoryId, String(year), ym) as { v: number }
 
     const prevSpent = db()
       .prepare(
-        `SELECT COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END), 0) as v FROM transactions
+        `SELECT COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END), 0) as v FROM transaction_category_amounts
          WHERE category_id = ? AND type IN ('expense','income','transfer') AND strftime('%Y', date) = ? AND strftime('%m', date) = ?`
       )
       .get(categoryId, String(prevYear), prevYm) as { v: number }
@@ -674,7 +815,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const ytdAvg = db()
       .prepare(
         `SELECT COALESCE(AVG(monthly), 0) as avg FROM (
-           SELECT SUM(CASE WHEN type='income' THEN -amount ELSE amount END) as monthly FROM transactions
+           SELECT SUM(CASE WHEN type='income' THEN -amount ELSE amount END) as monthly FROM transaction_category_amounts
            WHERE category_id = ? AND type IN ('expense','income','transfer') AND strftime('%Y', date) = ?
            GROUP BY strftime('%m', date)
          )`
@@ -683,7 +824,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
     const prevYearSpent = db()
       .prepare(
-        `SELECT COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END), 0) as v FROM transactions
+        `SELECT COALESCE(SUM(CASE WHEN type='income' THEN -amount ELSE amount END), 0) as v FROM transaction_category_amounts
          WHERE category_id = ? AND type IN ('expense','income','transfer') AND strftime('%Y', date) = ?`
       )
       .get(categoryId, String(year - 1)) as { v: number }
@@ -692,10 +833,11 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       .prepare(
         `SELECT t.*, c.name as category_name FROM transactions t
          LEFT JOIN categories c ON t.category_id = c.id
-         WHERE t.category_id = ? AND strftime('%Y', t.date) = ? AND strftime('%m', t.date) = ?
+         WHERE (t.category_id = ? OR EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id=t.id AND s.category_id=?))
+           AND strftime('%Y', t.date) = ? AND strftime('%m', t.date) = ?
          ORDER BY t.date DESC`
       )
-      .all(categoryId, String(year), ym)
+      .all(categoryId, categoryId, String(year), ym)
 
     const notes = db()
       .prepare('SELECT notes FROM budget_entries WHERE category_id = ? AND year = ? AND month = ?')
@@ -714,6 +856,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     }
   })
   ipcMain.handle('budget:setEntry', (_, data) => {
+    assertYearMonthOpen(Number(data.year), Number(data.month))
     const database = db()
     const tx = database.transaction((txData) => {
       // Compute HMAC signature
@@ -761,7 +904,10 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
   // Transactions
   ipcMain.handle('transactions:list', (_, filters?: Record<string, unknown>) => {
-    let sql = `SELECT t.*, c.name as category_name, c.icon as category_icon, c.color as category_color,
+    let sql = `SELECT t.*,
+               COALESCE((SELECT group_concat(sc.name, ' + ') FROM transaction_splits ts JOIN categories sc ON sc.id=ts.category_id WHERE ts.transaction_id=t.id), c.name) as category_name,
+               EXISTS(SELECT 1 FROM transaction_splits ts WHERE ts.transaction_id=t.id) as has_splits,
+               c.icon as category_icon, c.color as category_color,
                m.name as member_name, a.name as account_name, a.type as account_type, a.currency as account_currency,
                ta.name as transfer_account_name
                FROM transactions t
@@ -819,6 +965,34 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return row
   })
 
+  ipcMain.handle('transactions:uncategorized', (_, year?: number, month?: number) => {
+    const params: unknown[] = []
+    let where = "WHERE t.category_id IS NULL AND t.type = 'expense' AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id=t.id)"
+    if (year) {
+      where += " AND strftime('%Y', t.date) = ?"
+      params.push(String(year))
+    }
+    if (month) {
+      where += " AND strftime('%m', t.date) = ?"
+      params.push(String(month).padStart(2, '0'))
+    }
+    return db()
+      .prepare(
+        `SELECT t.id, t.description, t.amount, t.date, t.type, a.name as account_name
+         FROM transactions t
+         LEFT JOIN accounts a ON t.account_id = a.id
+         ${where}
+         ORDER BY t.date DESC, t.id DESC
+         LIMIT 25`
+      )
+      .all(...params)
+  })
+
+  ipcMain.handle('transactions:categorize', (_, id: number, categoryId: number) => {
+    recategorizeTransaction(id, categoryId)
+    return true
+  })
+
   // Use command pattern for transaction creation
   ipcMain.handle('transactions:create', (_, tx) => {
     if (!Number.isFinite(tx.amount) || tx.amount <= 0) {
@@ -827,12 +1001,18 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     if (!tx.description?.trim()) {
       throw new Error('Description is required')
     }
+    const splitRows = Array.isArray(tx.splits) ? tx.splits : []
     // Auto-assign savings category for savings transactions
     let savingsCategoryId: number | null = null
     if (tx.type === 'savings') {
       savingsCategoryId = getSavingsCategoryId(db())
     }
-    const assignedCategoryId = tx.type === 'savings' && !tx.categoryId ? savingsCategoryId : (tx.categoryId ?? null)
+    const ruleCategoryId = !tx.categoryId && splitRows.length === 0
+      ? matchingRuleCategoryId({ description: tx.description, amount: tx.amount, type: tx.type, category_id: null }, { includeFutureOnly: false }, db())
+      : null
+    const assignedCategoryId = splitRows.length > 0
+      ? null
+      : (tx.type === 'savings' && !tx.categoryId ? savingsCategoryId : (tx.categoryId ?? ruleCategoryId ?? null))
     const accountId = normalizeAccountId(tx.accountId)
     const transferAccountId = tx.type === 'transfer' && tx.transferAccountId
       ? normalizeAccountId(tx.transferAccountId)
@@ -856,6 +1036,20 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       }
     }
 
+    if (splitRows.length > 0) {
+      const splitTotal = roundCurrency(splitRows.reduce((sum: number, split: { amount: number }) => sum + Number(split.amount || 0), 0))
+      if (Math.abs(splitTotal - roundCurrency(tx.amount)) > 0.01) throw new Error(`Split amounts must total ${roundCurrency(tx.amount)}.`)
+      if (new Set(splitRows.map((split: { categoryId: number }) => split.categoryId)).size !== splitRows.length) {
+        throw new Error('Each split must use a different category.')
+      }
+      const categoryExists = db().prepare('SELECT 1 FROM categories WHERE id = ?')
+      for (const split of splitRows) {
+        if (!Number.isInteger(split.categoryId) || !Number.isFinite(split.amount) || split.amount <= 0 || !categoryExists.get(split.categoryId)) {
+          throw new Error('Each split must use a valid category and a positive amount.')
+        }
+      }
+    }
+
     const result = createTransaction({
       description: tx.description,
       amount: tx.amount,
@@ -869,6 +1063,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       member_id: tx.memberId ?? null,
       notes: tx.notes ?? null
     })
+    const alias = db().prepare(`SELECT merchant_name FROM merchant_aliases WHERE lower(?) LIKE '%' || lower(pattern) || '%' ORDER BY length(pattern) DESC LIMIT 1`)
+      .get(tx.description) as { merchant_name: string } | undefined
+    if (alias) db().prepare('UPDATE transactions SET merchant_name=? WHERE id=?').run(alias.merchant_name, result.id)
+    if (splitRows.length > 0) {
+      const insertSplit = db().prepare('INSERT INTO transaction_splits (transaction_id,category_id,amount) VALUES (?,?,?)')
+      for (const split of splitRows) insertSplit.run(result.id, split.categoryId, roundCurrency(split.amount))
+    }
     
     // If recurring, auto-create subscription (non-savings) or savings source (savings)
     if (tx.isRecurring) {
@@ -935,6 +1136,12 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       member_id: tx.memberId !== undefined ? tx.memberId : undefined,
       notes: tx.notes !== undefined ? tx.notes : undefined
     })
+    if (tx.amount !== undefined) scaleTransactionSplits(id)
+    if (tx.description !== undefined) {
+      const alias = db().prepare(`SELECT merchant_name FROM merchant_aliases WHERE lower(?) LIKE '%' || lower(pattern) || '%' ORDER BY length(pattern) DESC LIMIT 1`)
+        .get(tx.description) as { merchant_name: string } | undefined
+      db().prepare('UPDATE transactions SET merchant_name=? WHERE id=?').run(alias?.merchant_name ?? null, id)
+    }
 
     const description = tx.description ?? current.description
     const amount = tx.amount !== undefined && nextType === 'income' ? Math.abs(tx.amount) : (tx.amount ?? current.amount)
@@ -1044,11 +1251,31 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return { ...preview, guessed }
   })
 
+  ipcMain.handle('transactions:csvAnalyze', (_, csv: string, mapping: CsvMapping & { accountId?: number }) => {
+    const rows = importTransactionsFromCsv(csv, mapping)
+    const accountId = normalizeAccountId(mapping?.accountId)
+    const analyzed = rows.map((row) => {
+      const type = row.type === 'income' || row.type === 'transfer' ? row.type : 'expense'
+      const categoryId = matchingRuleCategoryId(row, { includeFutureOnly: true }, db())
+      return {
+        ...row,
+        type,
+        categoryId,
+        duplicate: findDuplicateTransactions({
+          description: row.description, amount: row.amount, type,
+          account_id: accountId, transfer_account_id: null, date: row.date
+        }).length > 0
+      }
+    })
+    return { rows: analyzed.slice(0, 100), total: analyzed.length, duplicates: analyzed.filter((row) => row.duplicate).length }
+  })
+
   // CSV export
   ipcMain.handle('transactions:exportCsv', () => {
     const rows = db()
       .prepare(
-        `SELECT t.description, t.amount, t.date, t.type, c.name as category_name,
+        `SELECT t.description, t.amount, t.date, t.type,
+                COALESCE((SELECT group_concat(sc.name, ' + ') FROM transaction_splits ts JOIN categories sc ON sc.id=ts.category_id WHERE ts.transaction_id=t.id), c.name) as category_name,
                 a.name as account_name, ta.name as transfer_account_name
          FROM transactions t
          LEFT JOIN categories c ON t.category_id = c.id
@@ -1101,7 +1328,9 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
   
   ipcMain.handle('transactions:undo', (_, id: number) => {
-    return undoLastChange(id)
+    const result = undoLastChange(id)
+    if (result) scaleTransactionSplits(id)
+    return result
   })
 
   // Goals
@@ -1114,7 +1343,10 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       target_amount: number
     }>
 
-    return goals.map((g) => ({ ...g, current_amount: getGoalCurrentAmount(db(), g.type) ?? g.current_amount }))
+    return goals.map((g) => ({
+      ...g,
+      current_amount: g.type === 'debt' ? g.current_amount : (getGoalCurrentAmount(db(), g.type) ?? g.current_amount)
+    }))
   })
 
   ipcMain.handle('goals:autoCreateFromCategories', () => {
@@ -1128,6 +1360,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const existingTypes = new Set(existingGoals.map((g) => g.type))
 
     for (const cat of categories) {
+      if (cat.goal_type === 'debt') continue
       if (!existingTypes.has(cat.goal_type)) {
         let targetAmount = 0
         let notes = ''
@@ -1171,38 +1404,64 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return true
   })
   ipcMain.handle('goals:create', (_, goal) => {
+    const targetAmount = Math.max(0, Number(goal.targetAmount) || 0)
+    const currentAmount = Math.max(0, Math.min(targetAmount, Number(goal.currentAmount) || 0))
+    const hmac = signGoal({
+      name: goal.name,
+      type: goal.type,
+      target_amount: targetAmount,
+      current_amount: currentAmount,
+      target_date: goal.targetDate ?? null
+    })
     const r = db()
       .prepare(
-        `INSERT INTO goals (name, type, target_amount, current_amount, target_date, interest_rate, monthly_payment, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO goals (name, type, target_amount, current_amount, target_date, interest_rate, monthly_payment, creditor, notes, hmac)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         goal.name,
         goal.type,
-        goal.targetAmount,
-        goal.currentAmount ?? 0,
+        targetAmount,
+        currentAmount,
         goal.targetDate,
         goal.interestRate,
         goal.monthlyPayment,
-        goal.notes
+        goal.creditor?.trim() || null,
+        goal.notes,
+        hmac
       )
     return { id: Number(r.lastInsertRowid) }
   })
   ipcMain.handle('goals:update', (_, id: number, goal) => {
+    const existing = db().prepare('SELECT type FROM goals WHERE id=?').get(id) as { type: string } | undefined
+    if (!existing) throw new Error('Goal not found')
+    const trackedPayments = db().prepare('SELECT COALESCE(SUM(amount),0) AS total FROM debt_payments WHERE goal_id=?').get(id) as { total: number }
+    if (trackedPayments.total > 0 && goal.type !== 'debt') throw new Error('A debt with payment history cannot be changed to another goal type.')
+    const targetAmount = Math.max(trackedPayments.total, Number(goal.targetAmount) || 0)
+    const currentAmount = Math.max(trackedPayments.total, Math.min(targetAmount, Number(goal.currentAmount) || 0))
+    const hmac = signGoal({
+      name: goal.name,
+      type: goal.type,
+      target_amount: targetAmount,
+      current_amount: currentAmount,
+      target_date: goal.targetDate ?? null
+    })
     db()
       .prepare(
         `UPDATE goals SET name=?, type=?, target_amount=?, current_amount=?, target_date=?,
-         interest_rate=?, monthly_payment=?, notes=? WHERE id=?`
+         interest_rate=?, monthly_payment=?, creditor=?, notes=?, hmac=? WHERE id=?`
       )
       .run(
         goal.name,
         goal.type,
-        goal.targetAmount,
-        goal.currentAmount,
+        targetAmount,
+        currentAmount,
         goal.targetDate,
         goal.interestRate,
         goal.monthlyPayment,
+        goal.creditor?.trim() || null,
         goal.notes,
+        hmac,
         id
       )
     return true
@@ -1293,6 +1552,79 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
        ORDER BY s.amount DESC`
     ).all()
   )
+
+  ipcMain.handle('subscriptions:dueWarnings', (_, minDays = 3, maxDays = 7) => {
+    const rows: Array<{
+      type: 'subscription' | 'income' | 'savings'
+      id: number
+      name: string
+      amount: number
+      date: string | null
+      days: number
+    }> = []
+    const subscriptions = db()
+      .prepare("SELECT id, name, amount, next_billing_date FROM subscriptions WHERE COALESCE(on_hold, 0) = 0 AND next_billing_date IS NOT NULL")
+      .all() as Array<{ id: number; name: string; amount: number; next_billing_date: string }>
+    for (const sub of subscriptions) {
+      const days = daysUntil(sub.next_billing_date)
+      if (days !== null && days >= minDays && days <= maxDays) {
+        rows.push({ type: 'subscription', id: sub.id, name: sub.name, amount: sub.amount, date: sub.next_billing_date, days })
+      }
+    }
+    const income = db()
+      .prepare("SELECT id, name, amount, next_billing_date FROM income_sources WHERE COALESCE(is_recurring, 1) = 1 AND next_billing_date IS NOT NULL")
+      .all() as Array<{ id: number; name: string; amount: number; next_billing_date: string }>
+    for (const source of income) {
+      const days = daysUntil(source.next_billing_date)
+      if (days !== null && days >= minDays && days <= maxDays) {
+        rows.push({ type: 'income', id: source.id, name: source.name, amount: source.amount, date: source.next_billing_date, days })
+      }
+    }
+    const savings = db()
+      .prepare(
+        `SELECT s.id, s.description, s.amount, COALESCE(t.date, substr(s.created_at, 1, 10)) as anchor_date
+         FROM savings_sources s
+         LEFT JOIN transactions t ON s.transaction_id = t.id
+         WHERE COALESCE(s.is_recurring, 1) = 1`
+      )
+      .all() as Array<{ id: number; description: string; amount: number; anchor_date: string | null }>
+    for (const source of savings) {
+      let date = source.anchor_date ?? isoDate(getNow())
+      for (let i = 0; i < 24 && date < isoDate(getNow()); i++) {
+        date = addMonths(date, 1)
+      }
+      const days = daysUntil(date)
+      if (days !== null && days >= minDays && days <= maxDays) {
+        rows.push({ type: 'savings', id: source.id, name: source.description, amount: source.amount, date, days })
+      }
+    }
+    return rows.sort((a, b) => a.days - b.days)
+  })
+
+  ipcMain.handle('subscriptions:priceHistory', (_, id: number) => {
+    const sub = db().prepare('SELECT id, name, amount, next_billing_date, transaction_id FROM subscriptions WHERE id = ?').get(id) as
+      | { id: number; name: string; amount: number; next_billing_date: string | null; transaction_id: number | null }
+      | undefined
+    if (!sub) return []
+    const history = db()
+      .prepare(
+        `SELECT id, amount, date, 'transaction' as source
+         FROM transactions
+         WHERE (notes = ? OR id = ?) AND type = 'expense'
+         ORDER BY date ASC, id ASC`
+      )
+      .all(`subscription:${id}`, sub.transaction_id ?? -1) as Array<{ id: number; amount: number; date: string; source: string }>
+    return [
+      ...history,
+      {
+        id: sub.id,
+        amount: sub.amount,
+        date: sub.next_billing_date ?? isoDate(getNow()),
+        source: 'current'
+      }
+    ]
+  })
+
   ipcMain.handle('subscriptions:create', (_, sub) => {
     const accountId = normalizeAccountId(sub.accountId)
     const r = db()
@@ -1718,6 +2050,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       .all(year)
   })
   ipcMain.handle('income:setEntry', (_, data) => {
+    assertYearMonthOpen(Number(data.year), Number(data.month))
     const amount = Number.isFinite(data.amount) ? data.amount : 0
     db()
       .prepare(
@@ -1822,9 +2155,9 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
     const byCategory = db()
       .prepare(
-        `SELECT c.name, c.color, SUM(t.amount) as total
-         FROM transactions t JOIN categories c ON t.category_id = c.id
-         WHERE t.type = 'expense' AND strftime('%Y', t.date) = ?
+        `SELECT c.name, c.color, SUM(tca.amount) as total
+         FROM transaction_category_amounts tca JOIN categories c ON tca.category_id = c.id
+         WHERE tca.type = 'expense' AND strftime('%Y', tca.date) = ?
          GROUP BY c.id ORDER BY total DESC`
       )
       .all(String(year))
@@ -1844,7 +2177,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
          COALESCE(SUM(CASE WHEN strftime('%m', t.date) = ? AND strftime('%Y', t.date) = ? THEN t.amount END), 0) as current,
          COALESCE(SUM(CASE WHEN strftime('%m', t.date) = ? AND strftime('%Y', t.date) = ? THEN t.amount END), 0) as previous
          FROM categories c
-         LEFT JOIN transactions t ON t.category_id = c.id AND t.type = 'expense'
+         LEFT JOIN transaction_category_amounts t ON t.category_id = c.id AND t.type = 'expense'
          GROUP BY c.id HAVING current > 0 OR previous > 0
          ORDER BY current DESC`
       )
@@ -1871,7 +2204,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         `SELECT c.name, c.color, CAST(strftime('%m', t.date) AS INTEGER) as month,
          COALESCE(SUM(t.amount), 0) as total
          FROM categories c
-         JOIN transactions t ON t.category_id = c.id AND t.type = 'expense' AND strftime('%Y', t.date) = ?
+         JOIN transaction_category_amounts t ON t.category_id = c.id AND t.type = 'expense' AND strftime('%Y', t.date) = ?
          GROUP BY c.id, month ORDER BY c.name, month`
       )
       .all(String(year)) as { name: string; color: string; month: number; total: number }[]
@@ -1954,7 +2287,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
          CAST(strftime('%Y', date) AS INTEGER) * 12 + (CAST(strftime('%m', date) AS INTEGER) - 1) as period,
          CAST(strftime('%m', date) AS INTEGER) as month,
          COALESCE(SUM(amount), 0) as spent
-         FROM transactions
+         FROM transaction_category_amounts
          WHERE category_id = ? AND type IN ('expense', 'savings')
            AND (CAST(strftime('%Y', date) AS INTEGER) * 12 + (CAST(strftime('%m', date) AS INTEGER) - 1)) BETWEEN ? AND ?
          GROUP BY period, month ORDER BY period`
@@ -1992,13 +2325,14 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
     const rows = db()
       .prepare(
-        `SELECT id, description, amount, date, is_recurring
-         FROM transactions
-         WHERE category_id = ?
-           AND type IN ('expense', 'savings')
-           AND date >= ?
-           AND date < ?
-         ORDER BY date DESC, id DESC`
+        `SELECT t.id, COALESCE(t.merchant_name,t.description) AS description, tca.amount, tca.date, t.is_recurring
+         FROM transaction_category_amounts tca
+         JOIN transactions t ON t.id=tca.transaction_id
+         WHERE tca.category_id = ?
+           AND tca.type IN ('expense', 'savings')
+           AND tca.date >= ?
+           AND tca.date < ?
+         ORDER BY tca.date DESC, t.id DESC`
       )
       .all(categoryId, previousStart, currentEnd) as Array<{
         id: number
@@ -2227,18 +2561,22 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       | Record<string, number>
       | undefined
     const accountsNetWorth = getAccountsNetWorth()
-    let netWorth = 0
-    if (wealth) {
-      netWorth =
-        (wealth.assets_savings || 0) +
-        (wealth.assets_investments || 0) +
-        (wealth.assets_property || 0) -
-        (wealth.liabilities_loans || 0) -
-        (wealth.liabilities_credit || 0)
-      if (netWorth === 0 && accountsNetWorth !== 0) netWorth = accountsNetWorth
-    } else {
-      netWorth = accountsNetWorth
-    }
+    const liveInvestments = db().prepare(`
+      SELECT
+        (SELECT COALESCE(SUM(current_value),0) FROM investment_holdings) +
+        (SELECT COALESCE(SUM(current_value),0) FROM investments) AS total
+    `).get() as { total: number }
+    const trackedDebts = db().prepare(`
+      SELECT COALESCE(SUM(MAX(0,target_amount-current_amount)),0) AS total
+      FROM goals WHERE type='debt'
+    `).get() as { total: number }
+    const investmentValue = liveInvestments.total !== 0 ? liveInvestments.total : (wealth?.assets_investments || 0)
+    const netWorth =
+      accountsNetWorth +
+      investmentValue +
+      (wealth?.assets_property || 0) -
+      trackedDebts.total -
+      (wealth?.liabilities_credit || 0)
 
     const savingsRate = income.v > 0 ? ((income.v - spending.v) / income.v) * 100 : 0
     const streak = db().prepare("SELECT value FROM settings WHERE key = 'spendingStreak'").get() as
@@ -2310,6 +2648,82 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       savingsByMonth,
       budgetHealth,
       insights
+    }
+  })
+
+  ipcMain.handle('dashboard:monthlyReview', (_, year: number, month: number) => {
+    const current = { year, month }
+    const previous = previousYearMonth(year, month)
+    const currentYm = { y: String(current.year), m: String(current.month).padStart(2, '0') }
+    const previousYm = { y: String(previous.year), m: String(previous.month).padStart(2, '0') }
+
+    function monthTotals(ym: { y: string; m: string }): { income: number; expenses: number; savings: number; count: number } {
+      return db()
+        .prepare(
+          `SELECT
+             COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END), 0) as income,
+             COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END), 0) as expenses,
+             COALESCE(SUM(CASE WHEN type='savings' THEN amount ELSE 0 END), 0) as savings,
+             COUNT(*) as count
+           FROM transactions
+           WHERE strftime('%Y', date)=? AND strftime('%m', date)=?`
+        )
+        .get(ym.y, ym.m) as { income: number; expenses: number; savings: number; count: number }
+    }
+
+    const currentTotals = monthTotals(currentYm)
+    const previousTotals = monthTotals(previousYm)
+    const increasedSubscriptions = db()
+      .prepare(
+        `SELECT s.id, s.name, s.amount, t.amount as previous_amount, s.next_billing_date
+         FROM subscriptions s
+         JOIN transactions t ON t.notes = 'subscription:' || s.id OR t.id = s.transaction_id
+         WHERE t.type = 'expense' AND t.amount < s.amount
+         GROUP BY s.id
+         ORDER BY s.amount - t.amount DESC
+         LIMIT 5`
+      )
+      .all()
+    const newRecurring = db()
+      .prepare(
+        `SELECT id, name, amount, next_billing_date
+         FROM subscriptions
+         WHERE strftime('%Y', COALESCE(next_billing_date, date('now')))=?
+           AND strftime('%m', COALESCE(next_billing_date, date('now')))=?
+           AND transaction_id IS NULL
+         ORDER BY amount DESC
+         LIMIT 5`
+      )
+      .all(currentYm.y, currentYm.m)
+    const unusualTransactions = db()
+      .prepare(
+        `SELECT t.id, t.description, t.amount, t.date, t.type, c.name as category_name
+         FROM transactions t
+         LEFT JOIN categories c ON t.category_id = c.id
+         WHERE strftime('%Y', t.date)=? AND strftime('%m', t.date)=?
+           AND t.type IN ('expense', 'savings')
+           AND t.amount >= (
+             SELECT COALESCE(AVG(amount) * 2, 0)
+             FROM transactions
+             WHERE type = t.type AND date < t.date AND date >= date(t.date, '-6 months')
+           )
+         ORDER BY t.amount DESC
+         LIMIT 6`
+      )
+      .all(currentYm.y, currentYm.m)
+
+    return {
+      currentTotals,
+      previousTotals,
+      deltas: {
+        income: roundCurrency(currentTotals.income - previousTotals.income),
+        expenses: roundCurrency(currentTotals.expenses - previousTotals.expenses),
+        savings: roundCurrency(currentTotals.savings - previousTotals.savings),
+        count: currentTotals.count - previousTotals.count
+      },
+      increasedSubscriptions,
+      newRecurring,
+      unusualTransactions
     }
   })
 
@@ -2400,15 +2814,13 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   // Backup
   ipcMain.handle('data:exportDb', async () => {
     const win = getWindow()
-    // Snapshot DB path before yielding to event loop
-    const dbPath = getDbPath()
     const result = await dialog.showSaveDialog(win!, {
       title: 'Export database',
       defaultPath: `budget-backup-${Date.now()}.db`,
       filters: [{ name: 'SQLite', extensions: ['db'] }]
     })
     if (!result.canceled && result.filePath) {
-      copyFileSync(dbPath, result.filePath)
+      await db().backup(result.filePath)
       return result.filePath
     }
     return null
@@ -2519,6 +2931,137 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       console.error('Repair failed:', error)
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
     }
+  })
+
+  ipcMain.handle('data:auditFixScan', () => {
+    const brokenSubscriptions = db()
+      .prepare(
+        `SELECT s.id, s.name, s.transaction_id
+         FROM subscriptions s
+         LEFT JOIN transactions t ON s.transaction_id = t.id
+         WHERE s.transaction_id IS NOT NULL AND t.id IS NULL`
+      )
+      .all()
+    const brokenSavings = db()
+      .prepare(
+        `SELECT s.id, s.description as name, s.transaction_id
+         FROM savings_sources s
+         LEFT JOIN transactions t ON s.transaction_id = t.id
+         WHERE s.transaction_id IS NOT NULL AND t.id IS NULL`
+      )
+      .all()
+    const duplicateSubscriptionTransactions = db()
+      .prepare(
+        `SELECT notes, COUNT(*) as count, GROUP_CONCAT(id) as ids, MIN(date) as first_date, MAX(date) as last_date
+         FROM transactions
+         WHERE notes LIKE 'subscription:%' AND type = 'expense'
+         GROUP BY notes, date
+         HAVING COUNT(*) > 1`
+      )
+      .all()
+    const missingAccountTransactions = db()
+      .prepare(
+        `SELECT t.id, t.description, t.account_id
+         FROM transactions t
+         LEFT JOIN accounts a ON t.account_id = a.id
+         WHERE t.account_id IS NULL OR a.id IS NULL`
+      )
+      .all()
+    const recurringArchivedAccounts = db()
+      .prepare(
+        `SELECT 'subscription' as type, s.id, s.name, s.account_id
+         FROM subscriptions s JOIN accounts a ON s.account_id = a.id
+         WHERE a.is_archived = 1
+         UNION ALL
+         SELECT 'income' as type, i.id, i.name, i.account_id
+         FROM income_sources i JOIN accounts a ON i.account_id = a.id
+         WHERE a.is_archived = 1
+         UNION ALL
+         SELECT 'savings' as type, ss.id, ss.description as name, ss.account_id
+         FROM savings_sources ss JOIN accounts a ON ss.account_id = a.id
+         WHERE a.is_archived = 1`
+      )
+      .all()
+    return {
+      brokenLinks: [...brokenSubscriptions, ...brokenSavings],
+      duplicateSubscriptionTransactions,
+      missingAccountTransactions,
+      recurringArchivedAccounts
+    }
+  })
+
+  ipcMain.handle('data:auditFixApply', () => {
+    const database = db()
+    const tx = database.transaction(() => {
+      const primaryAccountId = getPrimaryAccountId()
+      const brokenSubscriptions = database
+        .prepare(
+          `SELECT s.id
+           FROM subscriptions s
+           LEFT JOIN transactions t ON s.transaction_id = t.id
+           WHERE s.transaction_id IS NOT NULL AND t.id IS NULL`
+        )
+        .all() as Array<{ id: number }>
+      for (const sub of brokenSubscriptions) {
+        database.prepare('UPDATE subscriptions SET transaction_id = NULL WHERE id = ?').run(sub.id)
+      }
+
+      const brokenSavings = database
+        .prepare(
+          `SELECT s.id
+           FROM savings_sources s
+           LEFT JOIN transactions t ON s.transaction_id = t.id
+           WHERE s.transaction_id IS NOT NULL AND t.id IS NULL`
+        )
+        .all() as Array<{ id: number }>
+      for (const source of brokenSavings) {
+        database.prepare('UPDATE savings_sources SET transaction_id = NULL WHERE id = ?').run(source.id)
+      }
+
+      const duplicates = database
+        .prepare(
+          `SELECT notes, date, GROUP_CONCAT(id) as ids
+           FROM transactions
+           WHERE notes LIKE 'subscription:%' AND type = 'expense'
+           GROUP BY notes, date
+           HAVING COUNT(*) > 1`
+        )
+        .all() as Array<{ notes: string; date: string; ids: string }>
+      let removedDuplicates = 0
+      for (const group of duplicates) {
+        const ids = group.ids.split(',').map((value) => Number(value)).filter((value) => Number.isInteger(value)).sort((a, b) => a - b)
+        for (const duplicateId of ids.slice(1)) {
+          deleteTransaction(duplicateId)
+          removedDuplicates++
+        }
+      }
+
+      const missingAccounts = database
+        .prepare(
+          `SELECT t.id
+           FROM transactions t
+           LEFT JOIN accounts a ON t.account_id = a.id
+           WHERE t.account_id IS NULL OR a.id IS NULL`
+        )
+        .all() as Array<{ id: number }>
+      for (const row of missingAccounts) {
+        updateTransaction({ id: row.id, account_id: primaryAccountId })
+      }
+
+      database.prepare('UPDATE subscriptions SET account_id = ? WHERE account_id IN (SELECT id FROM accounts WHERE is_archived = 1) OR account_id IS NULL').run(primaryAccountId)
+      database.prepare('UPDATE income_sources SET account_id = ? WHERE account_id IN (SELECT id FROM accounts WHERE is_archived = 1) OR account_id IS NULL').run(primaryAccountId)
+      database.prepare('UPDATE savings_sources SET account_id = ? WHERE account_id IN (SELECT id FROM accounts WHERE is_archived = 1) OR account_id IS NULL').run(primaryAccountId)
+
+      return {
+        clearedBrokenLinks: brokenSubscriptions.length + brokenSavings.length,
+        removedDuplicates,
+        reassignedTransactions: missingAccounts.length
+      }
+    })
+    const result = tx()
+    const attachmentPath = join(app.getPath('appData'), 'BudgetApp', 'attachments')
+    if (existsSync(attachmentPath)) rmSync(attachmentPath, { recursive: true, force: true })
+    return result
   })
 
   ipcMain.handle('ai:saveInsight', (_, content: string, year: number, month: number) => {
@@ -2709,6 +3252,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     incomeNetActual: number
     supposedNetIncome: number
   }) => {
+    assertYearMonthOpen(Number(data.year), Number(data.month))
     const month = normalizePositiveInteger(data.month, 1, 12)
     const parsedYear = Math.floor(Number(data.year))
     const year = Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear()
@@ -2730,6 +3274,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   })
 
   ipcMain.handle('tax:deleteEntry', (_, year: number, month: number) => {
+    assertYearMonthOpen(year, month)
     const normalizedMonth = normalizePositiveInteger(month, 1, 12)
     const parsedYear = Math.floor(Number(year))
     const normalizedYear = Number.isFinite(parsedYear) ? parsedYear : new Date().getFullYear()
@@ -2777,11 +3322,15 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       | undefined
     let netWorth = 0
     if (wealth) {
+      const trackedDebts = db().prepare(`
+        SELECT COALESCE(SUM(MAX(0,target_amount-current_amount)),0) AS total
+        FROM goals WHERE type='debt'
+      `).get() as { total: number }
       netWorth =
         (wealth.assets_savings || 0) +
         (wealth.assets_investments || 0) +
         (wealth.assets_property || 0) -
-        (wealth.liabilities_loans || 0) -
+        trackedDebts.total -
         (wealth.liabilities_credit || 0)
     }
 
@@ -2825,6 +3374,38 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return Math.round(avg.avg * 3)
   })
 
+  ipcMain.handle('goals:forecast', () => {
+    const goals = db().prepare('SELECT * FROM goals ORDER BY id').all() as Array<{
+      id: number
+      type: string
+      target_amount: number
+      current_amount: number
+      monthly_payment?: number | null
+    }>
+    const savingsMonthly = db()
+      .prepare("SELECT COALESCE(SUM(amount), 0) as v FROM savings_sources WHERE COALESCE(is_recurring, 1) = 1")
+      .get() as { v: number }
+    return goals.map((goal) => {
+      const current = getGoalCurrentAmount(db(), goal.type) ?? goal.current_amount ?? 0
+      const remaining = Math.max(0, goal.target_amount - current)
+      const monthly = goal.monthly_payment && goal.monthly_payment > 0 ? goal.monthly_payment : savingsMonthly.v
+      if (remaining <= 0) {
+        return { id: goal.id, projectedDate: isoDate(getNow()), months: 0, monthlyAmount: monthly, status: 'complete' }
+      }
+      if (!monthly || monthly <= 0) {
+        return { id: goal.id, projectedDate: null, months: null, monthlyAmount: monthly, status: 'needs_monthly_amount' }
+      }
+      const months = Math.ceil(remaining / monthly)
+      return {
+        id: goal.id,
+        projectedDate: addMonths(isoDate(getNow()), months),
+        months,
+        monthlyAmount: roundCurrency(monthly),
+        status: 'projected'
+      }
+    })
+  })
+
   // Pension projection
   ipcMain.handle('pension:get', () => {
     const row = db().prepare("SELECT value FROM settings WHERE key = 'pension'").get() as { value: string } | undefined
@@ -2840,6 +3421,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     const win = getWindow()
     win?.webContents.print({ silent: false, printBackground: true })
   })
+
+  registerFinancialToolsHandlers(getWindow)
 }
 
 function getSavingsCategoryId(database: ReturnType<typeof getDatabase>): number | null {
@@ -2911,18 +3494,6 @@ function getGoalCurrentAmount(database: ReturnType<typeof getDatabase>, goalType
     return total.v
   }
 
-  if (goalType === 'debt') {
-    const category = database.prepare("SELECT id FROM categories WHERE goal_type='debt'").get() as
-      | { id: number }
-      | undefined
-    if (category) {
-      const total = database
-        .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE category_id=? AND type='transfer'`)
-        .get(category.id) as { v: number }
-      return total.v
-    }
-  }
-
   if (goalType === 'savings' || goalType === 'emergency' || goalType === 'fire') {
     const totalSaved = database
       .prepare(`SELECT COALESCE(SUM(amount), 0) as v FROM transactions WHERE type='savings'`)
@@ -2955,13 +3526,25 @@ function importAllTables(data: Record<string, unknown[]>): void {
       'accounts',
       'categories',
       'goals',
+      'debt_payments',
       'wealth_snapshots',
       'investments',
       'investment_holdings',
       'transactions',
       'transaction_events',
+      'transaction_splits',
+      'tags',
+      'transaction_tags',
+      'transaction_links',
+      'shared_expenses',
+      'transaction_attachments',
+      'account_reconciliations',
       'budget_entries',
+      'budget_rollover',
       'categorization_rules',
+      'saved_filters',
+      'merchant_aliases',
+      'closed_months',
       'subscriptions',
       'savings_sources',
       'income_sources',

@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.1.0] - 2026-08-02
+
+### Added
+
+- Debt payoff tracking per person or company with dated payment history, paid and remaining totals, interest, minimum payments, and snowball/avalanche forecasts.
+- Automatic subtraction of remaining tracked debt from Dashboard and Wealth net worth, including newly captured wealth snapshots.
+- Bank reconciliation, transaction splits, tags, shared expenses, attachments, refund linking, transfer detection, and saved filters.
+- Cash-flow calendar, spending forecast, budget suggestions and rollover, financial alerts, and scenario planning.
+- Merchant normalization, month locks, data-quality status, backup verification, change restoration, and monthly/yearly CSV and PDF reports.
+
+### Changed
+
+- Goal debt balances now remain independent per creditor instead of sharing category totals.
+- Debt creation and editing now validates original and paid amounts and preserves signed goal integrity.
+- Full backup, import, demo-data, and wipe flows include the new financial-planning data.
+
+### Fixed
+
+- Live net worth previously omitted current goal debts and could double-count snapshot assets in Wealth.
+- Debt payoff estimates now roll freed minimum payments into the selected strategy correctly.
+
 ## [2.0.0] - Zero-Knowledge Encryption Release
 
 ### 🔒 Security - Major Breaking Changes

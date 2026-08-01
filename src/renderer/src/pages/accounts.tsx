@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Wallet, Plus, Pencil, Archive, Landmark, PiggyBank, ReceiptText } from 'lucide-react'
+import { Wallet, Plus, Pencil, Archive, Landmark, PiggyBank, ReceiptText, Scale } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -24,6 +24,15 @@ type Account = {
   transaction_count: number
 }
 
+type BalanceExplanation = {
+  account: { id: number; name: string; opening_balance: number }
+  openingBalance: number
+  activityBalance: number
+  balance: number
+  totals: { income: number; expenses: number; savings: number; transfers: number }
+  transactions: { id: number; description: string; amount: number; type: string; date: string; category_name?: string | null }[]
+}
+
 const accountTypes = ['checking', 'savings', 'cash', 'other'] as const
 const currencies = ['SEK', 'EUR', 'USD'] as const
 
@@ -33,6 +42,8 @@ export function AccountsPage(): JSX.Element {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Account | null>(null)
+  const [explanation, setExplanation] = useState<BalanceExplanation | null>(null)
+  const [reconciliation, setReconciliation] = useState<{ account: Account; date: string; balance: string; preview?: { calculatedBalance: number; statementBalance: number; difference: number }; history: Array<{ id: number; statement_date: string; difference: number }> } | null>(null)
   const [form, setForm] = useState({
     name: '',
     type: 'checking' as Account['type'],
@@ -85,6 +96,15 @@ export function AccountsPage(): JSX.Element {
     await window.api.accounts.archive(account.id)
     await load()
     triggerRefresh()
+  }
+
+  async function explain(account: Account): Promise<void> {
+    setExplanation(await window.api.accounts.explainBalance(account.id) as BalanceExplanation)
+  }
+
+  async function openReconciliation(account: Account): Promise<void> {
+    const history = await window.api.reconciliation.history(account.id) as Array<{ id: number; statement_date: string; difference: number }>
+    setReconciliation({ account, date: new Date().toISOString().slice(0, 10), balance: String(account.balance), history })
   }
 
   const activeAccounts = accounts.filter((account) => account.is_archived !== 1)
@@ -171,10 +191,18 @@ export function AccountsPage(): JSX.Element {
                   </div>
                 )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={() => openEdit(account)}>
                   <Pencil className="h-3 w-3" />
                   Edit
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => explain(account)}>
+                  <ReceiptText className="h-3 w-3" />
+                  Explain
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => openReconciliation(account)}>
+                  <Scale className="h-3 w-3" />
+                  Reconcile
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => archive(account)}>
                   <Archive className="h-3 w-3" />
@@ -260,6 +288,74 @@ export function AccountsPage(): JSX.Element {
             </div>
             <Button onClick={save}>{editing ? 'Save changes' : 'Create account'}</Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!explanation} onOpenChange={(isOpen) => !isOpen && setExplanation(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{explanation?.account.name} balance</DialogTitle>
+          </DialogHeader>
+          {explanation && (
+            <div className="space-y-4">
+              <div className="grid gap-2 rounded-md bg-muted/40 p-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Starting balance</span>
+                  <span>{formatMoney(explanation.openingBalance, profile.displayCurrency, rates)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Income</span>
+                  <span className="text-success">{formatMoney(explanation.totals.income, profile.displayCurrency, rates)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Expenses</span>
+                  <span className="text-destructive">-{formatMoney(explanation.totals.expenses, profile.displayCurrency, rates)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Savings</span>
+                  <span>{formatMoney(explanation.totals.savings, profile.displayCurrency, rates)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Transfers</span>
+                  <span>{formatMoney(explanation.totals.transfers, profile.displayCurrency, rates)}</span>
+                </div>
+                <div className="flex justify-between border-t pt-2 font-semibold">
+                  <span>Current balance</span>
+                  <span>{formatMoney(explanation.balance, profile.displayCurrency, rates)}</span>
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-sm font-medium">Recent activity</p>
+                <div className="max-h-72 space-y-2 overflow-auto">
+                  {explanation.transactions.map((tx) => (
+                    <div key={tx.id} className="flex items-center justify-between gap-3 rounded border p-2 text-sm">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{tx.description}</p>
+                        <p className="text-xs text-muted-foreground">{tx.date} - {tx.category_name ?? tx.type}</p>
+                      </div>
+                      <span>{formatMoney(tx.amount, profile.displayCurrency, rates)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!reconciliation} onOpenChange={(isOpen) => !isOpen && setReconciliation(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Reconcile {reconciliation?.account.name}</DialogTitle></DialogHeader>
+          {reconciliation && <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2"><Label>Statement date</Label><Input type="date" value={reconciliation.date} onChange={(event) => setReconciliation({ ...reconciliation, date: event.target.value, preview: undefined })} /></div>
+              <div className="grid gap-2"><Label>Bank statement balance</Label><Input type="number" value={reconciliation.balance} onChange={(event) => setReconciliation({ ...reconciliation, balance: event.target.value, preview: undefined })} /></div>
+            </div>
+            <Button variant="outline" onClick={async () => setReconciliation({ ...reconciliation, preview: await window.api.reconciliation.preview(reconciliation.account.id, reconciliation.date, Number(reconciliation.balance)) as { calculatedBalance: number; statementBalance: number; difference: number } })}>Compare balance</Button>
+            {reconciliation.preview && <div className="rounded border p-3 text-sm"><div className="flex justify-between"><span>App balance</span><span>{formatMoney(reconciliation.preview.calculatedBalance, profile.displayCurrency, rates)}</span></div><div className="flex justify-between"><span>Bank balance</span><span>{formatMoney(reconciliation.preview.statementBalance, profile.displayCurrency, rates)}</span></div><div className="mt-2 flex justify-between border-t pt-2 font-medium"><span>Difference</span><span className={Math.abs(reconciliation.preview.difference) <= 0.01 ? 'text-success' : 'text-destructive'}>{formatMoney(reconciliation.preview.difference, profile.displayCurrency, rates)}</span></div></div>}
+            <Button disabled={!reconciliation.preview} onClick={async () => { await window.api.reconciliation.complete(reconciliation.account.id, reconciliation.date, Number(reconciliation.balance)); setReconciliation(null); await load(); triggerRefresh() }}>Complete reconciliation</Button>
+            {reconciliation.history.length > 0 && <div className="border-t pt-3"><p className="mb-2 text-sm font-medium">Previous reconciliations</p>{reconciliation.history.slice(0, 5).map((item) => <div key={item.id} className="flex justify-between text-xs text-muted-foreground"><span>{item.statement_date}</span><span>Difference {formatMoney(item.difference, profile.displayCurrency, rates)}</span></div>)}</div>}
+          </div>}
         </DialogContent>
       </Dialog>
     </div>

@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select'
 import { TransactionHistory } from './transaction-history'
 import type { TransactionRowData } from './transaction-row'
+import { TransactionExtras } from './transaction-extras'
 
 interface TransactionDetailDrawerProps {
   transaction: TransactionRowData
@@ -187,6 +188,7 @@ export function TransactionDetailDrawer({
           <Button onClick={save} className="w-full">
             Save changes
           </Button>
+          <TransactionExtras transactionId={t.id} amount={Number(amount) || t.amount} type={t.type} onChanged={() => {}} />
         </>
       )}
     </div>

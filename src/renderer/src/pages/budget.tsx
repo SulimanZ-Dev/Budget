@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
 import { cardHoverVariants } from '@/lib/motion'
 import { CategorySparkline } from '@/components/budget/category-sparkline'
+import { BudgetPlanningTools } from '@/components/budget/budget-planning-tools'
 
 interface BudgetRow {
   category_id: number
@@ -24,6 +25,10 @@ interface BudgetRow {
   color: string
   is_fixed: number
   amount: number
+  base_amount?: number
+  rollover?: number
+  rollover_enabled?: number
+  spent?: number
 }
 
 interface CategoryVariance {
@@ -122,11 +127,9 @@ export function BudgetPage(): JSX.Element {
       ])
       const loadedEntries = (budget as BudgetRow[]) ?? []
       setEntries(loadedEntries)
-      const map: Record<number, number> = {}
+      const map: Record<number, number> = Object.fromEntries(loadedEntries.map((entry) => [entry.category_id, Number(entry.spent) || 0]))
       for (const t of (txs as { category_id: number; amount: number; type: string }[]) ?? []) {
         if (t.type === 'savings' && t.category_id) {
-          map[t.category_id] = (map[t.category_id] || 0) + t.amount
-        } else if (t.type === 'expense' && t.category_id) {
           map[t.category_id] = (map[t.category_id] || 0) + t.amount
         }
       }
@@ -180,8 +183,8 @@ export function BudgetPage(): JSX.Element {
       })
       setTrends(trendMap)
       setVariances(varianceMap)
-    } catch {
-      // Silently fail
+    } catch (error) {
+      console.error('Failed to load budget page:', error)
     }
     setLoading(false)
   }
@@ -262,6 +265,8 @@ export function BudgetPage(): JSX.Element {
           </div>
         </CardContent>
       </Card>
+
+      <BudgetPlanningTools onRefresh={load} />
 
       {loading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

@@ -18,6 +18,7 @@ import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { IntegrityPanel } from '@/components/integrity/integrity-panel'
 import { PluginRegistry } from '@/components/plugins/plugin-registry'
 import { SchedulerCard } from '@/components/shared/scheduler-card'
+import { FinancialSettingsTools } from '@/components/settings/financial-settings-tools'
 import { RuleEditor } from '@/components/shared/rule-editor'
 import { useAppDialog } from '@/components/shared/app-dialog'
 
@@ -51,12 +52,28 @@ interface AccountOption {
   is_archived?: number
 }
 
+interface AuditFixState {
+  brokenLinks: unknown[]
+  duplicateSubscriptionTransactions: unknown[]
+  missingAccountTransactions: unknown[]
+  recurringArchivedAccounts: unknown[]
+}
+
 function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
 function pick<T>(items: T[]): T {
   return items[randomInt(0, items.length - 1)]
+}
+
+function AuditFixMetric({ label, count }: { label: string; count: number }): JSX.Element {
+  return (
+    <div className={`rounded-lg border p-3 ${count > 0 ? 'border-warning/40 bg-warning/5' : 'bg-muted/30'}`}>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={count > 0 ? 'text-xl font-semibold text-warning' : 'text-xl font-semibold'}>{count}</p>
+    </div>
+  )
 }
 
 function randomDateWithinMonths(monthsBack: number): string {
@@ -95,6 +112,8 @@ export function SettingsPage(): JSX.Element {
   const [lastBackup, setLastBackup] = useState<string | null>(null)
   const [taxExportCategories, setTaxExportCategories] = useState<CategoryOption[]>([])
   const [selectedTaxCategoryIds, setSelectedTaxCategoryIds] = useState<Set<number>>(new Set())
+  const [auditFix, setAuditFix] = useState<AuditFixState | null>(null)
+  const [auditFixLoading, setAuditFixLoading] = useState(false)
 
   useEffect(() => {
     window.api.members.list().then(setMembers)
@@ -126,6 +145,34 @@ export function SettingsPage(): JSX.Element {
     const result = await window.api.reports.taxReviewExport(profile.year, [...selectedTaxCategoryIds])
     if (result?.filePath) {
       await dialog.alert(`Exported ${result.rowCount} rows to ${result.filePath}.`, 'Tax export complete')
+    }
+  }
+
+  async function scanAuditFix(): Promise<void> {
+    setAuditFixLoading(true)
+    try {
+      setAuditFix(await window.api.data.auditFixScan() as AuditFixState)
+    } finally {
+      setAuditFixLoading(false)
+    }
+  }
+
+  async function applyAuditFix(): Promise<void> {
+    if (!await dialog.confirm('Fix broken recurring links, duplicate subscription transactions, and missing account references?', {
+      title: 'Apply audit fixes',
+      confirmLabel: 'Fix data'
+    })) return
+    setAuditFixLoading(true)
+    try {
+      const result = await window.api.data.auditFixApply() as { clearedBrokenLinks: number; removedDuplicates: number; reassignedTransactions: number }
+      await dialog.alert(
+        `Fixed ${result.clearedBrokenLinks} broken links, removed ${result.removedDuplicates} duplicate transactions, and reassigned ${result.reassignedTransactions} transactions.`,
+        'Audit fix complete'
+      )
+      await scanAuditFix()
+      triggerRefresh()
+    } finally {
+      setAuditFixLoading(false)
     }
   }
 
@@ -867,6 +914,33 @@ export function SettingsPage(): JSX.Element {
             Run Demo
           </Button>
         </CardContent>
+        <CardContent className="border-t pt-4">
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-medium">Audit/fix tool</p>
+              <p className="text-xs text-muted-foreground">
+                Scans app data for broken links, duplicate subscription transactions, archived recurring accounts, and missing account references.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={scanAuditFix} disabled={auditFixLoading}>
+                <RotateCcw className="h-4 w-4" />
+                Scan data
+              </Button>
+              <Button onClick={applyAuditFix} disabled={auditFixLoading || !auditFix}>
+                Fix found issues
+              </Button>
+            </div>
+            {auditFix && (
+              <div className="grid gap-2 md:grid-cols-4">
+                <AuditFixMetric label="Broken links" count={auditFix.brokenLinks.length} />
+                <AuditFixMetric label="Duplicate subs" count={auditFix.duplicateSubscriptionTransactions.length} />
+                <AuditFixMetric label="Missing accounts" count={auditFix.missingAccountTransactions.length} />
+                <AuditFixMetric label="Archived recurring" count={auditFix.recurringArchivedAccounts.length} />
+              </div>
+            )}
+          </div>
+        </CardContent>
       </Card>
 
       <Card>
@@ -917,6 +991,8 @@ export function SettingsPage(): JSX.Element {
           </Button>
         </CardContent>
       </Card>
+
+      <FinancialSettingsTools />
 
       <SchedulerCard />
 

@@ -14,6 +14,7 @@ import {
 import { formatMoney, MONTH_NAMES } from '@/lib/utils'
 import { calculateTaxReconciledYtd, parseOptionalTaxAmount } from '@/lib/tax'
 import { useAppStore } from '@/store/app-store'
+import { TaxOverview } from '@/components/tax/tax-overview'
 
 interface TaxEntry {
   id: number
@@ -180,6 +181,8 @@ export function TaxEstimatorPage(): JSX.Element {
           Tax estimator
         </h1>
       </div>
+
+      <TaxOverview />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Card>

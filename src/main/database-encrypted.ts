@@ -16,6 +16,7 @@ import {
 } from './db/migration'
 import { backfillHMACs, clearTableSigningKeys } from './crypto/integrity'
 import { initializeEventStore } from './events/event-store'
+import { runFinancialToolsMigration } from './db/financial-tools-schema'
 
 let db: SqlCipher.Database | null = null
 
@@ -323,6 +324,7 @@ function runMigrations(database: SqlCipher.Database): void {
       target_date TEXT,
       interest_rate REAL,
       monthly_payment REAL,
+      creditor TEXT,
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       hmac TEXT
@@ -530,6 +532,7 @@ function runMigrations(database: SqlCipher.Database): void {
   }
 
   runAccountMigration(database)
+  runFinancialToolsMigration(database)
 
   // Migration: Drop ai_summary columns from goals (reverted feature)
   try {

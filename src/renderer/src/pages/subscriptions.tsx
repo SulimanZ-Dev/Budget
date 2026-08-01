@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { CreditCard, Plus, ExternalLink, PiggyBank, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
+import { CreditCard, Plus, ExternalLink, PiggyBank, ArrowUpCircle, ArrowDownCircle, AlertTriangle } from 'lucide-react'
 import { InfoTooltip } from '@/components/shared/info-tooltip'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,8 @@ type RecurringItem = {
 }
 
 type Account = { id: number; name: string; is_archived: number }
+type DueWarning = { type: 'subscription' | 'income' | 'savings'; id: number; name: string; amount: number; date: string | null; days: number }
+type PricePoint = { id: number; amount: number; date: string; source: string }
 
 export function SubscriptionsPage(): JSX.Element {
   const { profile, rates } = useAppStore()
@@ -45,6 +47,8 @@ export function SubscriptionsPage(): JSX.Element {
   const [form, setForm] = useState({ name: '', amount: '', url: '', date: '', taxDeductible: false, onHold: false, accountId: '' })
   const [filter, setFilter] = useState<'all' | 'subscription' | 'income' | 'savings'>('all')
   const [sort, setSort] = useState<'name' | 'amount' | 'date'>('amount')
+  const [dueWarnings, setDueWarnings] = useState<DueWarning[]>([])
+  const [priceHistory, setPriceHistory] = useState<Record<number, PricePoint[]>>({})
 
   useEffect(() => {
     load()
@@ -57,6 +61,12 @@ export function SubscriptionsPage(): JSX.Element {
       window.api.income.checkBilling().catch(() => {})
       const subscriptionList = await window.api.subscriptions.list()
       setSubs(subscriptionList as Sub[])
+      const warnings = await window.api.subscriptions.dueWarnings(3, 7)
+      setDueWarnings(warnings as DueWarning[])
+      const histories = await Promise.all(
+        (subscriptionList as Sub[]).map(async (sub) => [sub.id, await window.api.subscriptions.priceHistory(sub.id)] as const)
+      )
+      setPriceHistory(Object.fromEntries(histories) as Record<number, PricePoint[]>)
       const accountRows = ((await window.api.accounts.list()) as Account[]).filter((account) => account.is_archived !== 1)
       setAccounts(accountRows)
       setForm((prev) => ({ ...prev, accountId: prev.accountId || (accountRows[0] ? String(accountRows[0].id) : '') }))
@@ -272,6 +282,28 @@ export function SubscriptionsPage(): JSX.Element {
         </Card>
       </div>
 
+      {dueWarnings.length > 0 && (
+        <Card className="border-warning/40 bg-warning/5">
+          <CardContent className="space-y-2 p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-warning">
+              <AlertTriangle className="h-4 w-4" />
+              Due soon
+            </div>
+            <div className="grid gap-2 md:grid-cols-3">
+              {dueWarnings.map((warning) => (
+                <div key={`${warning.type}-${warning.id}`} className="rounded-md border bg-card/70 p-3 text-xs">
+                  <p className="font-medium">{warning.name}</p>
+                  <p className="text-muted-foreground">
+                    {warning.type} in {warning.days} days{warning.date ? ` (${warning.date})` : ''}
+                  </p>
+                  <p className="mt-1 font-semibold">{formatMoney(warning.amount, profile.displayCurrency, rates)}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {items.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border bg-card p-1">
@@ -385,6 +417,17 @@ export function SubscriptionsPage(): JSX.Element {
                     </p>
                     {(item.type === 'subscription' || item.type === 'income') && item.next_billing_date && (
                       <p className="mt-1 text-xs text-muted-foreground">Next: {item.next_billing_date}</p>
+                    )}
+                    {item.type === 'subscription' && priceHistory[item.id]?.length > 1 && (
+                      <div className="mt-3 rounded-md border bg-card/60 p-2 text-xs">
+                        <p className="font-medium">Price history</p>
+                        {priceHistory[item.id].slice(-3).map((point) => (
+                          <div key={`${point.source}-${point.id}-${point.date}`} className="mt-1 flex justify-between gap-2 text-muted-foreground">
+                            <span>{point.date}</span>
+                            <span>{formatMoney(point.amount, profile.displayCurrency, rates)}</span>
+                          </div>
+                        ))}
+                      </div>
                     )}
                     {item.website_url && (
                       <Button

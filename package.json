@@ -1,6 +1,6 @@
 {
   "name": "budget-app",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Personal budget desktop app for Windows",
   "main": "out/main/index.js",
   "author": "Budget App",

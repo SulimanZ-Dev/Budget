@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label'
 import { useAppStore } from '@/store/app-store'
 import { formatMoney } from '@/lib/utils'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
-import { Landmark } from 'lucide-react'
+import { Camera, Landmark } from 'lucide-react'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useAppDialog } from '@/components/shared/app-dialog'
@@ -44,6 +44,7 @@ export function WealthPage(): JSX.Element {
     { id: number; name: string; type: string; is_archived: number; balance: number; currency: string }[]
   >([])
   const [totalSavings, setTotalSavings] = useState(0)
+  const [debtRemaining, setDebtRemaining] = useState(0)
   const [form, setForm] = useState({
     savings: '',
     investments: '',
@@ -71,19 +72,25 @@ export function WealthPage(): JSX.Element {
   }, [refreshTrigger])
 
   async function load(): Promise<void> {
-    setSnapshots(await window.api.wealth.list())
-    setInvestments(await window.api.investments.list())
-    setHoldings(await window.api.investmentHoldings.list())
-    setAccounts((await window.api.accounts.list()) as { id: number; name: string; type: string; is_archived: number; balance: number; currency: string }[])
-    // Load total savings from past transactions (exclude future auto-created ones)
-    const transactions = await window.api.transactions.list({ type: 'savings' })
+    const [snapshotRows, investmentRows, holdingRows, accountRows, transactions, saved, debtResult] = await Promise.all([
+      window.api.wealth.list(),
+      window.api.investments.list(),
+      window.api.investmentHoldings.list(),
+      window.api.accounts.list(),
+      window.api.transactions.list({ type: 'savings' }),
+      window.api.pension.get(),
+      window.api.goals.debtPlanner(0)
+    ])
+    setSnapshots(snapshotRows)
+    setInvestments(investmentRows)
+    setHoldings(holdingRows)
+    setAccounts(accountRows as { id: number; name: string; type: string; is_archived: number; balance: number; currency: string }[])
     const today = new Date().toISOString().slice(0, 10)
     const savingsTotal = transactions
       .filter((t: any) => t.type === 'savings' && t.date <= today)
       .reduce((sum: number, t: any) => sum + t.amount, 0)
     setTotalSavings(savingsTotal)
-    // Load persisted pension projection
-    const saved = await window.api.pension.get()
+    setDebtRemaining(Number((debtResult as { totals?: { remainingAmount?: number } }).totals?.remainingAmount) || 0)
     if (saved) {
       setPension({
         current: String(saved.current ?? '100000'),
@@ -109,7 +116,7 @@ export function WealthPage(): JSX.Element {
       assetsSavings: parseFloat(form.savings) || 0,
       assetsInvestments: parseFloat(form.investments) || 0,
       assetsProperty: parseFloat(form.property) || 0,
-      liabilitiesLoans: parseFloat(form.loans) || 0,
+      liabilitiesLoans: debtRemaining,
       liabilitiesCredit: parseFloat(form.credit) || 0
     })
     load()
@@ -167,10 +174,11 @@ export function WealthPage(): JSX.Element {
       s.liabilities_credit
   }))
 
-  // Compute a live current net worth by adding savings & investments to the latest snapshot
-  const latestSnapshotNet = chartData.length > 0 ? chartData[chartData.length - 1].net : 0
-  const hasLiveData = snapshotSavingsValue !== 0 || holdingsTotal > 0 || investmentsTotal > 0
-  const currentNetWorth = latestSnapshotNet + snapshotSavingsValue + holdingsTotal + investmentsTotal
+  const latestSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null
+  const propertyValue = latestSnapshot?.assets_property ?? 0
+  const otherCredit = latestSnapshot?.liabilities_credit ?? 0
+  const hasLiveData = snapshotSavingsValue !== 0 || holdingsTotal > 0 || investmentsTotal > 0 || propertyValue > 0 || debtRemaining > 0 || otherCredit > 0
+  const currentNetWorth = snapshotSavingsValue + holdingsTotal + investmentsTotal + propertyValue - debtRemaining - otherCredit
 
   const pensionData = Array.from({ length: 30 }, (_, i) => {
     const months = i * 12
@@ -185,18 +193,22 @@ export function WealthPage(): JSX.Element {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Wealth</h1>
-        <AskAiButton context="wealth" prefill="How is my net worth trending?" />
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={async () => { await window.api.wealth.captureSnapshot(); await load(); await dialog.alert('Current account, investment, and debt values were saved.', 'Snapshot captured') }}><Camera className="h-4 w-4" /> Capture snapshot</Button>
+          <AskAiButton context="wealth" prefill="How is my net worth trending?" />
+        </div>
       </div>
 
       {hasLiveData && (
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="p-6">
-            <p className="text-sm text-muted-foreground">Current net worth (incl. live savings + investments)</p>
+            <p className="text-sm text-muted-foreground">Current net worth (live assets minus remaining debts)</p>
             <p className="text-3xl font-bold mt-1">{formatMoney(currentNetWorth, profile.displayCurrency, rates)}</p>
             <div className="flex gap-6 mt-3 text-sm text-muted-foreground">
               <span>Accounts: <strong className="text-foreground">{formatMoney(snapshotSavingsValue, profile.displayCurrency, rates)}</strong></span>
               <span>ETFs: <strong className="text-foreground">{formatMoney(holdingsTotal, profile.displayCurrency, rates)}</strong></span>
               <span>Investments: <strong className="text-foreground">{formatMoney(investmentsTotal, profile.displayCurrency, rates)}</strong></span>
+              <span>Debts: <strong className="text-warning">−{formatMoney(debtRemaining, profile.displayCurrency, rates)}</strong></span>
             </div>
           </CardContent>
         </Card>
@@ -252,7 +264,7 @@ export function WealthPage(): JSX.Element {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setForm({ ...form, savings: String(snapshotSavingsValue) })}
+              onClick={() => setForm({ ...form, savings: String(snapshotSavingsValue), investments: String(holdingsTotal + investmentsTotal), loans: String(debtRemaining) })}
             >
               Auto-fill
             </Button>
@@ -269,9 +281,11 @@ export function WealthPage(): JSX.Element {
                 <Label>{label}</Label>
                 <Input
                   type="number"
-                  value={form[key as keyof typeof form]}
+                  value={key === 'loans' ? String(debtRemaining) : form[key as keyof typeof form]}
+                  readOnly={key === 'loans'}
                   onChange={(e) => setForm({ ...form, [key]: e.target.value })}
                 />
+                {key === 'loans' && <p className="text-xs text-muted-foreground">Updated automatically from Debt payoff.</p>}
               </div>
             ))}
             <Button onClick={addSnapshot} className="md:col-span-3">

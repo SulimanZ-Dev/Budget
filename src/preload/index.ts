@@ -77,7 +77,8 @@ const api = {
     list: () => ipcRenderer.invoke('accounts:list'),
     create: (account: unknown) => ipcRenderer.invoke('accounts:create', account),
     update: (id: number, account: unknown) => ipcRenderer.invoke('accounts:update', id, account),
-    archive: (id: number) => ipcRenderer.invoke('accounts:archive', id)
+    archive: (id: number) => ipcRenderer.invoke('accounts:archive', id),
+    explainBalance: (id: number) => ipcRenderer.invoke('accounts:explainBalance', id)
   },
 
   categories: {
@@ -91,7 +92,11 @@ const api = {
     getMonth: (year: number, month: number) => ipcRenderer.invoke('budget:getMonth', year, month),
     categoryDetail: (categoryId: number, year: number, month: number) =>
       ipcRenderer.invoke('budget:categoryDetail', categoryId, year, month),
-    setEntry: (data: unknown) => ipcRenderer.invoke('budget:setEntry', data)
+    setEntry: (data: unknown) => ipcRenderer.invoke('budget:setEntry', data),
+    getRollover: (year: number, month: number) => ipcRenderer.invoke('budget:getRollover', year, month),
+    setRollover: (categoryId: number, enabled: boolean) => ipcRenderer.invoke('budget:setRollover', categoryId, enabled),
+    applySuggestions: (year: number, month: number, suggestions: unknown[]) =>
+      ipcRenderer.invoke('budget:applySuggestions', year, month, suggestions)
   },
 
   transactions: {
@@ -106,6 +111,7 @@ const api = {
     bulk: (action: string, ids: number[], data?: unknown) =>
       ipcRenderer.invoke('transactions:bulk', action, ids, data),
     csvPreview: (csv: string) => ipcRenderer.invoke('transactions:csvPreview', csv),
+    csvAnalyze: (csv: string, mapping: unknown) => ipcRenderer.invoke('transactions:csvAnalyze', csv, mapping),
     importCsv: (csv: string, mapping?: unknown) =>
       ipcRenderer.invoke('transactions:importCsv', csv, mapping),
     exportCsv: () => ipcRenderer.invoke('transactions:exportCsv'),
@@ -117,10 +123,29 @@ const api = {
       ipcRenderer.invoke('transactions:recurringMerchantPatterns', year, month),
     dismissRecurringMerchantPattern: (key: string) =>
       ipcRenderer.invoke('transactions:dismissRecurringMerchantPattern', key),
+    uncategorized: (year?: number, month?: number) =>
+      ipcRenderer.invoke('transactions:uncategorized', year, month),
+    categorize: (id: number, categoryId: number) =>
+      ipcRenderer.invoke('transactions:categorize', id, categoryId),
     importOfx: (accountId?: number) => ipcRenderer.invoke('transactions:importOfx', accountId),
     // Event sourcing methods
     history: (id: number) => ipcRenderer.invoke('transactions:history', id),
-    undo: (id: number) => ipcRenderer.invoke('transactions:undo', id)
+    undo: (id: number) => ipcRenderer.invoke('transactions:undo', id),
+    extras: (id: number) => ipcRenderer.invoke('transactions:extras', id),
+    setSplits: (id: number, splits: unknown[]) => ipcRenderer.invoke('transactions:setSplits', id, splits),
+    setTags: (id: number, names: string[]) => ipcRenderer.invoke('transactions:setTags', id, names),
+    setSharedExpenses: (id: number, shares: unknown[]) => ipcRenderer.invoke('transactions:setSharedExpenses', id, shares),
+    reconcile: (id: number, reconciled: boolean) => ipcRenderer.invoke('transactions:reconcile', id, reconciled),
+    addAttachment: (id: number) => ipcRenderer.invoke('transactions:addAttachment', id),
+    openAttachment: (id: number) => ipcRenderer.invoke('transactions:openAttachment', id),
+    removeAttachment: (id: number) => ipcRenderer.invoke('transactions:removeAttachment', id),
+    refundCandidates: (id: number) => ipcRenderer.invoke('transactions:refundCandidates', id),
+    linkRefund: (sourceId: number, refundId: number) => ipcRenderer.invoke('transactions:linkRefund', sourceId, refundId),
+    unlinkRefund: (linkId: number) => ipcRenderer.invoke('transactions:unlinkRefund', linkId),
+    transferCandidates: () => ipcRenderer.invoke('transactions:transferCandidates'),
+    convertTransferPair: (expenseId: number, incomeId: number) => ipcRenderer.invoke('transactions:convertTransferPair', expenseId, incomeId),
+    globalHistory: (limit?: number) => ipcRenderer.invoke('transactions:globalHistory', limit),
+    restoreEvent: (transactionId: number, eventId: number) => ipcRenderer.invoke('transactions:restoreEvent', transactionId, eventId)
   },
 
   goals: {
@@ -129,12 +154,17 @@ const api = {
     update: (id: number, goal: unknown) => ipcRenderer.invoke('goals:update', id, goal),
     delete: (id: number) => ipcRenderer.invoke('goals:delete', id),
     emergencyTarget: () => ipcRenderer.invoke('goals:emergencyTarget'),
-    autoCreateFromCategories: () => ipcRenderer.invoke('goals:autoCreateFromCategories')
+    autoCreateFromCategories: () => ipcRenderer.invoke('goals:autoCreateFromCategories'),
+    forecast: () => ipcRenderer.invoke('goals:forecast'),
+    debtPlanner: (extraPayment?: number) => ipcRenderer.invoke('goals:debtPlanner', extraPayment),
+    addDebtPayment: (goalId: number, payment: unknown) => ipcRenderer.invoke('goals:addDebtPayment', goalId, payment),
+    deleteDebtPayment: (paymentId: number) => ipcRenderer.invoke('goals:deleteDebtPayment', paymentId)
   },
 
   wealth: {
     list: () => ipcRenderer.invoke('wealth:list'),
-    create: (snap: unknown) => ipcRenderer.invoke('wealth:create', snap)
+    create: (snap: unknown) => ipcRenderer.invoke('wealth:create', snap),
+    captureSnapshot: () => ipcRenderer.invoke('wealth:captureSnapshot')
   },
 
   pension: {
@@ -174,7 +204,10 @@ const api = {
     link: (id: number) => ipcRenderer.invoke('subscriptions:link', id),
     unlink: (id: number) => ipcRenderer.invoke('subscriptions:unlink', id),
     checkBilling: () => ipcRenderer.invoke('subscriptions:checkBilling'),
-    upcoming: () => ipcRenderer.invoke('subscriptions:upcoming')
+    upcoming: () => ipcRenderer.invoke('subscriptions:upcoming'),
+    dueWarnings: (minDays?: number, maxDays?: number) =>
+      ipcRenderer.invoke('subscriptions:dueWarnings', minDays, maxDays),
+    priceHistory: (id: number) => ipcRenderer.invoke('subscriptions:priceHistory', id)
   },
 
   savings: {
@@ -215,7 +248,9 @@ const api = {
   dashboard: {
     stats: (year: number, month: number) => ipcRenderer.invoke('dashboard:stats', year, month),
     cashFlowForecast: (year: number, month: number) =>
-      ipcRenderer.invoke('dashboard:cashFlowForecast', year, month)
+      ipcRenderer.invoke('dashboard:cashFlowForecast', year, month),
+    monthlyReview: (year: number, month: number) =>
+      ipcRenderer.invoke('dashboard:monthlyReview', year, month)
   },
 
   data: {
@@ -224,13 +259,19 @@ const api = {
     importDb: () => ipcRenderer.invoke('data:importDb'),
     importJson: () => ipcRenderer.invoke('data:importJson'),
     wipe: () => ipcRenderer.invoke('data:wipe'),
-    repairFromEvents: () => ipcRenderer.invoke('data:repairFromEvents')
+    repairFromEvents: () => ipcRenderer.invoke('data:repairFromEvents'),
+    auditFixScan: () => ipcRenderer.invoke('data:auditFixScan'),
+    auditFixApply: () => ipcRenderer.invoke('data:auditFixApply'),
+    qualityStatus: () => ipcRenderer.invoke('data:qualityStatus'),
+    verifyBackup: () => ipcRenderer.invoke('data:verifyBackup')
   },
 
   reports: {
     yearSummary: (year: number) => ipcRenderer.invoke('reports:yearSummary', year),
     taxReviewExport: (year: number, categoryIds: number[]) =>
-      ipcRenderer.invoke('reports:taxReviewExport', year, categoryIds)
+      ipcRenderer.invoke('reports:taxReviewExport', year, categoryIds),
+    exportFinanceCsv: (year: number, month?: number) => ipcRenderer.invoke('reports:exportFinanceCsv', year, month),
+    exportFinancePdf: (year: number, month?: number) => ipcRenderer.invoke('reports:exportFinancePdf', year, month)
   },
 
   tax: {
@@ -238,7 +279,44 @@ const api = {
     getYearSettings: (year: number) => ipcRenderer.invoke('tax:getYearSettings', year),
     setYearSettings: (settings: unknown) => ipcRenderer.invoke('tax:setYearSettings', settings),
     setEntry: (entry: unknown) => ipcRenderer.invoke('tax:setEntry', entry),
-    deleteEntry: (year: number, month: number) => ipcRenderer.invoke('tax:deleteEntry', year, month)
+    deleteEntry: (year: number, month: number) => ipcRenderer.invoke('tax:deleteEntry', year, month),
+    overview: (year: number) => ipcRenderer.invoke('tax:overview', year)
+  },
+
+  reconciliation: {
+    preview: (accountId: number, statementDate: string, statementBalance: number) =>
+      ipcRenderer.invoke('reconciliation:preview', accountId, statementDate, statementBalance),
+    complete: (accountId: number, statementDate: string, statementBalance: number) =>
+      ipcRenderer.invoke('reconciliation:complete', accountId, statementDate, statementBalance),
+    history: (accountId: number) => ipcRenderer.invoke('reconciliation:history', accountId)
+  },
+
+  filters: {
+    list: () => ipcRenderer.invoke('filters:list'),
+    save: (name: string, filters: Record<string, unknown>) => ipcRenderer.invoke('filters:save', name, filters),
+    delete: (id: number) => ipcRenderer.invoke('filters:delete', id)
+  },
+
+  months: {
+    listClosed: () => ipcRenderer.invoke('months:listClosed'),
+    setClosed: (year: number, month: number, closed: boolean) => ipcRenderer.invoke('months:setClosed', year, month, closed)
+  },
+
+  merchants: {
+    listAliases: () => ipcRenderer.invoke('merchants:listAliases'),
+    saveAlias: (pattern: string, merchantName: string) => ipcRenderer.invoke('merchants:saveAlias', pattern, merchantName),
+    deleteAlias: (id: number) => ipcRenderer.invoke('merchants:deleteAlias', id)
+  },
+
+  planning: {
+    cashFlowCalendar: (days?: number) => ipcRenderer.invoke('planning:cashFlowCalendar', days),
+    expenseForecast: (year: number, month: number) => ipcRenderer.invoke('planning:expenseForecast', year, month),
+    budgetSuggestions: (year: number, month: number) => ipcRenderer.invoke('planning:budgetSuggestions', year, month),
+    scenario: (input: unknown) => ipcRenderer.invoke('planning:scenario', input)
+  },
+
+  alerts: {
+    financial: (year: number, month: number) => ipcRenderer.invoke('alerts:financial', year, month)
   },
 
   print: {
