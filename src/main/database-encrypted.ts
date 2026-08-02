@@ -1,7 +1,7 @@
 import SqlCipher from 'better-sqlite3-multiple-ciphers'
 import { app } from 'electron'
-import { join } from 'path'
-import { existsSync, mkdirSync } from 'fs'
+import { dirname, join, resolve, sep } from 'path'
+import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs'
 import {
   isKeystoreUnlocked,
   isKeystoreInitialized,
@@ -19,6 +19,66 @@ import { initializeEventStore } from './events/event-store'
 import { runFinancialToolsMigration } from './db/financial-tools-schema'
 
 let db: SqlCipher.Database | null = null
+let activeDatabasePath: string | null = null
+
+export interface DemoModeStatus {
+  active: boolean
+  startedAt: string | null
+  seed?: number | null
+  preset?: string | null
+}
+
+function getDataDir(): string {
+  const dir = join(app.getPath('appData'), 'BudgetApp')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+function getRealDatabasePath(): string {
+  return join(getDataDir(), 'data_encrypted.db')
+}
+
+function getDemoDir(): string {
+  return join(getDataDir(), 'demo-environment')
+}
+
+function getDemoDatabasePath(): string {
+  return join(getDemoDir(), 'data_encrypted.db')
+}
+
+function getDemoMarkerPath(): string {
+  return join(getDataDir(), 'demo-mode.json')
+}
+
+function removeDemoMarker(): void {
+  const markerPath = getDemoMarkerPath()
+  if (existsSync(markerPath)) unlinkSync(markerPath)
+}
+
+function removeDemoArtifacts(): void {
+  const dataDir = resolve(getDataDir())
+  const demoDir = resolve(getDemoDir())
+  if (!demoDir.startsWith(`${dataDir}${sep}`)) {
+    throw new Error('Refusing to remove demo data outside the app data directory.')
+  }
+  if (existsSync(demoDir)) rmSync(demoDir, { recursive: true, force: true })
+}
+
+function readDemoMarker(): { startedAt?: string; seed?: number; preset?: string } {
+  try {
+    return JSON.parse(readFileSync(getDemoMarkerPath(), 'utf8')) as { startedAt?: string; seed?: number; preset?: string }
+  } catch {
+    return {}
+  }
+}
+
+function closeDatabaseConnection(): void {
+  if (db) {
+    db.close()
+    db = null
+  }
+  clearTableSigningKeys()
+}
 
 function getProfileDefaults(): Record<string, unknown> {
   return {
@@ -63,6 +123,11 @@ function backfillProfileDefaults(database: SqlCipher.Database): void {
   } catch (e) {
     console.log('Profile defaults backfill skipped:', e)
   }
+}
+
+export const __databaseTesting = {
+  getProfileDefaults,
+  backfillProfileDefaults
 }
 
 function ensureMainAccount(database: SqlCipher.Database): number {
@@ -144,9 +209,49 @@ function runTaxYearSettingsMigration(database: SqlCipher.Database): void {
 }
 
 export function getDbPath(): string {
-  const dir = join(app.getPath('appData'), 'BudgetApp')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  return join(dir, 'data_encrypted.db')
+  if (activeDatabasePath) return activeDatabasePath
+  return existsSync(getDemoMarkerPath()) ? getDemoDatabasePath() : getRealDatabasePath()
+}
+
+export function getAttachmentStoragePath(): string {
+  return isDemoMode()
+    ? join(getDemoDir(), 'attachments')
+    : join(getDataDir(), 'attachments')
+}
+
+export function getDemoModeStatus(): DemoModeStatus {
+  const marker = existsSync(getDemoMarkerPath()) ? readDemoMarker() : {}
+  return {
+    active: isDemoMode(),
+    startedAt: typeof marker.startedAt === 'string' ? marker.startedAt : null,
+    seed: typeof marker.seed === 'number' ? marker.seed : null,
+    preset: typeof marker.preset === 'string' ? marker.preset : null
+  }
+}
+
+export function configureDemoMode(seed: number, preset: string): DemoModeStatus {
+  if (!isDemoMode()) throw new Error('Demo mode is not active.')
+  const current = readDemoMarker()
+  const marker = { startedAt: current.startedAt ?? new Date().toISOString(), seed: Math.trunc(seed), preset: preset || 'random' }
+  writeFileSync(getDemoMarkerPath(), JSON.stringify(marker), { encoding: 'utf8', mode: 0o600 })
+  return getDemoModeStatus()
+}
+
+export function isDemoMode(): boolean {
+  if (activeDatabasePath) return activeDatabasePath === getDemoDatabasePath()
+  return existsSync(getDemoMarkerPath())
+}
+
+function openDatabaseAt(databasePath: string): SqlCipher.Database {
+  const parent = dirname(databasePath)
+  if (!existsSync(parent)) mkdirSync(parent, { recursive: true })
+  activeDatabasePath = databasePath
+  db = hasEncryptedDatabase(databasePath)
+    ? openEncryptedDatabase(databasePath)
+    : createEncryptedDatabase(databasePath)
+  runMigrations(db)
+  initializeEventStore()
+  return db
 }
 
 /**
@@ -160,20 +265,70 @@ export function initDatabase(): SqlCipher.Database {
     throw new Error('Cannot initialize database: keystore is locked')
   }
   
-  // Check if we need to create a new database or open existing
-  if (hasEncryptedDatabase()) {
-    db = openEncryptedDatabase()
-  } else {
-    db = createEncryptedDatabase()
+  const demoRequested = existsSync(getDemoMarkerPath())
+  const requestedPath = demoRequested ? getDemoDatabasePath() : getRealDatabasePath()
+  try {
+    return openDatabaseAt(requestedPath)
+  } catch (error) {
+    closeDatabaseConnection()
+    if (!demoRequested) throw error
+
+    console.error('Demo database could not be opened; returning to the real database:', error)
+    removeDemoMarker()
+    activeDatabasePath = null
+    return openDatabaseAt(getRealDatabasePath())
   }
-  
-  // Run migrations to ensure schema is up to date
-  runMigrations(db)
-  
-  // Initialize event sourcing tables
-  initializeEventStore()
-  
-  return db
+}
+
+export function enterDemoMode(): DemoModeStatus {
+  if (!isKeystoreUnlocked() || !db) {
+    throw new Error('Unlock the database before starting demo mode.')
+  }
+
+  closeDatabaseConnection()
+  removeDemoArtifacts()
+  const demoPath = getDemoDatabasePath()
+
+  try {
+    openDatabaseAt(demoPath)
+    const startedAt = new Date().toISOString()
+    writeFileSync(getDemoMarkerPath(), JSON.stringify({ startedAt }), { encoding: 'utf8', mode: 0o600 })
+    return { active: true, startedAt }
+  } catch (error) {
+    closeDatabaseConnection()
+    removeDemoMarker()
+    removeDemoArtifacts()
+    activeDatabasePath = null
+    openDatabaseAt(getRealDatabasePath())
+    throw error
+  }
+}
+
+export function exitDemoMode(): DemoModeStatus {
+  if (!isDemoMode()) return { active: false, startedAt: null }
+  if (!isKeystoreUnlocked() || !db) {
+    throw new Error('Unlock the database before leaving demo mode.')
+  }
+
+  const demoPath = getDemoDatabasePath()
+  closeDatabaseConnection()
+  activeDatabasePath = null
+
+  try {
+    openDatabaseAt(getRealDatabasePath())
+    removeDemoMarker()
+    try {
+      removeDemoArtifacts()
+    } catch (cleanupError) {
+      console.error('Demo database cleanup failed:', cleanupError)
+    }
+    return { active: false, startedAt: null }
+  } catch (error) {
+    closeDatabaseConnection()
+    activeDatabasePath = demoPath
+    openDatabaseAt(demoPath)
+    throw error
+  }
 }
 
 /**
@@ -191,11 +346,8 @@ export function getDatabase(): SqlCipher.Database {
  * Close the database and lock the keystore
  */
 export function closeDatabase(): void {
-  if (db) {
-    db.close()
-    db = null
-  }
-  clearTableSigningKeys()
+  closeDatabaseConnection()
+  activeDatabasePath = null
   lockKeystore()
 }
 

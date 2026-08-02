@@ -26,4 +26,13 @@ describe('calculateDebtPayoffPlan', () => {
     expect(plan.months).toBeNull()
     expect(plan.payoffDate).toBeNull()
   })
+
+  it('treats extra payment as monthly money on top of all minimums', () => {
+    const minimumOnly = calculateDebtPayoffPlan(debts, 'avalanche', 0, '2026-08-01')
+    const withExtra = calculateDebtPayoffPlan(debts, 'avalanche', 300, '2026-08-01')
+
+    expect(withExtra.months).not.toBeNull()
+    expect(withExtra.months!).toBeLessThan(minimumOnly.months!)
+    expect(withExtra.totalInterest).toBeLessThan(minimumOnly.totalInterest)
+  })
 })

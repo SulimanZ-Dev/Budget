@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { __databaseTesting } from '../database'
+import { __databaseTesting } from '../database-encrypted'
 
 class FakeSettingsDb {
   profile = ''

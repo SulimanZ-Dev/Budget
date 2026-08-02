@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.2.0] - 2026-08-02
+
+### Added
+
+- An isolated Developer Scenario Lab with deterministic random data, visible seeds, replay, reusable edge-case presets, and database diagnostics without touching the user's real financial plan.
+- A unified Review Inbox for duplicates, uncategorized purchases, transfer and refund candidates, unusual activity, due items, reconciliation reminders, and data-quality problems.
+- Transaction-linked debt payments with principal, interest, and fee splits, automatic balance updates, due dates, minimum-payment reminders, and missing-payment warnings.
+- Safe-to-spend totals per month and per day after upcoming obligations and reserved amounts.
+- Reusable CSV import profiles, import history, and duplicate/conflict review.
+- Persistent 12-month financial scenarios with dated income, expense, purchase, moving, and debt-payoff events.
+
+### Changed
+
+- Demo runs now use their own encrypted database and can be exited safely to restore the real profile unchanged.
+- Existing member, category, investment, and financial-planning flows are available consistently in both normal and demo environments.
+- Documentation and security notes now describe the expanded planning, review, import, and demo capabilities.
+
+### Fixed
+
+- Debt balances now decrease only by principal when a payment also includes interest or fees.
+- Unlock throttling now resets and expires consistently.
+- Removed obsolete database code, unused APIs and dependencies, stale build metadata, and other unreachable implementation paths.
+
 ## [1.1.0] - 2026-08-02
 
 ### Added

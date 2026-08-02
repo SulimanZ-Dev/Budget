@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import SqlCipher from 'better-sqlite3-multiple-ciphers'
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, renameSync, unlinkSync, writeFileSync, readFileSync } from 'fs'
+import { existsSync, renameSync, unlinkSync } from 'fs'
 import { randomBytes } from 'crypto'
 import { getDEK } from '../crypto/keyManager'
 
@@ -88,8 +88,8 @@ export function needsMigration(): boolean {
 /**
  * Check if encrypted database exists
  */
-export function hasEncryptedDatabase(): boolean {
-  return existsSync(getEncryptedDbPath())
+export function hasEncryptedDatabase(databasePath = getEncryptedDbPath()): boolean {
+  return existsSync(databasePath)
 }
 
 /**
@@ -280,9 +280,7 @@ export async function migrateToEncrypted(): Promise<void> {
  * Create a new encrypted database from scratch
  * Used when starting fresh without an existing unencrypted database
  */
-export function createEncryptedDatabase(): SqlCipher.Database {
-  const encryptedPath = getEncryptedDbPath()
-  
+export function createEncryptedDatabase(encryptedPath = getEncryptedDbPath()): SqlCipher.Database {
   if (existsSync(encryptedPath)) {
     throw new Error('Encrypted database already exists')
   }
@@ -318,9 +316,7 @@ export function createEncryptedDatabase(): SqlCipher.Database {
 /**
  * Open the encrypted database
  */
-export function openEncryptedDatabase(): SqlCipher.Database {
-  const encryptedPath = getEncryptedDbPath()
-  
+export function openEncryptedDatabase(encryptedPath = getEncryptedDbPath()): SqlCipher.Database {
   if (!existsSync(encryptedPath)) {
     throw new Error('Encrypted database does not exist')
   }

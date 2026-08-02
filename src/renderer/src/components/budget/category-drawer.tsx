@@ -51,11 +51,14 @@ export function CategoryDrawerContent({
   const [notes, setNotes] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [editAmount, setEditAmount] = useState('')
+  const [editName, setEditName] = useState(categoryName)
+  const [localCategoryName, setLocalCategoryName] = useState(categoryName)
   const [localBudgetAmount, setLocalBudgetAmount] = useState(budgetAmount)
 
   useEffect(() => {
     setLocalBudgetAmount(budgetAmount)
-  }, [budgetAmount])
+    setLocalCategoryName(categoryName)
+  }, [budgetAmount, categoryName])
 
   useEffect(() => {
     setLoading(true)
@@ -107,6 +110,10 @@ export function CategoryDrawerContent({
         amount,
         notes
       })
+      if (editName.trim() && editName.trim() !== localCategoryName) {
+        await window.api.categories.update(categoryId, { name: editName.trim() })
+        setLocalCategoryName(editName.trim())
+      }
       setLocalBudgetAmount(amount)
       setIsEditing(false)
       onRefresh()
@@ -126,7 +133,6 @@ export function CategoryDrawerContent({
   }
 
   const budget = localBudgetAmount * cpi
-  const category = detail?.category
   const remaining = budget - spent
   const chartData = detail.history.map((h) => ({
     month: MONTH_NAMES[h.month - 1]?.slice(0, 3) ?? String(h.month),
@@ -136,13 +142,12 @@ export function CategoryDrawerContent({
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold" style={{ color }}>
-          {categoryName}
-        </h2>
+        {isEditing ? <Input className="max-w-64" value={editName} onChange={(event) => setEditName(event.target.value)} /> : <h2 className="text-xl font-bold" style={{ color }}>{localCategoryName}</h2>}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => {
             setIsEditing(true)
             setEditAmount(String(localBudgetAmount))
+            setEditName(localCategoryName)
           }}>
             <Pencil className="h-4 w-4" />
           </Button>

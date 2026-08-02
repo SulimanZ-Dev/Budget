@@ -3,8 +3,6 @@ import { motion } from 'framer-motion'
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
   AreaChart,
   Area,
   PieChart,
@@ -16,7 +14,7 @@ import {
   ResponsiveContainer,
   Legend
 } from 'recharts'
-import { Flame, TrendingUp, Sparkles, CreditCard, AlertTriangle } from 'lucide-react'
+import { TrendingUp, Sparkles, CreditCard, AlertTriangle } from 'lucide-react'
 import { StatTile } from '@/components/shared/stat-tile'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'

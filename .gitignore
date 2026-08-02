@@ -4,6 +4,7 @@ release
 dist
 BudgetApp
 *.log
+*.tsbuildinfo
 .DS_Store
 Thumbs.db
 .env

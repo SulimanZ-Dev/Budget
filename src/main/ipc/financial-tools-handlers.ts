@@ -1,14 +1,15 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import SqlCipher from 'better-sqlite3-multiple-ciphers'
 import { randomUUID } from 'crypto'
 import { copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs'
 import { basename, extname, join } from 'path'
-import { getDatabase } from '../database-encrypted'
+import { getAttachmentStoragePath, getDatabase } from '../database-encrypted'
 import { getDEK } from '../crypto/keyManager'
 import { signGoal } from '../crypto/integrity'
 import { deleteTransaction, restoreTransactionToEvent, updateTransaction } from '../commands/transaction-commands'
 import { calculateDebtPayoffPlan } from '../services/debt-payoff'
 import { assertMonthOpen } from '../services/month-lock'
+import { normalizeDebtPaymentBreakdown } from '../services/debt-payment'
 
 type GetWindow = () => BrowserWindow | null
 
@@ -40,6 +41,13 @@ function advanceDate(date: string, frequency: string): string {
   return addMonths(date, 1)
 }
 
+function monthlyAmount(amount: number, frequency?: string | null): number {
+  if (frequency === 'weekly') return amount * 52 / 12
+  if (frequency === 'fortnightly') return amount * 26 / 12
+  if (frequency === 'yearly' || frequency === 'annual') return amount / 12
+  return amount
+}
+
 function accountBalanceAt(accountId: number, statementDate: string): number {
   const database = getDatabase()
   const account = database.prepare('SELECT opening_balance, type FROM accounts WHERE id = ?').get(accountId) as
@@ -62,7 +70,7 @@ function accountBalanceAt(accountId: number, statementDate: string): number {
 }
 
 function getAttachmentDir(): string {
-  const path = join(app.getPath('appData'), 'BudgetApp', 'attachments')
+  const path = getAttachmentStoragePath()
   if (!existsSync(path)) mkdirSync(path, { recursive: true })
   return path
 }
@@ -509,16 +517,16 @@ export function registerFinancialToolsHandlers(getWindow: GetWindow): void {
 
   ipcMain.handle('goals:debtPlanner', (_, extraPayment = 0) => {
     const rows = db().prepare(`
-      SELECT id,name,creditor,target_amount,current_amount,target_date,interest_rate,monthly_payment,notes
+      SELECT id,name,creditor,target_amount,current_amount,target_date,interest_rate,monthly_payment,next_payment_date,notes
       FROM goals WHERE type='debt' AND target_amount>0 ORDER BY CASE WHEN target_amount-current_amount > 0 THEN 0 ELSE 1 END, id
     `).all() as Array<{
       id: number; name: string; creditor: string | null; target_amount: number; current_amount: number
-      target_date: string | null; interest_rate: number | null; monthly_payment: number | null; notes: string | null
+      target_date: string | null; interest_rate: number | null; monthly_payment: number | null; next_payment_date: string | null; notes: string | null
     }>
     const payments = db().prepare(`
-      SELECT id,goal_id,amount,payment_date,note,created_at
+      SELECT id,goal_id,amount,payment_date,note,transaction_id,principal_amount,interest_amount,fee_amount,created_at
       FROM debt_payments ORDER BY payment_date DESC,id DESC
-    `).all() as Array<{ id: number; goal_id: number; amount: number; payment_date: string; note: string | null; created_at: string }>
+    `).all() as Array<{ id: number; goal_id: number; amount: number; payment_date: string; note: string | null; transaction_id: number | null; principal_amount: number | null; interest_amount: number; fee_amount: number; created_at: string }>
     const debts = rows.map((goal) => {
       const paidAmount = Math.min(Math.max(0, Number(goal.current_amount) || 0), Math.max(0, Number(goal.target_amount) || 0))
       const debtPayments = payments.filter((payment) => payment.goal_id === goal.id)
@@ -533,6 +541,7 @@ export function registerFinancialToolsHandlers(getWindow: GetWindow): void {
         balance: round(Math.max(0, goal.target_amount - paidAmount)),
         interestRate: Math.max(0, Number(goal.interest_rate) || 0),
         minimum: Math.max(0, Number(goal.monthly_payment) || 0),
+        nextPaymentDate: goal.next_payment_date,
         targetDate: goal.target_date,
         notes: goal.notes,
         payments: debtPayments
@@ -554,22 +563,41 @@ export function registerFinancialToolsHandlers(getWindow: GetWindow): void {
     }
   })
 
-  ipcMain.handle('goals:addDebtPayment', (_, goalId: number, input: { amount: number; date: string; note?: string }) => {
+  ipcMain.handle('goals:paymentCandidates', () => db().prepare(`
+    SELECT t.id,t.description,t.amount,t.date,t.type,a.name AS account_name
+    FROM transactions t
+    LEFT JOIN accounts a ON a.id=t.account_id
+    LEFT JOIN debt_payments p ON p.transaction_id=t.id
+    WHERE p.id IS NULL AND t.type='expense' AND t.date>=date('now','-12 months')
+    ORDER BY t.date DESC,t.id DESC LIMIT 100
+  `).all())
+
+  ipcMain.handle('goals:addDebtPayment', (_, goalId: number, input: { amount: number; date: string; note?: string; transactionId?: number; principalAmount?: number; interestAmount?: number; feeAmount?: number }) => {
     const goal = db().prepare("SELECT * FROM goals WHERE id=? AND type='debt'").get(goalId) as {
-      id: number; name: string; type: string; target_amount: number; current_amount: number; target_date: string | null
+      id: number; name: string; type: string; target_amount: number; current_amount: number; target_date: string | null; next_payment_date: string | null
     } | undefined
     if (!goal) throw new Error('Debt not found.')
-    const amount = round(input.amount)
+    let amount = round(input.amount)
+    let paymentDate = input.date
+    if (input.transactionId) {
+      const transaction = db().prepare("SELECT id,amount,date,type FROM transactions WHERE id=?").get(input.transactionId) as { id: number; amount: number; date: string; type: string } | undefined
+      if (!transaction || transaction.type !== 'expense') throw new Error('Choose an expense transaction for this debt payment.')
+      const linked = db().prepare('SELECT id FROM debt_payments WHERE transaction_id=?').get(input.transactionId)
+      if (linked) throw new Error('That transaction is already linked to a debt payment.')
+      amount = round(transaction.amount)
+      paymentDate = transaction.date
+    }
     const remaining = round(Math.max(0, goal.target_amount - goal.current_amount))
-    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment must be greater than zero.')
-    if (amount > remaining) throw new Error(`Payment cannot exceed the remaining debt of ${remaining}.`)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new Error('Choose a valid payment date.')
-    const nextCurrent = round(goal.current_amount + amount)
+    const breakdown = normalizeDebtPaymentBreakdown(amount, remaining, input.principalAmount, input.interestAmount, input.feeAmount)
+    const { principal, interest, fee } = breakdown
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate)) throw new Error('Choose a valid payment date.')
+    const nextCurrent = round(goal.current_amount + principal)
+    const nextPaymentDate = goal.next_payment_date && paymentDate >= goal.next_payment_date ? addMonths(goal.next_payment_date, 1) : goal.next_payment_date
     const hmac = signGoal({ ...goal, current_amount: nextCurrent })
     const save = db().transaction(() => {
-      const result = db().prepare('INSERT INTO debt_payments (goal_id,amount,payment_date,note) VALUES (?,?,?,?)')
-        .run(goalId, amount, input.date, input.note?.trim().slice(0, 500) || null)
-      db().prepare('UPDATE goals SET current_amount=?,hmac=? WHERE id=?').run(nextCurrent, hmac, goalId)
+      const result = db().prepare('INSERT INTO debt_payments (goal_id,amount,payment_date,note,transaction_id,principal_amount,interest_amount,fee_amount) VALUES (?,?,?,?,?,?,?,?)')
+        .run(goalId, amount, paymentDate, input.note?.trim().slice(0, 500) || null, input.transactionId ?? null, principal, interest, fee)
+      db().prepare('UPDATE goals SET current_amount=?,next_payment_date=?,hmac=? WHERE id=?').run(nextCurrent, nextPaymentDate, hmac, goalId)
       return { id: Number(result.lastInsertRowid) }
     })
     return save()
@@ -577,14 +605,14 @@ export function registerFinancialToolsHandlers(getWindow: GetWindow): void {
 
   ipcMain.handle('goals:deleteDebtPayment', (_, paymentId: number) => {
     const payment = db().prepare(`
-      SELECT p.id,p.amount,p.goal_id,g.name,g.type,g.target_amount,g.current_amount,g.target_date
+      SELECT p.id,p.amount,p.principal_amount,p.goal_id,g.name,g.type,g.target_amount,g.current_amount,g.target_date
       FROM debt_payments p JOIN goals g ON g.id=p.goal_id WHERE p.id=?
     `).get(paymentId) as {
-      id: number; amount: number; goal_id: number; name: string; type: string
+      id: number; amount: number; principal_amount: number | null; goal_id: number; name: string; type: string
       target_amount: number; current_amount: number; target_date: string | null
     } | undefined
     if (!payment) throw new Error('Debt payment not found.')
-    const nextCurrent = round(Math.max(0, payment.current_amount - payment.amount))
+    const nextCurrent = round(Math.max(0, payment.current_amount - (payment.principal_amount ?? payment.amount)))
     const hmac = signGoal({ ...payment, current_amount: nextCurrent })
     const remove = db().transaction(() => {
       db().prepare('DELETE FROM debt_payments WHERE id=?').run(paymentId)
@@ -606,6 +634,118 @@ export function registerFinancialToolsHandlers(getWindow: GetWindow): void {
     const income = base.income * (1 + (Number(input.incomeChangePercent) || 0) / 100)
     const expenses = base.expenses * (1 + (Number(input.expenseChangePercent) || 0) / 100) + (Number(input.recurringIncrease) || 0)
     return { baseline: { income: round(base.income), expenses: round(base.expenses), net: round(base.income - base.expenses) }, scenario: { income: round(income), expenses: round(expenses), net: round(income - expenses) } }
+  })
+
+  ipcMain.handle('planning:safeToSpend', (_, year: number, month: number) => {
+    const ym = `${year}-${String(month).padStart(2, '0')}`
+    const actual = db().prepare(`SELECT
+      COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) AS income,
+      COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) AS spent
+      FROM transactions WHERE strftime('%Y-%m',date)=?`).get(ym) as { income: number; spent: number }
+    const incomeSources = db().prepare('SELECT amount,frequency FROM income_sources WHERE COALESCE(is_recurring,0)=1').all() as Array<{ amount: number; frequency: string | null }>
+    const plannedIncome = incomeSources.reduce((sum, row) => sum + monthlyAmount(row.amount, row.frequency), 0)
+    const categorySpend = db().prepare(`SELECT category_id,COALESCE(SUM(amount),0) AS spent FROM transaction_category_amounts WHERE type='expense' AND strftime('%Y-%m',date)=? GROUP BY category_id`).all(ym) as Array<{ category_id: number; spent: number }>
+    const spendMap = new Map(categorySpend.map((row) => [row.category_id, row.spent]))
+    const budgets = db().prepare(`SELECT c.id,COALESCE(be.amount,c.budget_amount,0) AS amount FROM categories c LEFT JOIN budget_entries be ON be.category_id=c.id AND be.year=? AND be.month=?`).all(year, month) as Array<{ id: number; amount: number }>
+    const reservedBudget = budgets.reduce((sum, row) => sum + Math.max(0, row.amount - (spendMap.get(row.id) ?? 0)), 0)
+    const subscriptions = db().prepare("SELECT amount,frequency,next_billing_date FROM subscriptions WHERE COALESCE(on_hold,0)=0").all() as Array<{ amount: number; frequency: string | null; next_billing_date: string | null }>
+    const upcomingBills = subscriptions.reduce((sum, row) => {
+      if (row.next_billing_date) return row.next_billing_date.slice(0, 7) === ym ? sum + row.amount : sum
+      return sum + monthlyAmount(row.amount, row.frequency)
+    }, 0)
+    const savings = db().prepare('SELECT amount,frequency FROM savings_sources').all() as Array<{ amount: number; frequency: string | null }>
+    const savingsCommitments = savings.reduce((sum, row) => sum + monthlyAmount(row.amount, row.frequency), 0)
+    const debt = db().prepare("SELECT COALESCE(SUM(g.monthly_payment),0) AS total FROM goals g WHERE g.type='debt' AND g.current_amount<g.target_amount AND NOT EXISTS (SELECT 1 FROM debt_payments p WHERE p.goal_id=g.id AND strftime('%Y-%m',p.payment_date)=?)").get(ym) as { total: number }
+    const expectedIncome = Math.max(actual.income, plannedIncome)
+    const available = round(expectedIncome - actual.spent - reservedBudget - upcomingBills - savingsCommitments - debt.total)
+    const now = new Date()
+    const daysInMonth = new Date(year, month, 0).getDate()
+    const daysRemaining = year === now.getFullYear() && month === now.getMonth() + 1 ? Math.max(1, daysInMonth - now.getDate() + 1) : daysInMonth
+    return {
+      available,
+      perDay: round(available / daysRemaining),
+      daysRemaining,
+      components: { expectedIncome: round(expectedIncome), spent: round(actual.spent), reservedBudget: round(reservedBudget), upcomingBills: round(upcomingBills), savingsCommitments: round(savingsCommitments), debtMinimums: round(debt.total) }
+    }
+  })
+
+  ipcMain.handle('review:inbox', () => {
+    type ReviewItem = { key: string; kind: string; severity: 'info' | 'warning' | 'critical'; title: string; detail: string; transactionIds?: number[] }
+    const items: ReviewItem[] = []
+    const duplicates = db().prepare(`SELECT lower(trim(description)) AS description,round(amount,2) AS amount,date,group_concat(id) AS ids,COUNT(*) AS count FROM transactions GROUP BY lower(trim(description)),round(amount,2),type,account_id,date HAVING COUNT(*)>1 LIMIT 30`).all() as Array<{ description: string; amount: number; date: string; ids: string; count: number }>
+    duplicates.forEach((row) => items.push({ key: `duplicate:${row.description}:${row.amount}:${row.date}`, kind: 'duplicate', severity: 'warning', title: `${row.count} possible duplicate transactions`, detail: `${row.description} · ${row.amount} · ${row.date}`, transactionIds: row.ids.split(',').map(Number) }))
+    const uncategorized = db().prepare("SELECT id,description,amount,date FROM transactions WHERE type='expense' AND category_id IS NULL AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id=transactions.id) ORDER BY date DESC LIMIT 40").all() as Array<{ id: number; description: string; amount: number; date: string }>
+    uncategorized.forEach((row) => items.push({ key: `uncategorized:${row.id}`, kind: 'uncategorized', severity: 'warning', title: 'Uncategorized purchase', detail: `${row.description} · ${row.amount} · ${row.date}`, transactionIds: [row.id] }))
+    const pairRows = db().prepare(`SELECT e.id AS expense_id,i.id AS income_id,e.description,e.amount,e.date FROM transactions e JOIN transactions i ON i.type='income' AND e.type='expense' AND i.account_id<>e.account_id AND abs(i.amount-e.amount)<0.01 AND abs(julianday(i.date)-julianday(e.date))<=2 LEFT JOIN debt_payments p ON p.transaction_id=e.id WHERE p.id IS NULL LIMIT 30`).all() as Array<{ expense_id: number; income_id: number; description: string; amount: number; date: string }>
+    pairRows.forEach((row) => items.push({ key: `transfer:${row.expense_id}:${row.income_id}`, kind: 'transfer', severity: 'info', title: 'Possible account transfer', detail: `${row.description} · ${row.amount} · ${row.date}`, transactionIds: [row.expense_id, row.income_id] }))
+    const refunds = db().prepare(`SELECT e.id AS expense_id,i.id AS income_id,e.description,e.amount,i.date FROM transactions e JOIN transactions i ON e.type='expense' AND i.type='income' AND i.account_id=e.account_id AND abs(i.amount-e.amount)<0.01 AND i.date>=e.date AND julianday(i.date)-julianday(e.date)<=90 LEFT JOIN transaction_links l ON l.source_transaction_id=e.id AND l.linked_transaction_id=i.id WHERE l.id IS NULL LIMIT 30`).all() as Array<{ expense_id: number; income_id: number; description: string; amount: number; date: string }>
+    refunds.forEach((row) => items.push({ key: `refund:${row.expense_id}:${row.income_id}`, kind: 'refund', severity: 'info', title: 'Possible refund match', detail: `${row.description} · ${row.amount} · returned ${row.date}`, transactionIds: [row.expense_id, row.income_id] }))
+    const unusual = db().prepare(`SELECT id,description,amount,date FROM transactions WHERE type='expense' AND date>=date('now','-90 days') AND amount>(SELECT MAX(1000,COALESCE(AVG(amount),0)*3) FROM transactions WHERE type='expense' AND date>=date('now','-180 days')) ORDER BY amount DESC LIMIT 20`).all() as Array<{ id: number; description: string; amount: number; date: string }>
+    unusual.forEach((row) => items.push({ key: `unusual:${row.id}`, kind: 'unusual', severity: 'warning', title: 'Unusual transaction', detail: `${row.description} · ${row.amount} · ${row.date}`, transactionIds: [row.id] }))
+    const due = db().prepare("SELECT id,name,amount,next_billing_date FROM subscriptions WHERE COALESCE(on_hold,0)=0 AND next_billing_date IS NOT NULL AND date(next_billing_date)<=date('now','+7 days') ORDER BY next_billing_date LIMIT 20").all() as Array<{ id: number; name: string; amount: number; next_billing_date: string }>
+    due.forEach((row) => items.push({ key: `subscription:${row.id}:${row.next_billing_date}`, kind: 'subscription', severity: row.next_billing_date < today() ? 'critical' : 'warning', title: row.next_billing_date < today() ? 'Overdue recurring payment' : 'Recurring payment due soon', detail: `${row.name} · ${row.amount} · ${row.next_billing_date}` }))
+    const accounts = db().prepare(`SELECT a.id,a.name,MAX(r.statement_date) AS last_date FROM accounts a LEFT JOIN account_reconciliations r ON r.account_id=a.id WHERE a.is_archived=0 GROUP BY a.id HAVING last_date IS NULL OR date(last_date)<date('now','-45 days')`).all() as Array<{ id: number; name: string; last_date: string | null }>
+    accounts.forEach((row) => items.push({ key: `reconcile:${row.id}:${row.last_date ?? 'never'}`, kind: 'reconciliation', severity: 'info', title: 'Account needs reconciliation', detail: `${row.name} · ${row.last_date ? `last reconciled ${row.last_date}` : 'never reconciled'}` }))
+    const debts = db().prepare("SELECT id,name,next_payment_date,monthly_payment FROM goals WHERE type='debt' AND current_amount<target_amount AND next_payment_date IS NOT NULL AND date(next_payment_date)<=date('now','+7 days')").all() as Array<{ id: number; name: string; next_payment_date: string; monthly_payment: number }>
+    debts.forEach((row) => items.push({ key: `debt-due:${row.id}:${row.next_payment_date}`, kind: 'debt', severity: row.next_payment_date < today() ? 'critical' : 'warning', title: row.next_payment_date < today() ? 'Debt payment overdue' : 'Debt payment due soon', detail: `${row.name} · minimum ${row.monthly_payment || 0} · ${row.next_payment_date}` }))
+    const missingAccounts = (db().prepare('SELECT COUNT(*) AS count FROM transactions t LEFT JOIN accounts a ON a.id=t.account_id WHERE a.id IS NULL').get() as { count: number }).count
+    if (missingAccounts > 0) items.push({ key: `quality:missing-accounts:${missingAccounts}`, kind: 'quality', severity: 'critical', title: 'Transactions reference missing accounts', detail: `${missingAccounts} transaction${missingAccounts === 1 ? '' : 's'} need repair.` })
+    const attachmentRows = db().prepare('SELECT id,stored_path FROM transaction_attachments').all() as Array<{ id: number; stored_path: string }>
+    const missingAttachments = attachmentRows.filter((attachment) => !attachment.stored_path || !existsSync(attachment.stored_path)).length
+    if (missingAttachments > 0) items.push({ key: `quality:missing-attachments:${missingAttachments}`, kind: 'quality', severity: 'warning', title: 'Attachment files are missing', detail: `${missingAttachments} attachment reference${missingAttachments === 1 ? '' : 's'} cannot be opened.` })
+    const dismissed = new Set((db().prepare('SELECT item_key FROM review_dismissals').all() as Array<{ item_key: string }>).map((row) => row.item_key))
+    return items.filter((item) => !dismissed.has(item.key)).sort((a, b) => ({ critical: 0, warning: 1, info: 2 }[a.severity] - { critical: 0, warning: 1, info: 2 }[b.severity]))
+  })
+
+  ipcMain.handle('review:dismiss', (_, key: string) => {
+    db().prepare('INSERT OR REPLACE INTO review_dismissals (item_key) VALUES (?)').run(String(key).slice(0, 500))
+    return true
+  })
+
+  ipcMain.handle('importProfiles:list', () => db().prepare('SELECT * FROM import_profiles ORDER BY name').all().map((row: any) => ({ ...row, mapping: JSON.parse(row.mapping_json) })))
+  ipcMain.handle('importProfiles:save', (_, input: { id?: number; name: string; accountId?: number; mapping: unknown }) => {
+    if (!input.name?.trim()) throw new Error('Profile name is required.')
+    if (input.id) {
+      db().prepare("UPDATE import_profiles SET name=?,account_id=?,mapping_json=?,updated_at=datetime('now') WHERE id=?").run(input.name.trim(), input.accountId ?? null, JSON.stringify(input.mapping), input.id)
+      return { id: input.id }
+    }
+    const result = db().prepare('INSERT INTO import_profiles (name,account_id,mapping_json) VALUES (?,?,?)').run(input.name.trim(), input.accountId ?? null, JSON.stringify(input.mapping))
+    return { id: Number(result.lastInsertRowid) }
+  })
+  ipcMain.handle('importProfiles:delete', (_, id: number) => { db().prepare('DELETE FROM import_profiles WHERE id=?').run(id); return true })
+  ipcMain.handle('importProfiles:history', () => db().prepare('SELECT s.*,p.name AS profile_name FROM import_sessions s LEFT JOIN import_profiles p ON p.id=s.profile_id ORDER BY s.created_at DESC,s.id DESC LIMIT 50').all())
+  ipcMain.handle('importProfiles:record', (_, input: { profileId?: number; sourceName?: string; imported: number; duplicates?: number; errors?: number }) => {
+    const result = db().prepare('INSERT INTO import_sessions (profile_id,source_name,imported_count,duplicate_count,error_count) VALUES (?,?,?,?,?)').run(input.profileId ?? null, input.sourceName?.slice(0, 200) ?? null, input.imported, input.duplicates ?? 0, input.errors ?? 0)
+    return { id: Number(result.lastInsertRowid) }
+  })
+
+  ipcMain.handle('scenarios:list', () => db().prepare('SELECT * FROM financial_scenarios ORDER BY updated_at DESC,id DESC').all().map((row: any) => ({ ...row, events: JSON.parse(row.events_json) })))
+  ipcMain.handle('scenarios:save', (_, input: { id?: number; name: string; events: unknown[] }) => {
+    if (!input.name?.trim()) throw new Error('Scenario name is required.')
+    if (input.id) {
+      db().prepare("UPDATE financial_scenarios SET name=?,events_json=?,updated_at=datetime('now') WHERE id=?").run(input.name.trim(), JSON.stringify(input.events ?? []), input.id)
+      return { id: input.id }
+    }
+    const result = db().prepare('INSERT INTO financial_scenarios (name,events_json) VALUES (?,?)').run(input.name.trim(), JSON.stringify(input.events ?? []))
+    return { id: Number(result.lastInsertRowid) }
+  })
+  ipcMain.handle('scenarios:delete', (_, id: number) => { db().prepare('DELETE FROM financial_scenarios WHERE id=?').run(id); return true })
+  ipcMain.handle('scenarios:project', (_, events: Array<{ date: string; type: 'income' | 'expense' | 'debt' | 'one-time'; amount: number; label?: string }>) => {
+    const base = db().prepare(`SELECT COALESCE(AVG(income),0) AS income,COALESCE(AVG(expenses),0) AS expenses FROM (SELECT strftime('%Y-%m',date) AS month,SUM(CASE WHEN type='income' THEN amount ELSE 0 END) AS income,SUM(CASE WHEN type='expense' THEN amount ELSE 0 END) AS expenses FROM transactions WHERE date>=date('now','-6 months') GROUP BY month)`).get() as { income: number; expenses: number }
+    let balance = 0
+    const start = new Date(); start.setDate(1)
+    return Array.from({ length: 12 }, (_, index) => {
+      const date = new Date(start.getFullYear(), start.getMonth() + index, 1)
+      const period = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      const active = (events ?? []).filter((event) => {
+        const eventPeriod = event.date?.slice(0, 7)
+        return event.type === 'income' || event.type === 'expense' ? eventPeriod <= period : eventPeriod === period
+      })
+      const income = round(base.income + active.filter((event) => event.type === 'income').reduce((sum, event) => sum + Number(event.amount || 0), 0))
+      const expenses = round(base.expenses + active.filter((event) => event.type !== 'income').reduce((sum, event) => sum + Number(event.amount || 0), 0))
+      balance = round(balance + income - expenses)
+      return { period, income, expenses, net: round(income - expenses), balance, events: active }
+    })
   })
 
   ipcMain.handle('tax:overview', (_, year: number) => {

@@ -145,8 +145,8 @@ graph TB
 |--------|-----------|--------|------------|--------|
 | **No audit trail of transaction modifications** | Database | Medium - Cannot prove who changed what | HMAC signatures provide integrity verification but not attribution. Single-user app has no multi-user audit requirements. | ⚠️ Accepted Risk |
 | **Deleted transactions leave no trace** | Database | Low - User could claim they didn't delete data | SQLite soft-delete pattern not implemented. Transactions are hard-deleted. No recycle bin. | ⚠️ Accepted Risk |
-| **No logging of failed unlock attempts** | Auth System | Low - Cannot detect brute-force attempts | Failed unlock attempts not logged. No rate limiting on password attempts. Argon2id makes brute-force computationally expensive. | ⚠️ Accepted Risk |
-| **CSV import errors not logged** | Import System | Low - Cannot trace data corruption to import | Import errors shown in UI but not persisted. No import audit log. | ⚠️ Accepted Risk |
+| **Failed unlock attempts are not persisted** | Auth System | Low - Restarting the app clears attempt history | Five failed attempts in one minute trigger a separate five-minute in-process lockout. Argon2id also makes brute-force computationally expensive. | ⚠️ Partially Mitigated |
+| **CSV row-level errors are not logged** | Import System | Low - Cannot trace an individual malformed row after import | Import sessions persist profile, timestamp, imported count, duplicate count, and error count; individual rejected row contents are only shown during review. | ⚠️ Partially Mitigated |
 
 ### Information Disclosure
 
@@ -208,10 +208,10 @@ graph TB
    - **Rationale**: Application cannot control OS memory management. Requires full-disk encryption (BitLocker).
    - **Recommendation**: Document BitLocker recommendation in README.
 
-6. **No Rate Limiting on Unlock Attempts**
-   - **Risk**: Attacker with physical access could attempt brute-force of master password.
-   - **Rationale**: Argon2id parameters make brute-force computationally expensive (~300ms per attempt). No network exposure.
-   - **Recommendation**: Consider adding exponential backoff after failed attempts (future enhancement).
+6. **Unlock Rate Limit Is Process-Local**
+   - **Risk**: An attacker with physical access can restart the app to clear the attempt history.
+   - **Rationale**: The encrypted database is unavailable before unlock, so the current limiter remains in memory. Argon2id parameters still make each attempt computationally expensive.
+   - **Recommendation**: Store future lockout metadata in an OS-protected, non-database location or add Windows Hello.
 
 ### Known Limitations
 
@@ -226,7 +226,8 @@ graph TB
 
 - [ ] **Auto-lock on inactivity** — Lock keystore after 15 minutes of inactivity
 - [ ] **Failed unlock attempt logging** — Log failed attempts to detect brute-force
-- [ ] **Exponential backoff** — Increase delay after repeated failed unlock attempts
+- [x] **Unlock rate limiting** — Five failed attempts within one minute trigger a five-minute in-process lockout
+- [ ] **Persistent exponential backoff** — Preserve increasing delays across app restarts using OS-protected storage
 - [ ] **Encrypted backup export** — Option to export database with password protection
 - [ ] **CSV import schema validation** — Stricter validation on CSV structure and content
 

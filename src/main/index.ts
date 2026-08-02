@@ -5,7 +5,6 @@ import { closeDatabase } from './database-encrypted'
 import { registerIpcHandlers } from './ipc/handlers'
 import { registerEncryptionHandlers } from './ipc/encryption-handlers'
 import { registerPluginHandlers } from './ipc/plugin-handlers'
-import { getPluginManager } from './plugins/plugin-manager'
 import { setupAutoUpdater } from './updater'
 
 let mainWindow: BrowserWindow | null = null
@@ -78,7 +77,6 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('app:getVersion', () => app.getVersion())
   ipcMain.handle('app:openExternal', (_, url: string) => shell.openExternal(url))
-  ipcMain.handle('theme:get', () => nativeTheme.themeSource)
   ipcMain.handle('theme:set', (_, source: 'system' | 'light' | 'dark') => {
     nativeTheme.themeSource = source
     return nativeTheme.shouldUseDarkColors

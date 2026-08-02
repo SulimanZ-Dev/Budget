@@ -21,7 +21,8 @@ import {
   LockOpen,
   Search,
   Calculator,
-  ShieldCheck
+  ShieldCheck,
+  Inbox
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
@@ -33,6 +34,7 @@ const navItems = [
   { to: '/accounts', icon: Landmark, label: 'Accounts' },
   { to: '/budget', icon: Wallet, label: 'Budget' },
   { to: '/transactions', icon: ArrowLeftRight, label: 'Transactions' },
+  { to: '/review', icon: Inbox, label: 'Review Inbox' },
   { to: '/goals', icon: Target, label: 'Goals' },
   { to: '/wealth', icon: Landmark, label: 'Wealth' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },

@@ -39,7 +39,6 @@ export function SubscriptionsPage(): JSX.Element {
   const { profile, rates } = useAppStore()
   const dialog = useAppDialog()
   const [items, setItems] = useState<RecurringItem[]>([])
-  const [subs, setSubs] = useState<Sub[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -60,7 +59,6 @@ export function SubscriptionsPage(): JSX.Element {
       window.api.savings.checkBilling().catch(() => {})
       window.api.income.checkBilling().catch(() => {})
       const subscriptionList = await window.api.subscriptions.list()
-      setSubs(subscriptionList as Sub[])
       const warnings = await window.api.subscriptions.dueWarnings(3, 7)
       setDueWarnings(warnings as DueWarning[])
       const histories = await Promise.all(

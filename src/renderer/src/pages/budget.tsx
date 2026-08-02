@@ -193,7 +193,6 @@ export function BudgetPage(): JSX.Element {
   const visible = profile.autoHideZeroCategories
     ? entries.filter((e) => e.amount > 0 || (spending[e.category_id] || 0) > 0)
     : entries
-  const totalBudgeted = visible.reduce((s, e) => s + e.amount * cpi, 0)
   const totalSpent = visible.reduce((s, e) => s + (spending[e.category_id] || 0), 0)
   const allOutflows = Object.values(spending).reduce((sum, value) => sum + value, 0)
   const remainingBalance = monthlyIncome - allOutflows - subscriptionMonthly - savingsAndTransfersOutflow

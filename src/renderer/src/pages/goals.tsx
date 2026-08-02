@@ -33,6 +33,7 @@ interface Goal {
   interest_rate?: number
   monthly_payment?: number
   creditor?: string
+  next_payment_date?: string
   notes?: string
 }
 
@@ -78,6 +79,7 @@ export function GoalsPage(): JSX.Element {
     targetDate: '',
     interestRate: '',
     monthlyPayment: '',
+    nextPaymentDate: '',
     creditor: '',
     notes: ''
   })
@@ -119,6 +121,7 @@ export function GoalsPage(): JSX.Element {
       targetDate: goal.target_date ?? '',
       interestRate: goal.interest_rate ? String(goal.interest_rate) : '',
       monthlyPayment: goal.monthly_payment ? String(goal.monthly_payment) : '',
+      nextPaymentDate: goal.next_payment_date ?? '',
       creditor: goal.creditor ?? '',
       notes: goal.notes || ''
     })
@@ -128,6 +131,8 @@ export function GoalsPage(): JSX.Element {
   async function save(): Promise<void> {
     const targetAmount = parseFloat(form.targetAmount)
     const currentAmount = parseFloat(form.currentAmount) || 0
+    const interestRate = form.interestRate === '' ? undefined : Number(form.interestRate)
+    const monthlyPayment = form.monthlyPayment === '' ? undefined : Number(form.monthlyPayment)
     if (!form.name.trim() || !Number.isFinite(targetAmount) || targetAmount <= 0) {
       await dialog.alert('Enter a name and an amount greater than zero.', 'Check goal')
       return
@@ -136,14 +141,22 @@ export function GoalsPage(): JSX.Element {
       await dialog.alert('Enter who is owed and keep the amount already paid between zero and the original debt.', 'Check debt')
       return
     }
+    if (form.type === 'debt' && (
+      (interestRate !== undefined && (!Number.isFinite(interestRate) || interestRate < 0)) ||
+      (monthlyPayment !== undefined && (!Number.isFinite(monthlyPayment) || monthlyPayment < 0))
+    )) {
+      await dialog.alert('Interest and the minimum monthly payment cannot be negative.', 'Check debt')
+      return
+    }
     const goalData = {
       name: form.name.trim(),
       type: form.type,
       targetAmount,
       currentAmount,
       targetDate: form.targetDate || undefined,
-      interestRate: form.interestRate ? parseFloat(form.interestRate) : undefined,
-      monthlyPayment: form.monthlyPayment ? parseFloat(form.monthlyPayment) : undefined,
+      interestRate,
+      monthlyPayment,
+      nextPaymentDate: form.nextPaymentDate || undefined,
       creditor: form.type === 'debt' ? form.creditor.trim() || form.name.trim() : undefined,
       notes: form.notes || undefined
     }
@@ -162,6 +175,7 @@ export function GoalsPage(): JSX.Element {
       targetDate: '',
       interestRate: '',
       monthlyPayment: '',
+      nextPaymentDate: '',
       creditor: '',
       notes: ''
     })
@@ -180,6 +194,7 @@ export function GoalsPage(): JSX.Element {
       targetDate: '',
       interestRate: '',
       monthlyPayment: '',
+      nextPaymentDate: '',
       creditor: '',
       notes: ''
     })
@@ -299,7 +314,7 @@ export function GoalsPage(): JSX.Element {
             const status = statusLabel(progress / 100)
             const remaining = g.target_amount - g.current_amount
             const monthsLeft =
-              g.monthly_payment && g.monthly_payment > 0
+              remaining > 0 && g.monthly_payment && g.monthly_payment > 0
                 ? Math.ceil(remaining / g.monthly_payment)
                 : null
             const projected =
@@ -451,6 +466,7 @@ export function GoalsPage(): JSX.Element {
                   <SelectItem value="debt">Debt payoff</SelectItem>
                   <SelectItem value="emergency">Emergency fund</SelectItem>
                   <SelectItem value="fire">FIRE number</SelectItem>
+                  <SelectItem value="investment">Investments</SelectItem>
                   <SelectItem value="custom">Custom</SelectItem>
                 </SelectContent>
               </Select>
@@ -470,16 +486,18 @@ export function GoalsPage(): JSX.Element {
                   onChange={(e) => setForm({ ...form, targetAmount: e.target.value })}
                 />
               </div>
-              {['savings', 'emergency', 'fire'].includes(form.type) ? (
+              {['savings', 'emergency', 'fire', 'investment'].includes(form.type) ? (
                 <div className="grid gap-2">
-                  <Label>{form.type === 'debt' ? 'Already paid (SEK)' : 'Current (SEK)'}</Label>
+                  <Label>Current (SEK)</Label>
                   <div className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm" tabIndex={-1}>
-                    Auto-calculated from savings transactions
+                    {form.type === 'investment'
+                      ? 'Auto-calculated from investment holdings'
+                      : 'Auto-calculated from savings transactions'}
                   </div>
                 </div>
               ) : (
                 <div className="grid gap-2">
-                  <Label>Current (SEK)</Label>
+                  <Label>{form.type === 'debt' ? 'Already paid (SEK)' : 'Current (SEK)'}</Label>
                   <Input
                     type="number"
                     value={form.currentAmount}
@@ -514,17 +532,25 @@ export function GoalsPage(): JSX.Element {
                   <Label>Interest rate %</Label>
                   <Input
                     type="number"
+                    min="0"
                     value={form.interestRate}
                     onChange={(e) => setForm({ ...form, interestRate: e.target.value })}
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Monthly payment</Label>
+                  <Label>Minimum monthly payment</Label>
                   <Input
                     type="number"
+                    min="0"
                     value={form.monthlyPayment}
                     onChange={(e) => setForm({ ...form, monthlyPayment: e.target.value })}
                   />
+                  <p className="text-xs text-muted-foreground">The amount you must pay each month before any extra scenario payment.</p>
+                </div>
+                <div className="col-span-2 grid gap-2">
+                  <Label>Next payment due</Label>
+                  <Input type="date" value={form.nextPaymentDate} onChange={(e) => setForm({ ...form, nextPaymentDate: e.target.value })} />
+                  <p className="text-xs text-muted-foreground">Review Inbox warns seven days before this date and when it becomes overdue.</p>
                 </div>
               </div>
             )}

@@ -11,7 +11,7 @@ It is designed for private day-to-day budgeting: transactions, accounts, budgets
 - Event-sourced/CQRS transaction write path with undo and projection repair.
 - Account-aware transactions, imports, subscriptions, savings sources, and income sources.
 - Verified with `npm test`, `npm run typecheck`, `npm run build`, and `npm run dist`.
-- Latest installer output: `release\Budget Setup 1.1.0.exe`.
+- Latest installer output: `release\Budget Setup 1.2.0.exe`.
 
 ## Features
 
@@ -25,7 +25,7 @@ It is designed for private day-to-day budgeting: transactions, accounts, budgets
 - Paginated transaction list with filters, search, bulk actions, calendar view, history, undo, CSV export, CSV import, and OFX import.
 - Budget categories with monthly entries, category detail drawer, normal-range bands, and factual variance explanations.
 - Goals with target dates and feasibility planning against projected monthly surplus.
-- Debt payoff tracking per person or company with original amount, paid amount, remaining balance, dated payment history, minimum payments, interest, and snowball/avalanche forecasts.
+- Debt payoff tracking per person or company with original amount, paid amount, remaining balance, due dates, minimum payments, and snowball/avalanche forecasts. Payments can link to real expense transactions and split the bank amount into principal, interest, and fees.
 - Savings and recurring savings-source workflows.
 - Income sources, recurring income checks, and manual income entries.
 - Subscriptions with recurring billing, account assignment, hold state, tax-deductible marking, and transaction linking.
@@ -38,10 +38,12 @@ It is designed for private day-to-day budgeting: transactions, accounts, budgets
 
 ### Planning And Review
 
+- Review Inbox combining suspected duplicates, uncategorized purchases, transfer/refund candidates, unusual activity, due subscriptions and debts, stale reconciliations, and data-quality problems.
 - Smart monthly review, unusual transaction detection, recurring-cost changes, due-date warnings, and subscription price history.
 - Bank reconciliation with statement balance comparison and transaction verification.
 - Cash-flow calendar, month-end expense forecast, budget suggestions, and optional category-budget rollover.
-- Scenario planner for income, expense, and recurring-cost changes.
+- Safe-to-spend guidance for the month and per day after spending, reserved budgets, recurring bills, savings commitments, and debt minimums.
+- Scenario planner for percentage changes plus named, saved 12-month timelines with persistent income/expense changes and one-time purchases or debt payoffs.
 - Transaction splits, tags, shared expenses, receipt/PDF attachments, refund links, and automatic transfer-pair detection.
 - Merchant normalization, saved transaction filters, uncategorized-transaction cleanup, and financial alerts.
 - Month locks, data-quality status, change history with restore, and backup verification.
@@ -57,13 +59,22 @@ It is designed for private day-to-day budgeting: transactions, accounts, budgets
 
 ### Data And Connectivity
 
-- CSV preview/import with column mapping and account assignment.
+- CSV preview/import with column mapping, account assignment, reusable bank profiles, duplicate review, and import history.
 - OFX import with account assignment.
 - Transaction CSV export.
 - JSON backup/import.
 - Encrypted database export/import.
 - Yearly tax/accountant CSV export.
 - Currency display support for SEK, EUR, and USD with rates from Frankfurter.
+
+### Developer Scenario Lab
+
+- Runs in a separate encrypted database under `%APPDATA%\BudgetApp\demo-environment\` and never writes to the real financial profile.
+- Random full datasets remain the default.
+- Every run has a visible numeric seed and can replay the same seed exactly.
+- Presets cover debt-heavy, overspent, empty profile, year boundary, duplicates, missing categories, and many transfers.
+- The active demo banner shows the seed and preset; Settings also shows the demo database path and live row counts.
+- Exiting demo mode closes and removes demo artifacts before reopening the real encrypted database.
 
 ### Privacy, Security, And Reliability
 
@@ -128,7 +139,7 @@ Outputs:
 
 | Artifact | Path |
 | --- | --- |
-| Installer | `release\Budget Setup 1.1.0.exe` |
+| Installer | `release\Budget Setup 1.2.0.exe` |
 | Unpacked executable | `release\win-unpacked\Budget.exe` |
 | Build fingerprint | `release\build-fingerprint.json` |
 
@@ -170,11 +181,13 @@ There is no master-password recovery. If the master password is lost, the encryp
 | Item | Path |
 | --- | --- |
 | Encrypted database | `%APPDATA%\BudgetApp\data_encrypted.db` |
+| Isolated demo database | `%APPDATA%\BudgetApp\demo-environment\data_encrypted.db` |
+| Demo mode marker | `%APPDATA%\BudgetApp\demo-mode.json` |
 | Keystore | `%APPDATA%\BudgetApp\keystore.json` |
 | Machine key fallback | `%APPDATA%\BudgetApp\.machine_key` |
 | User plugins | `%APPDATA%\BudgetApp\plugins\` |
 | Manual database exports | User-selected path |
-| Installer output | `release\Budget Setup 1.1.0.exe` |
+| Installer output | `release\Budget Setup 1.2.0.exe` |
 
 The Privacy page in the app also shows the active app-data path and encrypted database path.
 
@@ -246,6 +259,7 @@ Security measures include:
 - HMAC-SHA256 signing for critical financial rows.
 - Integrity warnings persisted in `integrity_warnings`.
 - Lock/unlock flow that clears keys from memory on lock/quit.
+- Five failed unlocks within one minute trigger a separate five-minute in-process lockout.
 - Electron context isolation and sandboxed renderer.
 - Preload-only IPC surface for renderer access.
 - Optional auto-updater disabled unless `BUDGET_AUTO_UPDATE=true`.
@@ -297,8 +311,8 @@ npm run dist
 
 Expected current test state:
 
-- 7 Vitest files passing.
-- 33 tests passing.
+- 12 Vitest files passing.
+- 44 tests passing.
 - Production build succeeds.
 - Windows installer is generated in `release\`.
 

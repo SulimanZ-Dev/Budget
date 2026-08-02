@@ -5,12 +5,18 @@ const api = {
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('app:openExternal', url),
   theme: {
-    get: (): Promise<string> => ipcRenderer.invoke('theme:get'),
     set: (source: 'system' | 'light' | 'dark'): Promise<boolean> =>
       ipcRenderer.invoke('theme:set', source)
   },
   notify: (title: string, body: string): Promise<void> =>
     ipcRenderer.invoke('notification:show', { title, body }),
+
+  demo: {
+    status: () => ipcRenderer.invoke('demo:status'),
+    enter: () => ipcRenderer.invoke('demo:enter'),
+    exit: () => ipcRenderer.invoke('demo:exit'),
+    configure: (seed: number, preset: string) => ipcRenderer.invoke('demo:configure', seed, preset)
+  },
 
   commands: {
     onOpenCommandPalette: (callback: () => void): (() => void) => {
@@ -49,8 +55,7 @@ const api = {
   },
 
   currency: {
-    fetch: () => ipcRenderer.invoke('currency:fetch'),
-    cached: () => ipcRenderer.invoke('currency:cached')
+    fetch: () => ipcRenderer.invoke('currency:fetch')
   },
 
   ai: {
@@ -104,7 +109,6 @@ const api = {
     count: (filters?: Record<string, unknown>) => ipcRenderer.invoke('transactions:count', filters),
     summary: (filters?: Record<string, unknown>) => ipcRenderer.invoke('transactions:summary', filters),
     search: (query: string, limit?: number) => ipcRenderer.invoke('transactions:search', query, limit),
-    duplicates: (tx: unknown) => ipcRenderer.invoke('transactions:duplicates', tx),
     create: (tx: unknown) => ipcRenderer.invoke('transactions:create', tx),
     update: (id: number, tx: unknown) => ipcRenderer.invoke('transactions:update', id, tx),
     delete: (id: number) => ipcRenderer.invoke('transactions:delete', id),
@@ -157,6 +161,7 @@ const api = {
     autoCreateFromCategories: () => ipcRenderer.invoke('goals:autoCreateFromCategories'),
     forecast: () => ipcRenderer.invoke('goals:forecast'),
     debtPlanner: (extraPayment?: number) => ipcRenderer.invoke('goals:debtPlanner', extraPayment),
+    paymentCandidates: (goalId: number) => ipcRenderer.invoke('goals:paymentCandidates', goalId),
     addDebtPayment: (goalId: number, payment: unknown) => ipcRenderer.invoke('goals:addDebtPayment', goalId, payment),
     deleteDebtPayment: (paymentId: number) => ipcRenderer.invoke('goals:deleteDebtPayment', paymentId)
   },
@@ -184,16 +189,14 @@ const api = {
     create: (holding: unknown) => ipcRenderer.invoke('investmentHoldings:create', holding),
     update: (id: number, holding: unknown) =>
       ipcRenderer.invoke('investmentHoldings:update', id, holding),
-    delete: (id: number) => ipcRenderer.invoke('investmentHoldings:delete', id),
-    totalValue: () => ipcRenderer.invoke('investmentHoldings:totalValue')
+    delete: (id: number) => ipcRenderer.invoke('investmentHoldings:delete', id)
   },
 
   plugins: {
     discover: () => ipcRenderer.invoke('plugins:discover'),
     load: (pluginId: string) => ipcRenderer.invoke('plugins:load', pluginId),
     unload: (pluginId: string) => ipcRenderer.invoke('plugins:unload', pluginId),
-    reload: (pluginId: string) => ipcRenderer.invoke('plugins:reload', pluginId),
-    loaded: () => ipcRenderer.invoke('plugins:loaded')
+    reload: (pluginId: string) => ipcRenderer.invoke('plugins:reload', pluginId)
   },
 
   subscriptions: {
@@ -213,7 +216,6 @@ const api = {
   savings: {
     sources: () => ipcRenderer.invoke('savings:sources'),
     deleteSource: (id: number) => ipcRenderer.invoke('savings:deleteSource', id),
-    populateFuture: () => ipcRenderer.invoke('savings:populateFuture'),
     checkBilling: () => ipcRenderer.invoke('savings:checkBilling')
   },
 
@@ -312,7 +314,28 @@ const api = {
     cashFlowCalendar: (days?: number) => ipcRenderer.invoke('planning:cashFlowCalendar', days),
     expenseForecast: (year: number, month: number) => ipcRenderer.invoke('planning:expenseForecast', year, month),
     budgetSuggestions: (year: number, month: number) => ipcRenderer.invoke('planning:budgetSuggestions', year, month),
-    scenario: (input: unknown) => ipcRenderer.invoke('planning:scenario', input)
+    scenario: (input: unknown) => ipcRenderer.invoke('planning:scenario', input),
+    safeToSpend: (year: number, month: number) => ipcRenderer.invoke('planning:safeToSpend', year, month)
+  },
+
+  review: {
+    inbox: () => ipcRenderer.invoke('review:inbox'),
+    dismiss: (key: string) => ipcRenderer.invoke('review:dismiss', key)
+  },
+
+  importProfiles: {
+    list: () => ipcRenderer.invoke('importProfiles:list'),
+    save: (input: unknown) => ipcRenderer.invoke('importProfiles:save', input),
+    delete: (id: number) => ipcRenderer.invoke('importProfiles:delete', id),
+    history: () => ipcRenderer.invoke('importProfiles:history'),
+    record: (input: unknown) => ipcRenderer.invoke('importProfiles:record', input)
+  },
+
+  scenarios: {
+    list: () => ipcRenderer.invoke('scenarios:list'),
+    save: (input: unknown) => ipcRenderer.invoke('scenarios:save', input),
+    delete: (id: number) => ipcRenderer.invoke('scenarios:delete', id),
+    project: (events: unknown[]) => ipcRenderer.invoke('scenarios:project', events)
   },
 
   alerts: {
@@ -325,9 +348,7 @@ const api = {
 
   encryption: {
     requiresSetup: (): Promise<boolean> => ipcRenderer.invoke('encryption:requiresSetup'),
-    requiresMigration: (): Promise<boolean> => ipcRenderer.invoke('encryption:requiresMigration'),
     isUnlocked: (): Promise<boolean> => ipcRenderer.invoke('encryption:isUnlocked'),
-    isDatabaseReady: (): Promise<boolean> => ipcRenderer.invoke('encryption:isDatabaseReady'),
     setup: (password: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('encryption:setup', { password }),
     unlock: (password: string): Promise<{ success: boolean; error?: string }> =>

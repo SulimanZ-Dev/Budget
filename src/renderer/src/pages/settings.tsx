@@ -21,6 +21,7 @@ import { SchedulerCard } from '@/components/shared/scheduler-card'
 import { FinancialSettingsTools } from '@/components/settings/financial-settings-tools'
 import { RuleEditor } from '@/components/shared/rule-editor'
 import { useAppDialog } from '@/components/shared/app-dialog'
+import { createSeededRandom } from '@/lib/demo-random'
 
 interface DemoResult {
   accounts: number
@@ -38,6 +39,16 @@ interface DemoResult {
   investments: number
   rules: number
   moods: number
+  debtPayments: number
+  transactionDetails: number
+  refundLinks: number
+  transferCandidates: number
+  linkedSubscriptions: number
+  savedFilters: number
+  merchantAliases: number
+  recurringPatterns: number
+  reconciliations: number
+  rolloverCategories: number
 }
 
 interface CategoryOption {
@@ -60,11 +71,17 @@ interface AuditFixState {
 }
 
 function randomInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min
+  return Math.floor(demoRandom() * (max - min + 1)) + min
 }
+
+let demoRandom = Math.random
 
 function pick<T>(items: T[]): T {
   return items[randomInt(0, items.length - 1)]
+}
+
+function localIsoDate(date: Date): string {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 }
 
 function AuditFixMetric({ label, count }: { label: string; count: number }): JSX.Element {
@@ -79,20 +96,21 @@ function AuditFixMetric({ label, count }: { label: string; count: number }): JSX
 function randomDateWithinMonths(monthsBack: number): string {
   const date = new Date()
   date.setDate(date.getDate() - randomInt(0, monthsBack * 30))
-  return date.toISOString().slice(0, 10)
+  return localIsoDate(date)
 }
 
 function randomFutureDateWithinMonths(monthsAhead: number): string {
   const date = new Date()
   date.setDate(date.getDate() + randomInt(30, monthsAhead * 30))
-  return date.toISOString().slice(0, 10)
+  return localIsoDate(date)
 }
 
 function dateMonthsAgo(monthsBack: number, day = 15): string {
   const date = new Date()
+  date.setDate(1)
   date.setMonth(date.getMonth() - monthsBack)
   date.setDate(Math.min(day, 28))
-  return date.toISOString().slice(0, 10)
+  return localIsoDate(date)
 }
 
 export function SettingsPage(): JSX.Element {
@@ -114,10 +132,16 @@ export function SettingsPage(): JSX.Element {
   const [selectedTaxCategoryIds, setSelectedTaxCategoryIds] = useState<Set<number>>(new Set())
   const [auditFix, setAuditFix] = useState<AuditFixState | null>(null)
   const [auditFixLoading, setAuditFixLoading] = useState(false)
+  const [demoRunning, setDemoRunning] = useState(false)
+  const [demoActive, setDemoActive] = useState(false)
+  const [demoStatus, setDemoStatus] = useState<{ active: boolean; seed?: number | null; preset?: string | null; databasePath?: string | null; counts?: Record<string, number> }>({ active: false })
+  const [demoSeed, setDemoSeed] = useState(() => String(Math.floor(Math.random() * 2147483647)))
+  const [demoPreset, setDemoPreset] = useState('random')
 
   useEffect(() => {
     window.api.members.list().then(setMembers)
     window.api.getVersion().then(setAppVersion)
+    window.api.demo.status().then((status: typeof demoStatus) => { setDemoActive(status.active); setDemoStatus(status); if (status.seed != null) setDemoSeed(String(status.seed)); if (status.preset) setDemoPreset(status.preset) })
     window.api.settings.get('lastDbBackup').then((v: string | null) => setLastBackup(v))
     window.api.categories.list().then((rows) => {
       const categoryRows = (rows as CategoryOption[]).filter((category) => Number.isInteger(category.id))
@@ -176,7 +200,12 @@ export function SettingsPage(): JSX.Element {
     }
   }
 
-  async function generateDemoData(): Promise<DemoResult> {
+  async function generateDemoData(seed: number, preset: string): Promise<DemoResult> {
+    demoRandom = createSeededRandom(seed)
+    if (preset === 'empty') {
+      triggerRefresh()
+      return { accounts: 0, categories: 0, members: 0, subscriptions: 0, transactions: 0, goals: 0, incomeSources: 0, savingsSources: 0, taxEntries: 0, budgetEntries: 0, wealthSnapshots: 0, holdings: 0, investments: 0, rules: 0, moods: 0, debtPayments: 0, transactionDetails: 0, refundLinks: 0, transferCandidates: 0, linkedSubscriptions: 0, savedFilters: 0, merchantAliases: 0, recurringPatterns: 0, reconciliations: 0, rolloverCategories: 0 }
+    }
     const demoCategorySpecs = [
       { name: 'Groceries', icon: 'shopping-bag', color: '#22c55e', budgetAmount: 5200, isFixed: false, sortOrder: 10 },
       { name: 'Transport', icon: 'car', color: '#0ea5e9', budgetAmount: 1800, isFixed: false, sortOrder: 11 },
@@ -213,7 +242,6 @@ export function SettingsPage(): JSX.Element {
       'Electric bill',
       'Freelance invoice'
     ]
-    const goalNames = ['Vacation fund', 'New laptop', 'Emergency boost', 'Moving fund']
     const incomeNames = ['Salary', 'Consulting retainer', 'Side project', 'Quarterly bonus']
     const savingsNames = ['Emergency fund transfer', 'Index fund auto-save', 'Holiday account', 'Apartment deposit']
     const holdings = [
@@ -229,9 +257,10 @@ export function SettingsPage(): JSX.Element {
     ]
     const subCount = randomInt(5, 8)
     const txCount = randomInt(60, 90)
-    const goalCount = randomInt(3, 5)
     const incomeSourceCount = randomInt(2, 3)
     const savingsSourceCount = randomInt(2, 3)
+    const demoRunId = seed
+    let supplementalTransactions = 0
     const monthsToSeed = Array.from({ length: 6 }, (_, i) => {
       const date = new Date(currentYear, currentMonth - 1 - i, 1)
       return { year: date.getFullYear(), month: date.getMonth() + 1 }
@@ -260,7 +289,6 @@ export function SettingsPage(): JSX.Element {
       createdMembers.push(member)
     }
 
-    const createdIncomeSourceIds: number[] = []
     for (let i = 0; i < incomeSourceCount; i++) {
       const amount = randomInt(12000, 42000)
       const created = await window.api.income.createSource({
@@ -273,14 +301,13 @@ export function SettingsPage(): JSX.Element {
         accountId: checkingAccount?.id,
         nextBillingDate: randomFutureDateWithinMonths(2)
       }) as { id: number }
-      createdIncomeSourceIds.push(created.id)
       for (const period of monthsToSeed) {
         await window.api.income.setEntry({
           sourceId: created.id,
           year: period.year,
           month: period.month,
           amount: amount + randomInt(-1500, 2500),
-          isIrregular: Math.random() < 0.25
+          isIrregular: demoRandom() < 0.25
         })
       }
     }
@@ -299,9 +326,10 @@ export function SettingsPage(): JSX.Element {
       })
     }
 
+    const createdSubscriptionIds: number[] = []
     for (let i = 0; i < subCount; i++) {
       const name = `${pick(subscriptions)} ${randomInt(1, 99)}`
-      await window.api.subscriptions.create({
+      const created = await window.api.subscriptions.create({
         name,
         amount: randomInt(79, 14900),
         frequency: pick(['weekly', 'monthly', 'monthly', 'yearly']),
@@ -310,14 +338,36 @@ export function SettingsPage(): JSX.Element {
         icon: 'credit-card',
         color: pick(['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']),
         notes: 'Demo data',
-        taxDeductible: i === 0 || Math.random() < 0.35,
-        onHold: Math.random() < 0.2,
+        taxDeductible: i === 0 || demoRandom() < 0.35,
+        onHold: demoRandom() < 0.2,
         accountId: checkingAccount?.id
-      })
+      }) as { id: number }
+      createdSubscriptionIds.push(created.id)
+    }
+
+    let linkedSubscriptions = 0
+    const subscriptionWithHistory = createdSubscriptionIds[0]
+    if (subscriptionWithHistory && checkingAccount) {
+      for (const [monthsBack, amount] of [[3, 89], [1, 109]] as const) {
+        await window.api.transactions.create({
+          description: 'Demo streaming subscription',
+          amount,
+          type: 'expense',
+          accountId: checkingAccount.id,
+          categoryId: expenseCategories[0]?.id,
+          date: dateMonthsAgo(monthsBack, 12),
+          isRecurring: false,
+          allowDuplicate: true,
+          notes: `subscription:${subscriptionWithHistory}`
+        })
+        supplementalTransactions++
+      }
+      const linked = await window.api.subscriptions.link(subscriptionWithHistory) as { success?: boolean }
+      if (linked.success) linkedSubscriptions++
     }
 
     for (let i = 0; i < txCount; i++) {
-      const type = Math.random() < 0.12 ? 'income' : Math.random() < 0.2 ? 'savings' : 'expense'
+      const type = demoRandom() < 0.12 ? 'income' : demoRandom() < 0.2 ? 'savings' : 'expense'
       const category = pick(expenseCategories)
       await window.api.transactions.create({
         description: type === 'income' ? pick(['Salary payout', 'Freelance invoice', 'Refund received']) : pick(merchants),
@@ -327,11 +377,106 @@ export function SettingsPage(): JSX.Element {
         categoryId: type === 'expense' ? category.id : undefined,
         date: randomDateWithinMonths(randomInt(6, 11)),
         isRecurring: false,
-        isUnnecessary: type === 'expense' && Math.random() < 0.12,
+        isUnnecessary: type === 'expense' && demoRandom() < 0.12,
         memberId: pick(createdMembers).id,
         allowDuplicate: true,
         notes: 'Demo data'
       })
+    }
+
+    let transactionDetails = 0
+    let refundLinks = 0
+    let transferCandidates = 0
+    let savedFilters = 0
+    let merchantAliases = 0
+    let recurringPatterns = 0
+    let reconciliations = 0
+
+    if (checkingAccount && expenseCategories.length >= 2 && createdMembers.length > 0) {
+      const splitTransaction = await window.api.transactions.create({
+        description: 'Demo shared grocery and household shop',
+        amount: 1200,
+        type: 'expense',
+        accountId: checkingAccount.id,
+        categoryId: expenseCategories[0].id,
+        date: dateMonthsAgo(1, 18),
+        isRecurring: false,
+        allowDuplicate: true,
+        notes: 'Open transaction details to see split, tags, sharing, and bank status'
+      }) as { id: number }
+      supplementalTransactions++
+      await window.api.transactions.setSplits(splitTransaction.id, [
+        { categoryId: expenseCategories[0].id, amount: 850 },
+        { categoryId: expenseCategories[1].id, amount: 350 }
+      ])
+      transactionDetails++
+      await window.api.transactions.setTags(splitTransaction.id, ['demo', 'household', 'shared'])
+      transactionDetails++
+      await window.api.transactions.setSharedExpenses(splitTransaction.id, [{
+        memberId: createdMembers[1]?.id ?? createdMembers[0].id,
+        personName: createdMembers[1]?.name ?? createdMembers[0].name,
+        amount: 600,
+        settled: false
+      }])
+      transactionDetails++
+      await window.api.transactions.reconcile(splitTransaction.id, true)
+      transactionDetails++
+
+      const refundExpense = await window.api.transactions.create({
+        description: 'Demo returned purchase', amount: 650, type: 'expense',
+        accountId: checkingAccount.id, categoryId: expenseCategories[0].id,
+        date: dateMonthsAgo(2, 8), isRecurring: false, allowDuplicate: true, notes: 'Demo refund source'
+      }) as { id: number }
+      const refundIncome = await window.api.transactions.create({
+        description: 'Demo purchase refund', amount: 650, type: 'income',
+        accountId: checkingAccount.id, date: dateMonthsAgo(2, 11),
+        isRecurring: false, allowDuplicate: true, notes: 'Demo linked refund'
+      }) as { id: number }
+      supplementalTransactions += 2
+      await window.api.transactions.linkRefund(refundExpense.id, refundIncome.id)
+      refundLinks++
+
+      if (savingsAccount && savingsAccount.id !== checkingAccount.id) {
+        const transferDate = dateMonthsAgo(1, 10)
+        await window.api.transactions.create({
+          description: 'Demo account transfer', amount: 2400, type: 'expense',
+          accountId: checkingAccount.id, date: transferDate,
+          isRecurring: false, allowDuplicate: true, notes: 'Convert this pair in Transaction tools'
+        })
+        await window.api.transactions.create({
+          description: 'Demo account transfer', amount: 2400, type: 'income',
+          accountId: savingsAccount.id, date: transferDate,
+          isRecurring: false, allowDuplicate: true, notes: 'Convert this pair in Transaction tools'
+        })
+        supplementalTransactions += 2
+        transferCandidates++
+      }
+
+      const aliasPattern = `Demo Market ${demoRunId}`
+      await window.api.merchants.saveAlias(aliasPattern, 'Demo Market')
+      merchantAliases++
+      for (let monthsBack = 0; monthsBack < 4; monthsBack++) {
+        await window.api.transactions.create({
+          description: `${aliasPattern} purchase`, amount: 420 + monthsBack * 15, type: 'expense',
+          accountId: checkingAccount.id, categoryId: expenseCategories[0].id,
+          date: dateMonthsAgo(monthsBack, 1), isRecurring: false, allowDuplicate: true,
+          notes: 'Demo recurring merchant pattern'
+        })
+        supplementalTransactions++
+      }
+      recurringPatterns++
+
+      await window.api.filters.save(`Demo unreconciled expenses ${demoRunId}`, {
+        minAmount: '500', maxAmount: '', dateFrom: '', dateTo: '', reconciled: 'no'
+      })
+      savedFilters++
+    }
+
+    if (savingsAccount) {
+      const statementDate = localIsoDate(new Date())
+      const preview = await window.api.reconciliation.preview(savingsAccount.id, statementDate, 0) as { calculatedBalance: number }
+      await window.api.reconciliation.complete(savingsAccount.id, statementDate, preview.calculatedBalance)
+      reconciliations++
     }
 
     await window.api.tax.setYearSettings({
@@ -352,6 +497,38 @@ export function SettingsPage(): JSX.Element {
       taxEntries++
     }
 
+    if (checkingAccount && expenseCategories[0]) {
+      const createPresetTransaction = async (description: string, amount: number, type: 'expense' | 'income', date: string, accountId = checkingAccount.id, categoryId: number | null | undefined = expenseCategories[0].id): Promise<void> => {
+        await window.api.transactions.create({ description, amount, type, accountId, categoryId, date, isRecurring: false, allowDuplicate: true, notes: `Demo preset: ${preset}` })
+        supplementalTransactions++
+      }
+      if (preset === 'overspent') await createPresetTransaction('Emergency home repair', 65000, 'expense', localIsoDate(new Date()))
+      if (preset === 'duplicates') {
+        const date = localIsoDate(new Date())
+        await createPresetTransaction('Duplicate card purchase', 799, 'expense', date)
+        await createPresetTransaction('Duplicate card purchase', 799, 'expense', date)
+      }
+      if (preset === 'missing-categories') {
+        for (let i = 0; i < 8; i++) await createPresetTransaction(`Uncategorized demo purchase ${i + 1}`, 125 + i * 37, 'expense', dateMonthsAgo(0, Math.min(28, i + 1)), checkingAccount.id, null)
+      }
+      if (preset === 'transfers' && savingsAccount) {
+        for (let i = 0; i < 8; i++) {
+          const date = dateMonthsAgo(i % 4, 4 + i)
+          await createPresetTransaction(`Transfer batch ${i + 1}`, 500 + i * 250, 'expense', date, checkingAccount.id, undefined)
+          await createPresetTransaction(`Transfer batch ${i + 1}`, 500 + i * 250, 'income', date, savingsAccount.id, undefined)
+        }
+      }
+      if (preset === 'year-boundary') {
+        await createPresetTransaction('New Year expense', 2026, 'expense', `${currentYear}-12-31`)
+        await createPresetTransaction('New Year income', 2027, 'income', `${currentYear + 1}-01-01`, checkingAccount.id, undefined)
+      }
+    }
+    if (preset === 'debt-heavy') {
+      for (const [index, rate] of [24.9, 14.5, 8.2].entries()) {
+        await window.api.goals.create({ name: `Stress debt ${index + 1}`, type: 'debt', creditor: `Demo creditor ${index + 1}`, targetAmount: 45000 + index * 55000, currentAmount: index * 2500, interestRate: rate, monthlyPayment: 900 + index * 700, nextPaymentDate: randomFutureDateWithinMonths(1), notes: 'Debt-heavy preset' })
+      }
+    }
+
     for (let i = 1; i <= 14; i++) {
       const date = new Date()
       date.setDate(date.getDate() - i)
@@ -361,7 +538,7 @@ export function SettingsPage(): JSX.Element {
         type: 'expense',
         accountId: checkingAccount?.id,
         categoryId: pick(expenseCategories).id,
-        date: date.toISOString().slice(0, 10),
+        date: localIsoDate(date),
         isRecurring: false,
         memberId: pick(createdMembers).id,
         allowDuplicate: true,
@@ -369,19 +546,43 @@ export function SettingsPage(): JSX.Element {
       })
     }
 
-    for (let i = 0; i < goalCount; i++) {
-      const target = randomInt(10000, 120000)
+    const standardGoalSpecs = [
+      { name: `Demo savings goal ${randomInt(1, 99)}`, type: 'savings', targetAmount: 90000, currentAmount: 0, monthlyPayment: 2500, notes: 'Savings goal populated from savings transactions' },
+      { name: `Demo emergency fund ${randomInt(1, 99)}`, type: 'emergency', targetAmount: 75000, currentAmount: 0, monthlyPayment: 3000, notes: 'Emergency buffer goal' },
+      { name: `Demo FIRE number ${randomInt(1, 99)}`, type: 'fire', targetAmount: 3500000, currentAmount: 0, monthlyPayment: 6500, notes: 'Long-term financial independence goal' },
+      { name: `Demo custom goal ${randomInt(1, 99)}`, type: 'custom', targetAmount: 45000, currentAmount: 12500, monthlyPayment: 1800, notes: 'Custom goal with manually tracked progress' },
+      { name: `Demo investment goal ${randomInt(1, 99)}`, type: 'investment', targetAmount: 250000, currentAmount: 0, monthlyPayment: 4000, notes: 'Progress follows investment holdings' }
+    ]
+    for (const goal of standardGoalSpecs) {
       await window.api.goals.create({
-        name: `${pick(goalNames)} ${randomInt(1, 99)}`,
-        type: `demo-${Date.now()}-${i}`,
-        targetAmount: target,
-        currentAmount: randomInt(500, Math.floor(target * 0.8)),
-        targetDate: randomFutureDateWithinMonths(12),
-        interestRate: pick([0, 2.5, 4.2]),
-        monthlyPayment: randomInt(500, 3000),
-        notes: pick(['Demo target with monthly top-ups', 'Demo goal for a near-term purchase', 'Demo buffer goal'])
+        ...goal,
+        targetDate: randomFutureDateWithinMonths(goal.type === 'fire' ? 60 : 18)
       })
     }
+
+    const debtSpecs = [
+      { name: 'Demo credit card', creditor: 'Demo Bank', targetAmount: 36000, currentAmount: 4000, interestRate: 18.9, monthlyPayment: 1400, payments: [[1200, 3, 'Extra card payment'], [1500, 1, 'Monthly card payment']] as const },
+      { name: 'Demo personal loan', creditor: 'Demo Finance', targetAmount: 120000, currentAmount: 18000, interestRate: 6.4, monthlyPayment: 3200, payments: [[3500, 2, 'Scheduled loan payment']] as const }
+    ]
+    let debtPayments = 0
+    for (const debt of debtSpecs) {
+      const created = await window.api.goals.create({
+        name: `${debt.name} ${randomInt(1, 99)}`,
+        type: 'debt',
+        targetAmount: debt.targetAmount,
+        currentAmount: debt.currentAmount,
+        targetDate: randomFutureDateWithinMonths(36),
+        interestRate: debt.interestRate,
+        monthlyPayment: debt.monthlyPayment,
+        creditor: debt.creditor,
+        notes: 'Demo debt with minimum payment and payment history'
+      }) as { id: number }
+      for (const [amount, monthsBack, note] of debt.payments) {
+        await window.api.goals.addDebtPayment(created.id, { amount, date: dateMonthsAgo(monthsBack, 20), note })
+        debtPayments++
+      }
+    }
+    const goalCount = standardGoalSpecs.length + debtSpecs.length
 
     let budgetEntries = 0
     const budgetCategories = expenseCategories.slice(0, Math.min(expenseCategories.length, 8))
@@ -396,6 +597,11 @@ export function SettingsPage(): JSX.Element {
         })
         budgetEntries++
       }
+    }
+    let rolloverCategories = 0
+    for (const category of budgetCategories.slice(0, 2)) {
+      await window.api.budget.setRollover(category.id, true)
+      rolloverCategories++
     }
 
     for (let i = 0; i < 6; i++) {
@@ -414,7 +620,7 @@ export function SettingsPage(): JSX.Element {
     for (const holding of demoHoldings) {
       const shares = randomInt(8, 75)
       const avgCost = randomInt(90, 650)
-      const currentPrice = Math.round(avgCost * (0.92 + Math.random() * 0.35))
+      const currentPrice = Math.round(avgCost * (0.92 + demoRandom() * 0.35))
       await window.api.investmentHoldings.create({
         etfName: holding.etfName,
         ticker: holding.ticker,
@@ -432,7 +638,7 @@ export function SettingsPage(): JSX.Element {
       await window.api.investments.create({
         name: `${pick(legacyInvestments)} ${randomInt(1, 99)}`,
         purchasePrice,
-        currentValue: Math.round(purchasePrice * (0.85 + Math.random() * 0.45)),
+        currentValue: Math.round(purchasePrice * (0.85 + demoRandom() * 0.45)),
         purchaseDate: dateMonthsAgo(randomInt(4, 24), randomInt(1, 24)),
         notes: 'Demo legacy investment'
       })
@@ -445,9 +651,24 @@ export function SettingsPage(): JSX.Element {
       retirementAge: pick([62, 65, 67])
     })
 
-    for (const rule of rulePatterns) {
+    let createdRules = 0
+    for (const [index, rule] of rulePatterns.entries()) {
       if (rule.category?.id) {
-        await window.api.rules.create({ pattern: `${rule.pattern} ${randomInt(1, 99)}`, categoryId: rule.category.id })
+        await window.api.rules.create({
+          pattern: `Demo ${rule.pattern} rule ${demoRunId}`,
+          categoryId: rule.category.id,
+          priority: 50 + index * 25,
+          applyFutureOnly: index === rulePatterns.length - 1,
+          conditions: {
+            kind: 'group',
+            operator: 'AND',
+            children: [
+              { kind: 'condition', type: 'description_contains', value: rule.pattern },
+              { kind: 'condition', type: 'type_is', value: 'expense' }
+            ]
+          }
+        })
+        createdRules++
       }
     }
 
@@ -467,7 +688,7 @@ export function SettingsPage(): JSX.Element {
       categories: createdCategories,
       members: createdMembers.length,
       subscriptions: subCount,
-      transactions: txCount + 14,
+      transactions: txCount + 14 + supplementalTransactions,
       goals: goalCount,
       incomeSources: incomeSourceCount,
       savingsSources: savingsSourceCount,
@@ -476,23 +697,57 @@ export function SettingsPage(): JSX.Element {
       wealthSnapshots: 6,
       holdings: demoHoldings.length,
       investments: investmentCount,
-      rules: rulePatterns.length,
-      moods: monthsToSeed.length
+      rules: createdRules,
+      moods: monthsToSeed.length,
+      debtPayments,
+      transactionDetails,
+      refundLinks,
+      transferCandidates,
+      linkedSubscriptions,
+      savedFilters,
+      merchantAliases,
+      recurringPatterns,
+      reconciliations,
+      rolloverCategories
     }
   }
 
-  async function handleRunDemo(): Promise<void> {
+  async function handleRunDemo(replay = false): Promise<void> {
+    if (demoRunning) return
+    const confirmed = await dialog.confirm(
+      demoActive
+        ? 'Reset the isolated demo environment and generate a new randomized dataset? Your real financial data will remain untouched.'
+        : 'Start an isolated demo environment? The app will switch to a separate encrypted database and your real financial data will remain untouched.',
+      {
+        title: demoActive ? 'Reset demo environment' : 'Start demo environment',
+        confirmLabel: demoActive ? 'Reset demo' : 'Start demo',
+        destructive: demoActive
+      }
+    )
+    if (!confirmed) return
+    setDemoRunning(true)
     try {
-      const result = await generateDemoData()
+      const seed = replay && demoStatus.seed != null ? demoStatus.seed : Math.max(1, Math.trunc(Number(demoSeed)) || Math.floor(Math.random() * 2147483647))
+      const preset = replay ? demoStatus.preset ?? demoPreset : demoPreset
+      await window.api.demo.enter()
+      await window.api.demo.configure(seed, preset)
+      await window.api.settings.setProfile({ ...profile, name: profile.name || 'Demo Developer' })
+      await window.api.settings.set('onboardingComplete', true)
+      await window.api.settings.set('selectedMonth', selectedMonth)
+      const result = await generateDemoData(seed, preset)
       await dialog.alert(
-        `Added ${result.accounts} accounts, ${result.categories} categories, ${result.members} members, ${result.subscriptions} subscriptions, ${result.transactions} transactions, ${result.goals} goals, ${result.incomeSources} income sources, ${result.savingsSources} savings sources, ${result.taxEntries} tax entries, ${result.budgetEntries} budget entries, ${result.wealthSnapshots} wealth snapshots, ${result.holdings} holdings, ${result.investments} legacy investments, ${result.rules} rules, and ${result.moods} mood entries.`,
-        'Demo data added'
+        `The isolated demo environment is ready. Seed ${seed}, preset ${preset}. Added ${result.accounts} accounts, ${result.categories} categories, ${result.members} members, ${result.subscriptions} subscriptions, ${result.transactions} transactions, ${result.goals} goals, ${result.debtPayments} debt payments, ${result.incomeSources} income sources, ${result.savingsSources} savings sources, ${result.taxEntries} tax entries, ${result.budgetEntries} budget entries, ${result.wealthSnapshots} wealth snapshots, ${result.holdings} holdings, ${result.investments} legacy investments, ${result.rules} advanced rules, and ${result.moods} mood entries.\n\nAdvanced examples: ${result.transactionDetails} transaction-detail tools, ${result.refundLinks} refund link, ${result.transferCandidates} transfer candidate, ${result.linkedSubscriptions} linked subscription with price history, ${result.savedFilters} saved filter, ${result.merchantAliases} merchant alias, ${result.recurringPatterns} recurring merchant pattern, ${result.reconciliations} account reconciliation, and rollover on ${result.rolloverCategories} budget categories.`,
+        'Demo environment ready'
       )
+      window.location.reload()
     } catch (error) {
       await dialog.alert(
-        error instanceof Error ? error.message : 'Failed to generate demo data.',
+        `${error instanceof Error ? error.message : 'Failed to generate demo data.'}\n\nYour real financial database was not modified.`,
         'Demo data failed'
       )
+      window.location.reload()
+    } finally {
+      setDemoRunning(false)
     }
   }
 
@@ -591,9 +846,9 @@ export function SettingsPage(): JSX.Element {
                 Add
               </Button>
             </div>
-            <ul className="text-sm text-muted-foreground">
+            <ul className="space-y-1 text-sm text-muted-foreground">
               {members.map((m) => (
-                <li key={m.id}>{m.name}</li>
+                <li key={m.id} className="flex items-center justify-between rounded border px-3 py-1"><span>{m.name}</span><Button size="icon" variant="ghost" aria-label={`Delete ${m.name}`} onClick={async () => { await window.api.members.delete(m.id); setMembers(await window.api.members.list()) }}><Trash2 className="h-4 w-4" /></Button></li>
               ))}
             </ul>
           </div>
@@ -896,9 +1151,9 @@ export function SettingsPage(): JSX.Element {
           <Button
             variant="destructive"
             onClick={async () => {
-              if (await dialog.confirm('Delete ALL data and start fresh? This cannot be undone.', {
-                title: 'Wipe data',
-                confirmLabel: 'Wipe data',
+              if (await dialog.confirm(demoActive ? 'Delete all data in the current demo environment?' : 'Delete ALL real data and start fresh? This cannot be undone.', {
+                title: demoActive ? 'Wipe demo data' : 'Wipe data',
+                confirmLabel: demoActive ? 'Wipe demo' : 'Wipe data',
                 destructive: true
               })) {
                 await window.api.data.wipe()
@@ -907,12 +1162,24 @@ export function SettingsPage(): JSX.Element {
             }}
           >
             <Trash2 className="h-4 w-4" />
-            Wipe data & restart
+            {demoActive ? 'Wipe demo data' : 'Wipe data & restart'}
           </Button>
-          <Button variant="outline" onClick={handleRunDemo}>
-            <Play className="h-4 w-4" />
-            Run Demo
-          </Button>
+          <div className="w-full rounded-md border border-info/30 bg-info/5 p-3">
+            <p className="text-sm font-medium">Isolated developer demo</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Uses a separate encrypted database. Random demo activity, edits, wipes, imports, and restarts cannot change your real financial plan.
+            </p>
+            <div className="mt-3 grid gap-2 md:grid-cols-[180px_1fr_auto]">
+              <div><Label>Seed</Label><Input value={demoSeed} onChange={(event) => setDemoSeed(event.target.value.replace(/\D/g, ''))} /></div>
+              <div><Label>Scenario preset</Label><Select value={demoPreset} onValueChange={setDemoPreset}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="random">Random full dataset</SelectItem><SelectItem value="debt-heavy">Debt-heavy</SelectItem><SelectItem value="overspent">Overspent budget</SelectItem><SelectItem value="empty">Empty profile</SelectItem><SelectItem value="year-boundary">Year boundary</SelectItem><SelectItem value="duplicates">Duplicates</SelectItem><SelectItem value="missing-categories">Missing categories</SelectItem><SelectItem value="transfers">Many transfers</SelectItem></SelectContent></Select></div>
+              <Button className="self-end" variant="ghost" onClick={() => setDemoSeed(String(Math.floor(Math.random() * 2147483647)))}>New random seed</Button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => handleRunDemo(false)} disabled={demoRunning}><Play className="h-4 w-4" />{demoRunning ? 'Preparing...' : demoActive ? 'Reset with seed' : 'Run Demo'}</Button>
+              <Button variant="outline" onClick={() => handleRunDemo(true)} disabled={demoRunning || demoStatus.seed == null}>Replay same seed</Button>
+            </div>
+            {demoActive && <div className="mt-3 rounded border bg-background/60 p-3 text-xs"><p><span className="font-medium">Active seed:</span> {demoStatus.seed ?? 'unknown'} · <span className="font-medium">Preset:</span> {demoStatus.preset ?? 'random'}</p><p className="mt-1 break-all text-muted-foreground">{demoStatus.databasePath}</p><p className="mt-1 text-muted-foreground">{Object.entries(demoStatus.counts ?? {}).map(([key, count]) => `${key}: ${count}`).join(' · ')}</p></div>}
+          </div>
         </CardContent>
         <CardContent className="border-t pt-4">
           <div className="space-y-3">

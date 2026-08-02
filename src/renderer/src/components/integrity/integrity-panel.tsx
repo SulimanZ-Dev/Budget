@@ -9,7 +9,6 @@ export function IntegrityPanel() {
   const [isScanning, setIsScanning] = useState(false)
   const [scanResults, setScanResults] = useState<any>(null)
   const [warnings, setWarnings] = useState<any[]>([])
-  const [isLoadingWarnings, setIsLoadingWarnings] = useState(false)
   const [isBackfilling, setIsBackfilling] = useState(false)
 
   useEffect(() => {
@@ -17,7 +16,6 @@ export function IntegrityPanel() {
   }, [])
 
   async function loadWarnings() {
-    setIsLoadingWarnings(true)
     try {
       const result = await window.api.integrity.getWarnings()
       if (result.success && result.warnings) {
@@ -25,8 +23,6 @@ export function IntegrityPanel() {
       }
     } catch (error) {
       console.error('Failed to load warnings:', error)
-    } finally {
-      setIsLoadingWarnings(false)
     }
   }
 

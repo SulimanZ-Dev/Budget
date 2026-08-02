@@ -2,13 +2,11 @@ import { useEffect, useState } from 'react'
 import { Flame, CalendarX } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { useAppStore } from '@/store/app-store'
 import { AskAiButton } from '@/components/shared/ask-ai-button'
 
 const EMOJIS = ['😫', '😕', '😐', '🙂', '😄']
 
 export function HabitsPage(): JSX.Element {
-  const { profile } = useAppStore()
   const [streak, setStreak] = useState({ current: 0, longest: 0 })
   const [moods, setMoods] = useState<{ year: number; month: number; rating: number; emoji: string }[]>([])
   const [missedDays, setMissedDays] = useState<string[]>([])

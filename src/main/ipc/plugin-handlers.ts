@@ -27,10 +27,6 @@ export function registerPluginHandlers(): void {
     return await pluginManager.reloadPlugin(pluginId)
   })
 
-  // Get loaded plugins
-  ipcMain.handle('plugins:loaded', () => {
-    return pluginManager.getLoadedPlugins()
-  })
 }
 
 // Made with Bob

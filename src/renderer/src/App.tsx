@@ -10,6 +10,7 @@ import { OnboardingFlow } from '@/components/onboarding/onboarding-flow'
 import { EncryptionSetup } from '@/components/auth/encryption-setup'
 import { UnlockScreen } from '@/components/auth/unlock-screen'
 import { ThemeToggle } from '@/components/shared/theme-toggle'
+import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppInit } from '@/hooks/use-init'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard'
@@ -29,9 +30,11 @@ import { TaxEstimatorPage } from '@/pages/tax-estimator'
 import { PrivacyAuditPage } from '@/pages/privacy-audit'
 import { AiAssistantPage } from '@/pages/ai-assistant'
 import { SettingsPage } from '@/pages/settings'
+import { ReviewInboxPage } from '@/pages/review-inbox'
 import { YearEndReportPage } from '@/pages/year-end-report'
 import { CoachMarks } from '@/components/shared/coach-marks'
-import { AppDialogProvider } from '@/components/shared/app-dialog'
+import { AppDialogProvider, useAppDialog } from '@/components/shared/app-dialog'
+import { FlaskConical, LogOut } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -55,6 +58,60 @@ function PageTransition({ children }: { children: React.ReactNode }): JSX.Elemen
         {children}
       </motion.div>
     </AnimatePresence>
+  )
+}
+
+function DemoModeBanner(): JSX.Element | null {
+  const dialog = useAppDialog()
+  const [status, setStatus] = useState<{ active: boolean; seed?: number | null; preset?: string | null }>({ active: false })
+  const [leaving, setLeaving] = useState(false)
+
+  useEffect(() => {
+    window.api.demo.status()
+      .then((value: typeof status) => setStatus(value))
+      .catch(() => setStatus({ active: false }))
+  }, [])
+
+  if (!status.active) return null
+
+  async function leaveDemo(): Promise<void> {
+    if (!await dialog.confirm(
+      'Leave the simulated environment and return to your real financial plan? All demo-only changes will be discarded.',
+      { title: 'Exit demo environment', confirmLabel: 'Return to real data', destructive: true }
+    )) return
+
+    setLeaving(true)
+    try {
+      await window.api.demo.exit()
+      window.location.reload()
+    } catch (error) {
+      setLeaving(false)
+      await dialog.alert(
+        error instanceof Error ? error.message : 'Could not leave the demo environment.',
+        'Demo environment still active'
+      )
+    }
+  }
+
+  return (
+    <div
+      className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-warning/40 bg-warning/15 px-4 py-2 text-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-center gap-2">
+        <FlaskConical className="h-4 w-4 text-warning" />
+        <div>
+          <span className="font-semibold">Simulated demo environment</span>
+          {status.seed != null && <span className="ml-2 rounded bg-warning/20 px-1.5 py-0.5 font-mono text-xs">seed {status.seed} · {status.preset ?? 'random'}</span>}
+          <span className="ml-2 text-muted-foreground">Changes here never touch your real financial plan.</span>
+        </div>
+      </div>
+      <Button className="app-no-drag" size="sm" variant="outline" disabled={leaving} onClick={leaveDemo}>
+        <LogOut className="h-4 w-4" />
+        {leaving ? 'Returning...' : 'Exit demo'}
+      </Button>
+    </div>
   )
 }
 
@@ -133,7 +190,6 @@ function AppContent(): JSX.Element {
     triggerRefresh
   } = useAppStore()
   const [showOnboarding, setShowOnboarding] = useState(false)
-  const [budgetStatus, setBudgetStatus] = useState<'under' | 'near' | 'over'>('under')
   const [availableYears, setAvailableYears] = useState<number[]>([profile.year])
 
   useEffect(() => {
@@ -206,8 +262,6 @@ function AppContent(): JSX.Element {
           status = 'near'
         }
 
-        setBudgetStatus(status)
-
         // Apply adaptive accent color
         const root = document.documentElement
         if (status === 'over') {
@@ -268,6 +322,7 @@ function AppContent(): JSX.Element {
       <div className="flex h-screen overflow-hidden bg-background">
         <Sidebar />
         <main id="main-content" aria-label="Main content" className="flex flex-1 flex-col overflow-hidden">
+          <DemoModeBanner />
           <header className="flex h-10 shrink-0 items-center justify-end gap-4 border-b px-4 pt-10 md:pt-0 md:pl-4 app-drag-region">
             <div className="app-no-drag"><ThemeToggle /></div>
             <div className="app-no-drag">
@@ -296,6 +351,7 @@ function AppContent(): JSX.Element {
                 <Route path="/accounts" element={<AccountsPage />} />
                 <Route path="/budget" element={<BudgetPage />} />
                 <Route path="/transactions" element={<TransactionsPage />} />
+                <Route path="/review" element={<ReviewInboxPage />} />
                 <Route path="/goals" element={<GoalsPage />} />
                 <Route path="/wealth" element={<WealthPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />

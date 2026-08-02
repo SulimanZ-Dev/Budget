@@ -35,7 +35,7 @@ export function WealthPage(): JSX.Element {
     }[]
   >([])
   const [investments, setInvestments] = useState<
-    { id: number; name: string; purchase_price: number; current_value: number }[]
+    { id: number; name: string; purchase_price: number; current_value: number; purchase_date?: string; notes?: string }[]
   >([])
   const [holdings, setHoldings] = useState<
     { id: number; etf_name: string; ticker: string; shares: number; avg_cost: number; current_price: number; current_value: number }[]
@@ -60,6 +60,9 @@ export function WealthPage(): JSX.Element {
     currentPrice: ''
   })
   const [editingHoldingId, setEditingHoldingId] = useState<number | null>(null)
+  const [editingInvestmentId, setEditingInvestmentId] = useState<number | null>(null)
+  const [showInvestmentForm, setShowInvestmentForm] = useState(false)
+  const [investmentForm, setInvestmentForm] = useState({ name: '', purchasePrice: '', currentValue: '', purchaseDate: '', notes: '' })
   const [pension, setPension] = useState({
     current: '100000',
     monthly: '5000',
@@ -153,6 +156,23 @@ export function WealthPage(): JSX.Element {
     })) return
     await window.api.investmentHoldings.delete(id)
     load()
+  }
+
+  async function saveLegacyInvestment(): Promise<void> {
+    const payload = { name: investmentForm.name.trim(), purchasePrice: Number(investmentForm.purchasePrice) || 0, currentValue: Number(investmentForm.currentValue) || 0, purchaseDate: investmentForm.purchaseDate || null, notes: investmentForm.notes.trim() || null }
+    if (!payload.name) return
+    if (editingInvestmentId) await window.api.investments.update(editingInvestmentId, payload)
+    else await window.api.investments.create(payload)
+    setEditingInvestmentId(null)
+    setShowInvestmentForm(false)
+    setInvestmentForm({ name: '', purchasePrice: '', currentValue: '', purchaseDate: '', notes: '' })
+    await load()
+  }
+
+  async function deleteLegacyInvestment(id: number): Promise<void> {
+    if (!await dialog.confirm('Delete this legacy investment?', { title: 'Delete investment', confirmLabel: 'Delete', destructive: true })) return
+    await window.api.investments.delete(id)
+    await load()
   }
 
   // Investment holdings total current value
@@ -412,10 +432,12 @@ export function WealthPage(): JSX.Element {
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Legacy Investments</CardTitle>
+          <Button size="sm" variant="outline" onClick={() => { setEditingInvestmentId(null); setInvestmentForm({ name: '', purchasePrice: '', currentValue: '', purchaseDate: '', notes: '' }); setShowInvestmentForm(true) }}>Add investment</Button>
         </CardHeader>
         <CardContent className="space-y-3">
+          {showInvestmentForm && <div className="grid gap-2 rounded-lg border p-3 md:grid-cols-5"><Input value={investmentForm.name} onChange={(event) => setInvestmentForm({ ...investmentForm, name: event.target.value })} placeholder="Name" /><Input type="number" value={investmentForm.purchasePrice} onChange={(event) => setInvestmentForm({ ...investmentForm, purchasePrice: event.target.value })} placeholder="Purchase value" /><Input type="number" value={investmentForm.currentValue} onChange={(event) => setInvestmentForm({ ...investmentForm, currentValue: event.target.value })} placeholder="Current value" /><Input type="date" value={investmentForm.purchaseDate} onChange={(event) => setInvestmentForm({ ...investmentForm, purchaseDate: event.target.value })} /><div className="flex gap-1"><Button onClick={saveLegacyInvestment}>Save</Button><Button variant="ghost" onClick={() => setShowInvestmentForm(false)}>Cancel</Button></div></div>}
           {investments.map((inv) => {
             const gain = inv.purchase_price > 0 ? ((inv.current_value - inv.purchase_price) / inv.purchase_price) * 100 : 0
             return (
@@ -430,6 +452,7 @@ export function WealthPage(): JSX.Element {
                 <p className="text-sm text-muted-foreground">
                   {formatMoney(inv.current_value, profile.displayCurrency, rates)}
                 </p>
+                <div className="mt-2 flex gap-2"><Button size="sm" variant="outline" onClick={() => { setEditingInvestmentId(inv.id); setInvestmentForm({ name: inv.name, purchasePrice: String(inv.purchase_price), currentValue: String(inv.current_value), purchaseDate: inv.purchase_date ?? '', notes: inv.notes ?? '' }); setShowInvestmentForm(true) }}><Pencil className="h-3 w-3" />Edit</Button><Button size="sm" variant="destructive" onClick={() => deleteLegacyInvestment(inv.id)}><Trash2 className="h-3 w-3" />Delete</Button></div>
               </div>
             )
           })}

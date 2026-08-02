@@ -1,5 +1,5 @@
 import { app, ipcMain } from 'electron'
-import { join, dirname } from 'path'
+import { join } from 'path'
 import { readFileSync, readdirSync, existsSync, mkdirSync, statSync } from 'fs'
 import { getDatabase } from '../database-encrypted'
 import type {
@@ -254,7 +254,7 @@ export class PluginManager {
     const db = this.createDatabaseAPI(pluginMeta.manifest)
     const ipc = this.createIpcAPI(pluginMeta.manifest)
     const settings = this.createSettingsAPI(pluginMeta.manifest.id)
-    const events = this.createEventEmitter(pluginMeta.manifest.id)
+    const events = this.createEventEmitter()
 
     return {
       manifest: pluginMeta.manifest,
@@ -370,7 +370,7 @@ export class PluginManager {
     }
   }
 
-  private createEventEmitter(pluginId: string): PluginEventEmitter {
+  private createEventEmitter(): PluginEventEmitter {
     return {
       emit: (event: string, data?: unknown) => {
         const handlers = this.eventHandlers.get(event)

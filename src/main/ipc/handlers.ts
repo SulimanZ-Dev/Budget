@@ -1,9 +1,18 @@
 import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import { copyFileSync, readFileSync, writeFileSync, existsSync, rmSync } from 'fs'
-import { join } from 'path'
-import { getDatabase, getDbPath, isDatabaseInitialized } from '../database-encrypted'
-import { fetchExchangeRates, getCachedRates } from '../services/currency'
-import { saveApiKey, getApiKey, deleteApiKey, hasApiKey } from '../services/keychain'
+import {
+  configureDemoMode,
+  enterDemoMode,
+  exitDemoMode,
+  getAttachmentStoragePath,
+  getDatabase,
+  getDbPath,
+  getDemoModeStatus,
+  isDatabaseInitialized,
+  isDemoMode
+} from '../database-encrypted'
+import { fetchExchangeRates } from '../services/currency'
+import { saveApiKey, deleteApiKey, hasApiKey } from '../services/keychain'
 import {
   chatWithAI,
   suggestCategory,
@@ -12,7 +21,7 @@ import {
   detectAnomalies
 } from '../services/ai'
 import { checkBudgetAlerts } from '../services/budget-alerts'
-import { getSchedulerConfig, setSchedulerConfig } from '../services/scheduler'
+import { getSchedulerConfig, restart as restartScheduler, setSchedulerConfig } from '../services/scheduler'
 import {
   importTransactionsFromCsv,
   parseCsvPreview,
@@ -35,7 +44,6 @@ import {
   updateTransaction,
   deleteTransaction,
   recategorizeTransaction,
-  flagTransaction,
   bulkRecategorizeTransactions,
   bulkDeleteTransactions,
   bulkFlagTransactions,
@@ -44,17 +52,17 @@ import {
   rebuildTransactionsProjection,
   findDuplicateTransactions
 } from '../commands/transaction-commands'
-import {
-  getTransactions,
-  getTransactionHistory,
-  verifyTransactionIntegrity
-} from '../queries/transaction-queries'
+import { getTransactionHistory } from '../queries/transaction-queries'
 
 type GetWindow = () => BrowserWindow | null
 type TransactionFilters = Record<string, unknown>
 type ForecastTier = 'success' | 'warning' | 'destructive'
 
 const DATA_TABLES = [
+  'review_dismissals',
+  'import_sessions',
+  'import_profiles',
+  'financial_scenarios',
   'debt_payments',
   'transaction_attachments',
   'transaction_tags',
@@ -433,6 +441,28 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     }) as any
   }) as any
 
+  ipcMain.handle('demo:status', () => {
+    const status = getDemoModeStatus()
+    const counts: Record<string, number> = {}
+    if (status.active) {
+      for (const table of ['accounts', 'transactions', 'categories', 'goals', 'subscriptions', 'income_sources', 'savings_sources']) {
+        counts[table] = (db().prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count
+      }
+    }
+    return { ...status, databasePath: status.active ? getDbPath() : null, counts }
+  })
+  ipcMain.handle('demo:enter', () => {
+    const status = enterDemoMode()
+    restartScheduler()
+    return status
+  })
+  ipcMain.handle('demo:exit', () => {
+    const status = exitDemoMode()
+    restartScheduler()
+    return status
+  })
+  ipcMain.handle('demo:configure', (_, seed: number, preset: string) => configureDemoMode(seed, preset))
+
   // Settings & profile
   ipcMain.handle('settings:get', (_, key: string) => {
     const row = db().prepare('SELECT value FROM settings WHERE key = ?').get(key) as
@@ -667,12 +697,17 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
 
   // Currency
   ipcMain.handle('currency:fetch', () => fetchExchangeRates())
-  ipcMain.handle('currency:cached', () => getCachedRates())
 
   // API key
-  ipcMain.handle('ai:saveKey', (_, key: string) => saveApiKey(key))
+  ipcMain.handle('ai:saveKey', (_, key: string) => {
+    if (isDemoMode()) throw new Error('AI key changes are disabled in the isolated demo environment.')
+    return saveApiKey(key)
+  })
   ipcMain.handle('ai:hasKey', () => hasApiKey())
-  ipcMain.handle('ai:deleteKey', () => deleteApiKey())
+  ipcMain.handle('ai:deleteKey', () => {
+    if (isDemoMode()) throw new Error('AI key changes are disabled in the isolated demo environment.')
+    return deleteApiKey()
+  })
   ipcMain.handle('ai:chat', (_, messages, ctx) => chatWithAI(messages, ctx))
   ipcMain.handle('ai:suggestCategory', (_, desc) => suggestCategory(desc))
   ipcMain.handle('ai:insight', () => generateInsight())
@@ -720,11 +755,23 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     return { id: Number(r.lastInsertRowid), ...cat }
   })
   ipcMain.handle('categories:update', (_, id: number, cat) => {
+    const existing = db().prepare('SELECT * FROM categories WHERE id=?').get(id) as {
+      name: string; icon: string; color: string; is_fixed: number; budget_amount: number; sort_order: number
+    } | undefined
+    if (!existing) throw new Error('Category not found')
+    const next = {
+      name: cat.name ?? existing.name,
+      icon: cat.icon ?? existing.icon,
+      color: cat.color ?? existing.color,
+      isFixed: cat.isFixed ?? existing.is_fixed === 1,
+      budgetAmount: cat.budgetAmount ?? existing.budget_amount,
+      sortOrder: cat.sortOrder ?? existing.sort_order
+    }
     // Compute new HMAC signature
     const hmac = signCategory({
-      name: cat.name,
-      budget_amount: cat.budgetAmount,
-      is_fixed: cat.isFixed ? 1 : 0
+      name: next.name,
+      budget_amount: next.budgetAmount,
+      is_fixed: next.isFixed ? 1 : 0
     })
     
     db()
@@ -732,12 +779,12 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         'UPDATE categories SET name=?, icon=?, color=?, is_fixed=?, budget_amount=?, sort_order=?, hmac=? WHERE id=?'
       )
       .run(
-        cat.name,
-        cat.icon,
-        cat.color,
-        cat.isFixed ? 1 : 0,
-        cat.budgetAmount,
-        cat.sortOrder,
+        next.name,
+        next.icon,
+        next.color,
+        next.isFixed ? 1 : 0,
+        next.budgetAmount,
+        next.sortOrder,
         hmac,
         id
       )
@@ -1415,8 +1462,8 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     })
     const r = db()
       .prepare(
-        `INSERT INTO goals (name, type, target_amount, current_amount, target_date, interest_rate, monthly_payment, creditor, notes, hmac)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO goals (name, type, target_amount, current_amount, target_date, interest_rate, monthly_payment, creditor, next_payment_date, notes, hmac)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         goal.name,
@@ -1427,6 +1474,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         goal.interestRate,
         goal.monthlyPayment,
         goal.creditor?.trim() || null,
+        goal.nextPaymentDate || null,
         goal.notes,
         hmac
       )
@@ -1449,7 +1497,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
     db()
       .prepare(
         `UPDATE goals SET name=?, type=?, target_amount=?, current_amount=?, target_date=?,
-         interest_rate=?, monthly_payment=?, creditor=?, notes=?, hmac=? WHERE id=?`
+         interest_rate=?, monthly_payment=?, creditor=?, next_payment_date=?, notes=?, hmac=? WHERE id=?`
       )
       .run(
         goal.name,
@@ -1460,6 +1508,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         goal.interestRate,
         goal.monthlyPayment,
         goal.creditor?.trim() || null,
+        goal.nextPaymentDate || null,
         goal.notes,
         hmac,
         id
@@ -1536,10 +1585,6 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
   ipcMain.handle('investmentHoldings:delete', (_, id: number) => {
     db().prepare('DELETE FROM investment_holdings WHERE id = ?').run(id)
     return true
-  })
-  ipcMain.handle('investmentHoldings:totalValue', () => {
-    const result = db().prepare('SELECT COALESCE(SUM(current_value), 0) as v FROM investment_holdings').get() as { v: number }
-    return result.v
   })
 
   // Subscriptions
@@ -1842,11 +1887,6 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       db().prepare('DELETE FROM subscriptions WHERE transaction_id = ?').run(source.transaction_id)
     }
     db().prepare('DELETE FROM savings_sources WHERE id = ?').run(id)
-    return true
-  })
-
-  ipcMain.handle('savings:populateFuture', () => {
-    populateSavingsFuture(db())
     return true
   })
 
@@ -2300,19 +2340,6 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       result.push({ month: (period % 12) + 1, spent: map[period] || 0 })
     }
     return result
-  })
-
-  ipcMain.handle('transactions:duplicates', (_, tx) => {
-    if (!Number.isFinite(tx.amount) || tx.amount <= 0 || !tx.description?.trim()) {
-      return []
-    }
-    return findDuplicateTransactions({
-      description: tx.description,
-      amount: tx.amount,
-      type: tx.type,
-      account_id: normalizeAccountId(tx.accountId),
-      date: tx.date
-    })
   })
 
   ipcMain.handle('transactions:categoryVariance', (_, categoryId: number, year: number, month: number) => {
@@ -2920,7 +2947,10 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
       }
       return true
     })
-    return tx()
+    const result = tx()
+    const attachmentPath = getAttachmentStoragePath()
+    if (existsSync(attachmentPath)) rmSync(attachmentPath, { recursive: true, force: true })
+    return result
   })
 
   ipcMain.handle('data:repairFromEvents', () => {
@@ -3058,10 +3088,7 @@ export function registerIpcHandlers(getWindow: GetWindow): void {
         reassignedTransactions: missingAccounts.length
       }
     })
-    const result = tx()
-    const attachmentPath = join(app.getPath('appData'), 'BudgetApp', 'attachments')
-    if (existsSync(attachmentPath)) rmSync(attachmentPath, { recursive: true, force: true })
-    return result
+    return tx()
   })
 
   ipcMain.handle('ai:saveInsight', (_, content: string, year: number, month: number) => {
@@ -3430,11 +3457,6 @@ function getSavingsCategoryId(database: ReturnType<typeof getDatabase>): number 
     | { id: number }
     | undefined
   return row?.id ?? null
-}
-
-function populateSavingsFuture(_database: ReturnType<typeof getDatabase>): void {
-  // No-op — savings sources appear as blue cards in the Recurring tab
-  // but do not auto-create transactions or budget entries.
 }
 
 function updateSpendingStreak(date: string): void {

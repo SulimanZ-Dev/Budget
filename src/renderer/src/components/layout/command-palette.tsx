@@ -18,7 +18,8 @@ import {
   Banknote,
   Heart,
   Calculator,
-  ShieldCheck
+  ShieldCheck,
+  Inbox
 } from 'lucide-react'
 import { formatMoney } from '@/lib/utils'
 
@@ -76,6 +77,7 @@ export function CommandPalette(): JSX.Element | null {
     { label: 'Accounts', icon: Landmark, path: '/accounts' },
     { label: 'Budget', icon: Wallet, path: '/budget' },
     { label: 'Transactions', icon: ArrowLeftRight, path: '/transactions' },
+    { label: 'Review Inbox', icon: Inbox, path: '/review' },
     { label: 'Goals', icon: Target, path: '/goals' },
     { label: 'Wealth', icon: Landmark, path: '/wealth' },
     { label: 'Analytics', icon: BarChart3, path: '/analytics' },
